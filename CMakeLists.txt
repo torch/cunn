@@ -22,8 +22,12 @@ LINK_DIRECTORIES("${Torch_INSTALL_LIB}")
 SET(src-cuda init.cu)
 SET(luasrc init.lua)
 
-CUDA_ADD_LIBRARY(cunn SHARED ${src-cuda})
+CUDA_ADD_LIBRARY(cunn MODULE ${src-cuda})
 TARGET_LINK_LIBRARIES(cunn luaT THC TH)
+IF(APPLE)
+  SET_TARGET_PROPERTIES(cunn PROPERTIES
+    LINK_FLAGS "-undefined dynamic_lookup")
+ENDIF()
 
 ### Torch packages supposes libraries prefix is "lib"
 SET_TARGET_PROPERTIES(cunn PROPERTIES
