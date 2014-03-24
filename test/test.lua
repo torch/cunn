@@ -1491,6 +1491,136 @@ function cunntest.mse()
 
 end
 
+function cunntest.SoftMax_forward()
+   local size = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('SoftMax forward %d -> %d', size, size)
+   times[title] = tm
+
+   local input = torch.randn(size)
+   local sconv = nn.SoftMax()
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = nn.SoftMax():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.SoftMax_backward()
+   local size = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('SoftMax.backward %d -> %d', size, size)
+   times[title] = tm
+
+   local input = torch.randn(size)
+   local gradOutput = torch.randn(size)
+   local sconv = nn.SoftMax()
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+function cunntest.LogSoftMax_forward()
+   local size = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('LogSoftMax forward %d -> %d', size, size)
+   times[title] = tm
+
+   local input = torch.randn(size)
+   local sconv = nn.LogSoftMax()
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = nn.LogSoftMax():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.LogSoftMax_backward()
+   local size = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('LogSoftMax.backward %d -> %d', size, size)
+   times[title] = tm
+
+   local input = torch.randn(size)
+   local gradOutput = torch.randn(size)
+   local sconv = nn.LogSoftMax()
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
 function nn.testcuda()
    math.randomseed(os.time())
    jac = nn.Jacobian
