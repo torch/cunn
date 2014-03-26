@@ -12,6 +12,7 @@
 #include "Tanh.cu"
 #include "Max.cu"
 #include "LogSoftMax.cu"
+#include "SoftMax.cu"
 #include "TemporalConvolution.cu"
 #include "SpatialConvolution.cu"
 #include "SpatialConvolutionMap.cu"
@@ -39,6 +40,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_Max_init(L);
   cunn_HardTanh_init(L);
   cunn_LogSoftMax_init(L);
+  cunn_SoftMax_init(L);
   cunn_TemporalConvolution_init(L);
   cunn_SpatialConvolution_init(L);
   cunn_SpatialConvolutionCUDA_init(L);
