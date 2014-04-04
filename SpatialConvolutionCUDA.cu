@@ -44,7 +44,7 @@ static int cunn_SpatialConvolutionCUDA_updateOutput(lua_State *L)
   
   // asserts
   luaL_argcheck(L, inputWidth == inputHeight, 1, "input must be square");
-  luaL_argcheck(L, kW == kW, 1, "kH must be equal to kW");
+  luaL_argcheck(L, kH == kW, 1, "kH must be equal to kW");
   luaL_argcheck(L, dH == dW, 1, "dH must be equal to dW");
 
   // all the data must be contiguous: 
@@ -96,7 +96,7 @@ static int cunn_SpatialConvolutionCUDA_updateGradInput(lua_State *L)
   
   // asserts
   luaL_argcheck(L, inputWidth == inputHeight, 1, "input must be square");
-  luaL_argcheck(L, kW == kW, 1, "kH must be equal to kW");
+  luaL_argcheck(L, kH == kW, 1, "kH must be equal to kW");
   luaL_argcheck(L, dH == dW, 1, "dH must be equal to dW");
 
   // all the data must be contiguous: 
@@ -146,7 +146,7 @@ static int cunn_SpatialConvolutionCUDA_accGradParameters(lua_State *L)
   
   // asserts
   luaL_argcheck(L, inputWidth == inputHeight, 1, "input must be square");
-  luaL_argcheck(L, kW == kW, 1, "kH must be equal to kW");
+  luaL_argcheck(L, kH == kW, 1, "kH must be equal to kW");
   luaL_argcheck(L, dH == dW, 1, "dH must be equal to dW");
 
   if (partialSum) {

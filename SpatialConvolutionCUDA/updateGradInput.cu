@@ -525,7 +525,6 @@ void spatialConv_updateGradInput(
 {
     int numGroups = 1;
     int numFilterColors = numImgColors / numGroups;
-    int numModules = numModulesY * numModulesX;
     /* int filterModuleMult = conv ? 1 : numModules; */
     int filterSize = filterSizeX;
     int imgPixels = imgSizeY * imgSizeX;
