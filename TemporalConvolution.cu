@@ -12,52 +12,114 @@ static int cunn_TemporalConvolution_updateOutput(lua_State *L)
 
   THCudaTensor *outputWindow, *inputWindow;
   int nInputFrame, nOutputFrame;
-  long k;
+  long k, i;
   
-  luaL_argcheck(L, input->nDimension == 2, 2, "2D tensor expected");
-  luaL_argcheck(L, input->size[1] == inputFrameSize, 2, "invalid input frame size");
-  luaL_argcheck(L, input->size[0] >= kW, 2, "input sequence smaller than kernel size");
+  int dimS = 0; // sequence dimension
+  int dimF = 1; // feature dimension
+  
+  luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
+  
+  if (input->nDimension == 3) 
+  {
+    dimS = 1;
+    dimF = 2;
+  }
+  luaL_argcheck(L, input->size[dimF] == inputFrameSize, 2, "invalid input frame size");
+  luaL_argcheck(L, input->size[dimS] >= kW, 2, "input sequence smaller than kernel size");
 
   input = THCudaTensor_newContiguous(input);
   outputWindow = THCudaTensor_new();
   inputWindow = THCudaTensor_new();
 
-  nInputFrame = input->size[0];
+  nInputFrame = input->size[dimS];
   nOutputFrame = (nInputFrame - kW) / dW + 1;
-
-  THCudaTensor_resize2d(output,
-                      nOutputFrame,
-                      outputFrameSize);
-
-  /* bias first */
-  for(k = 0; k < nOutputFrame; k++)
-  {
-    THCudaTensor_select(outputWindow, output, 0, k);
-    THCudaTensor_copy(outputWindow, bias);
-  }
   
-
-  /* ouch */
-  for(k = 0; nOutputFrame > 0; k++)
+  if (input->nDimension == 2)
   {
-    long outputFrameStride = (kW-1)/dW+1;
-    long inputFrameStride = outputFrameStride*dW;
-    long nFrame = (nInputFrame-k*dW-kW)/inputFrameStride + 1;
-    nOutputFrame -= nFrame;
+    THCudaTensor_resize2d(output,
+                        nOutputFrame,
+                        outputFrameSize);
+    
+    /* bias first */
+    for(k = 0; k < nOutputFrame; k++)
+    {
+      THCudaTensor_select(outputWindow, output, 0, k);
+      THCudaTensor_copy(outputWindow, bias);
+    }
+    
 
-    THCudaTensor_setStorage2d(inputWindow, input->storage,
-                            input->storageOffset+k*dW*input->size[1],
-                            nFrame, inputFrameStride*input->size[1],
-                            kW*input->size[1], 1);
+    /* ouch */
+    for(k = 0; nOutputFrame > 0; k++)
+    {
+      long outputFrameStride = (kW-1)/dW+1;
+      long inputFrameStride = outputFrameStride*dW;
+      long nFrame = (nInputFrame-k*dW-kW)/inputFrameStride + 1;
+      nOutputFrame -= nFrame;
 
-    THCudaTensor_setStorage2d(outputWindow, output->storage, 
-                            output->storageOffset + k*output->size[1],
-                            nFrame, outputFrameStride*output->size[1],
-                            output->size[1], 1);
+      THCudaTensor_setStorage2d(inputWindow, input->storage,
+                              input->storageOffset+k*dW*input->size[1],
+                              nFrame, inputFrameStride*input->size[1],
+                              kW*input->size[1], 1);
 
-    THCudaTensor_transpose(weight, NULL, 0, 1);
-    THCudaTensor_addmm(outputWindow, 1, 1, inputWindow, weight);
-    THCudaTensor_transpose(weight, NULL, 0, 1);
+      THCudaTensor_setStorage2d(outputWindow, output->storage, 
+                              output->storageOffset + k*output->size[1],
+                              nFrame, outputFrameStride*output->size[1],
+                              output->size[1], 1);
+
+      THCudaTensor_transpose(weight, NULL, 0, 1);
+      THCudaTensor_addmm(outputWindow, 1, 1, inputWindow, weight);
+      THCudaTensor_transpose(weight, NULL, 0, 1);
+    }
+  }
+  else
+  {
+    THCudaTensor *outputSample = THCudaTensor_(new)();
+    THCudaTensor *inputSample = THCudaTensor_(new)();
+    int nBatchFrame = input->size[0];
+    
+    THCudaTensor_(resize3d)(output,
+                            nBatchFrame,
+                            nOutputFrame,
+                            outputFrameSize);
+    
+    for(i = 0; i < nBatchFrame; i++)
+    {
+      THCudaTensor_(select)(outputSample, output, 0, i);
+      THCudaTensor_(select)(inputSample, input, 0, i);
+      
+      /* bias first */
+      for(k = 0; k < nOutputFrame; k++)
+      {
+        THCudaTensor_select(outputWindow, outputSample, 0, k);
+        THCudaTensor_copy(outputWindow, bias);
+      }
+      
+
+      /* ouch */
+      for(k = 0; nOutputFrame > 0; k++)
+      {
+        long outputFrameStride = (kW-1)/dW+1;
+        long inputFrameStride = outputFrameStride*dW;
+        long nFrame = (nInputFrame-k*dW-kW)/inputFrameStride + 1;
+        nOutputFrame -= nFrame;
+
+        THCudaTensor_setStorage2d(inputWindow, inputSample->storage,
+                                inputSample->storageOffset+k*dW*inputSample->size[1],
+                                nFrame, inputFrameStride*inputSample->size[1],
+                                kW*input->size[1], 1);
+
+        THCudaTensor_setStorage2d(outputWindow, outputSample->storage, 
+                                outputSample->storageOffset + k*outputSample->size[1],
+                                nFrame, outputFrameStride*outputSample->size[1],
+                                outputSample->size[1], 1);
+
+        THCudaTensor_transpose(weight, NULL, 0, 1);
+        THCudaTensor_addmm(outputWindow, 1, 1, inputWindow, weight);
+        THCudaTensor_transpose(weight, NULL, 0, 1);
+      }
+    }
+    THTensor_(free)(outputSample);
+    THTensor_(free)(inputSample);
   }
 
   THCudaTensor_free(outputWindow);
