@@ -73,19 +73,19 @@ static int cunn_TemporalConvolution_updateOutput(lua_State *L)
   }
   else
   {
-    THCudaTensor *outputSample = THCudaTensor_(new)();
-    THCudaTensor *inputSample = THCudaTensor_(new)();
+    THCudaTensor *outputSample = THCudaTensor_new();
+    THCudaTensor *inputSample = THCudaTensor_new();
     int nBatchFrame = input->size[0];
     
-    THCudaTensor_(resize3d)(output,
+    THCudaTensor_resize3d(output,
                             nBatchFrame,
                             nOutputFrame,
                             outputFrameSize);
     
     for(i = 0; i < nBatchFrame; i++)
     {
-      THCudaTensor_(select)(outputSample, output, 0, i);
-      THCudaTensor_(select)(inputSample, input, 0, i);
+      THCudaTensor_select(outputSample, output, 0, i);
+      THCudaTensor_select(inputSample, input, 0, i);
       
       /* bias first */
       for(k = 0; k < nOutputFrame; k++)
@@ -118,8 +118,8 @@ static int cunn_TemporalConvolution_updateOutput(lua_State *L)
         THCudaTensor_transpose(weight, NULL, 0, 1);
       }
     }
-    THCudaTensor_(free)(outputSample);
-    THCudaTensor_(free)(inputSample);
+    THCudaTensor_free(outputSample);
+    THCudaTensor_free(inputSample);
   }
 
   THCudaTensor_free(outputWindow);
@@ -146,12 +146,10 @@ static int cunn_TemporalConvolution_updateGradInput(lua_State *L)
   long k, i;
   
   int dimS = 0; // sequence dimension
-  int dimF = 1; // feature dimension
   
   if (gradOutput->nDimension == 3) 
   {
     dimS = 1;
-    dimF = 2;
   }
   
   nInputFrame = input->size[dimS];
@@ -190,14 +188,14 @@ static int cunn_TemporalConvolution_updateGradInput(lua_State *L)
   }
   else
   {
-    THCudaTensor *gradOutputSample = THCudaTensor_(new)();
-    THCudaTensor *gradInputSample = THCudaTensor_(new)();
+    THCudaTensor *gradOutputSample = THCudaTensor_new();
+    THCudaTensor *gradInputSample = THCudaTensor_new();
     int nBatchFrame = input->size[0];
     
     for(i = 0; i < nBatchFrame; i++)
     {
-      THCudaTensor_(select)(gradOutputSample, gradOutput, 0, i);
-      THCudaTensor_(select)(gradInputSample, gradInput, 0, i);
+      THCudaTensor_select(gradOutputSample, gradOutput, 0, i);
+      THCudaTensor_select(gradInputSample, gradInput, 0, i);
       
       /* ouch */
       for(k = 0; nOutputFrame > 0; k++)
@@ -220,8 +218,8 @@ static int cunn_TemporalConvolution_updateGradInput(lua_State *L)
         THCudaTensor_addmm(gradInputWindow, 1, 1, gradOutputWindow, weight);
       }
     }
-    THCudaTensor_(free)(gradOutputSample);
-    THCudaTensor_(free)(gradInputSample);
+    THCudaTensor_free(gradOutputSample);
+    THCudaTensor_free(gradInputSample);
   }
 
   THCudaTensor_free(gradOutputWindow);
@@ -248,12 +246,10 @@ static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
   long k, i;
   
   int dimS = 0; // sequence dimension
-  int dimF = 1; // feature dimension
   
   if (gradOutput->nDimension == 3) 
   {
     dimS = 1;
-    dimF = 2;
   }
   
   nInputFrame = input->size[dimS];
@@ -299,14 +295,14 @@ static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
   }
   else
   {
-    THCudaTensor *gradOutputSample = THCudaTensor_(new)();
-    THCudaTensor *inputSample = THCudaTensor_(new)();
+    THCudaTensor *gradOutputSample = THCudaTensor_new();
+    THCudaTensor *inputSample = THCudaTensor_new();
     int nBatchFrame = input->size[0];
     
     for(i = 0; i < nBatchFrame; i++)
     {
-      THCudaTensor_(select)(gradOutputSample, gradOutput, 0, i);
-      THCudaTensor_(select)(inputSample, input, 0, i);
+      THCudaTensor_select(gradOutputSample, gradOutput, 0, i);
+      THCudaTensor_select(inputSample, input, 0, i);
       
       /* bias first */
       for(k = 0; k < nOutputFrame; k++)
@@ -338,8 +334,8 @@ static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
         THCudaTensor_transpose(gradOutputWindow, NULL, 0, 1);
       }
     }
-    THCudaTensor_(free)(gradOutputSample);
-    THCudaTensor_(free)(inputSample);
+    THCudaTensor_free(gradOutputSample);
+    THCudaTensor_free(inputSample);
   }
 
   THCudaTensor_free(gradOutputWindow);
