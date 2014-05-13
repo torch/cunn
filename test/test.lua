@@ -637,15 +637,15 @@ function cunntest.Mean_backward()
 end
 
 function cunntest.SpatialConvolution_forward()
-   local from = math.random(1,64)
-   local to = math.random(1,64)
-   local ki = math.random(3,15)
-   local kj = math.random(3,15)
-   local si = math.random(1,2)
+   local from = math.random(1,64) -- inputFrameSize
+   local to = math.random(1,64) -- outputFrameSize
+   local ki = math.random(3,15) -- kernel widths 
+   local kj = math.random(3,15) 
+   local si = math.random(1,2) -- kernel strides
    local sj = math.random(1,2)
-   local outi = math.random(1,256)
-   local outj = math.random(1,256)
-   local ini = (outi-1)*si+ki
+   local outi = math.random(1,256) -- nOutputFrames
+   local outj = math.random(1,256) 
+   local ini = (outi-1)*si+ki -- nInputFrames
    local inj = (outj-1)*sj+kj
 
    local tm = {}
@@ -1757,19 +1757,19 @@ function cunntest.LogSoftMax_backward()
 end
 
 function cunntest.TemporalConvolution_forward()
-   local from = math.random(1,64)
-   local to = math.random(1,64)
-   local ki = math.random(3,15)
-   local si = math.random(1,2)
-   local outi = math.random(1,256)
-   local ini = (outi-1)*si+ki
+   local from = math.random(1,64) -- inputFrameSize
+   local to = math.random(1,64) -- outputFrameSize
+   local ki = math.random(3,15) -- kernelWidth (kW)
+   local si = math.random(1,2) -- stepSize (dW)
+   local outi = math.random(1,256) -- nOutputFrame
+   local ini = (outi-1)*si+ki -- nInputFrame
 
    local tm = {}
    local title = string.format('TemporalConvolution.forward %dx%d o %d -> %dx%d [s: %d]', 
                                from, ini, ki, to, outi, si)
    times[title] = tm
 
-   local input = torch.randn(from,ini)
+   local input = torch.randn(ini,from)
    local sconv = nn.TemporalConvolution(from,to,ki,si)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -1808,7 +1808,7 @@ function cunntest.TemporalConvolution_forward_batch()
                                bs, from, ini, ki, bs, to, outi, si)
    times[title] = tm
 
-   local input = torch.randn(bs,from,ini)
+   local input = torch.randn(bs,ini,from)
    local sconv = nn.TemporalConvolution(from,to,ki,si)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -1847,8 +1847,8 @@ function cunntest.TemporalConvolution_backward()
                   
    times[title] = tm
 
-   local input = torch.randn(from,ini)
-   local gradOutput = torch.randn(to,outi)
+   local input = torch.randn(ini,from)
+   local gradOutput = torch.randn(outi,to)
    local sconv = nn.TemporalConvolution(from,to,ki,si)
    sconv:forward(input)
    sconv:zeroGradParameters()
@@ -1903,8 +1903,8 @@ function cunntest.TemporalConvolution_backward_batch()
                                bs, from, ini, ki, bs, to, outi)
    times[title] = tm
 
-   local input = torch.randn(bs,from,ini)
-   local gradOutput = torch.randn(bs,to,outi)
+   local input = torch.randn(bs,ini,from)
+   local gradOutput = torch.randn(bs,outi,to)
    local sconv = nn.TemporalConvolution(from,to,ki,si)
    sconv:forward(input)
    sconv:zeroGradParameters()
@@ -1945,12 +1945,12 @@ function cunntest.TemporalConvolution_backward_batch()
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
 
-function nn.testcuda()
+function nn.testcuda(tests)
    math.randomseed(os.time())
    jac = nn.Jacobian
    mytester = torch.Tester()
    mytester:add(cunntest)
-   mytester:run()
+   mytester:run(tests)
    print ''
    for module,tm in pairs(times) do
       print(module .. ': \t average speedup is ' .. (tm.cpu / (tm.gpu or 1e6)))
