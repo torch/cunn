@@ -142,7 +142,6 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
     long nOutputCols = (nInputCols - kW) / dW + 1;
     long nOutputRows = (nInputRows - kH) / dH + 1;
 
-    luaL_argcheck(L, input->size[0] == nInputPlane, 2, "invalid number of input planes");
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
     input = THCudaTensor_newContiguous(input);
@@ -172,7 +171,6 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
     long nOutputCols = (nInputCols - kW) / dW + 1;
     long nOutputRows = (nInputRows - kH) / dH + 1;
 
-    luaL_argcheck(L, input->size[1] == nInputPlane, 2, "invalid number of input planes");
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
     input = THCudaTensor_newContiguous(input);
