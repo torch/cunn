@@ -141,8 +141,8 @@ static int cunn_MultiMarginCriterion_updateOutput(lua_State *L)
 static int cunn_MultiMarginCriterion_updateGradInput(lua_State *L)
 {
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   int sizeaverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
+  THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
   THCudaTensor_resizeAs(gradInput, input);
 
