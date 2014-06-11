@@ -34,8 +34,6 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
       buffer[tx] = z;
   }
 
-  __syncthreads();
-
   // reduce
   for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
   {
@@ -43,7 +41,6 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
     if ((tx < stride) && (buffer[tx] < buffer[tx+stride]))
       buffer[tx] = buffer[tx+stride];
   }
-  
   if (tx == 0)
   {
     float max_k = -FLT_MAX;
@@ -59,8 +56,6 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
   buffer[tx] = 0;
   for (int i=i_start; i<i_end; i+=i_step)
     buffer[tx] += __expf(input_k[i]-max_k);
-
-  __syncthreads();
 
   // reduce
   for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
@@ -88,31 +83,28 @@ __global__ void cunn_LogSoftMax_updateGradInput_kernel(float *gradInput, float *
   float *gradInput_k = gradInput + k*dim;
   float *output_k = output + k*dim;
   float *gradOutput_k = gradOutput + k*dim;
+  int tx = threadIdx.x;
 
-  int i_start = threadIdx.x;
   int i_end = dim;
   int i_step = blockDim.x;
 
   // sum?
-  buffer[threadIdx.x] = 0;
-  for (int i=i_start; i<i_end; i+=i_step)
-    buffer[threadIdx.x] += gradOutput_k[i];
-
-  __syncthreads();
+  buffer[tx] = 0;
+  for (int i=tx; i<i_end; i+=i_step)
+    buffer[tx] += gradOutput_k[i];
 
   // reduce
-  if (threadIdx.x == 0)
+  for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
   {
-    float sum_k = 0;
-    for (int i=0; i<blockDim.x; i++)
-      sum_k += buffer[i];
-    buffer[0] = sum_k;
+    __syncthreads();
+    if (tx < stride)
+      buffer[tx] += buffer[tx+stride];
   }
 
   __syncthreads();
 
   float sum_k = buffer[0];
-  for (int i=i_start; i<i_end; i+=i_step)
+  for (int i=tx; i<i_end; i+=i_step)
     gradInput_k[i] = gradOutput_k[i] - __expf(output_k[i])*sum_k;
 }
 
