@@ -1,18 +1,6 @@
 #define MINUS_LOG_THRESHOLD -18.42
 #define LOGSOFTMAX_THREADS 128
 
-struct addvalue_functor
-{
-  const float value;
-
-  addvalue_functor(float value_) : value(value_) {}
-
-    __host__ __device__ float operator()(const float& x) const
-  {
-    return (x+value);
-  }
-};
-
 __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input, int nframe, int dim)
 {
   __shared__ float buffer[LOGSOFTMAX_THREADS+1];
@@ -55,7 +43,7 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
   float max_k = buffer[LOGSOFTMAX_THREADS];
   buffer[tx] = 0;
   for (int i=i_start; i<i_end; i+=i_step)
-    buffer[tx] += __expf(input_k[i]-max_k);
+    buffer[tx] += expf(input_k[i]-max_k);
 
   // reduce
   for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
@@ -65,7 +53,7 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
       buffer[tx] += buffer[tx+stride];
   }
   if (tx == 0)
-    buffer[LOGSOFTMAX_THREADS] = max_k + __logf(buffer[0]);
+    buffer[LOGSOFTMAX_THREADS] = max_k + logf(buffer[0]);
 
   __syncthreads();
 
@@ -138,18 +126,6 @@ static int cunn_LogSoftMax_updateOutput(lua_State *L)
   THCudaTensor_free(input);
   return 1;
 }
-
-struct logsoftmaxupdateGradInput_functor
-{
-  float value;
-
-  logsoftmaxupdateGradInput_functor(float value_) : value(value_) {}
-
-  __host__ __device__ float operator()(const float& output, const float& gradOutput) const
-  {
-    return gradOutput - exp(output)*value;
-  }
-};
 
 static int cunn_LogSoftMax_updateGradInput(lua_State *L)
 {
