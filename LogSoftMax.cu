@@ -19,31 +19,36 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
   int k = blockIdx.x;
   float *input_k = input + k*dim;
   float *output_k = output + k*dim;
+  int tx = threadIdx.x;
 
   int i_start = threadIdx.x;
   int i_end = dim;
   int i_step = blockDim.x;
 
   // max?
-  buffer[threadIdx.x] = -FLT_MAX;
+  buffer[tx] = -FLT_MAX;
   for (int i=i_start; i<i_end; i+=i_step)
   {
     float z = input_k[i];
-    if(buffer[threadIdx.x] < z)
-      buffer[threadIdx.x] = z;
+    if(buffer[tx] < z)
+      buffer[tx] = z;
   }
 
   __syncthreads();
 
   // reduce
-  if (threadIdx.x == 0)
+  for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
+  {
+    __syncthreads();
+    if ((tx < stride) && (buffer[tx] < buffer[tx+stride]))
+      buffer[tx] = buffer[tx+stride];
+  }
+  
+  if (tx == 0)
   {
     float max_k = -FLT_MAX;
-    for (int i=0; i<blockDim.x; i++)
-    {
-      if(max_k < buffer[i])
-        max_k = buffer[i];
-    }
+    if(max_k < buffer[0])
+      max_k = buffer[0];
     buffer[LOGSOFTMAX_THREADS] = max_k;
   }
 
@@ -51,20 +56,21 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
 
   // logadd?
   float max_k = buffer[LOGSOFTMAX_THREADS];
-  buffer[threadIdx.x] = 0;
+  buffer[tx] = 0;
   for (int i=i_start; i<i_end; i+=i_step)
-    buffer[threadIdx.x] += __expf(input_k[i]-max_k);
+    buffer[tx] += __expf(input_k[i]-max_k);
 
   __syncthreads();
 
   // reduce
-  if (threadIdx.x == 0)
+  for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
   {
-    float logsum_k = 0;
-    for (int i=0; i<blockDim.x; i++)
-      logsum_k += buffer[i];
-    buffer[LOGSOFTMAX_THREADS] = max_k + __logf(logsum_k);
+    __syncthreads();
+    if (tx < stride)
+      buffer[tx] += buffer[tx+stride];
   }
+  if (tx == 0)
+    buffer[LOGSOFTMAX_THREADS] = max_k + __logf(buffer[0]);
 
   __syncthreads();
 
