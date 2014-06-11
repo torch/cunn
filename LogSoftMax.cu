@@ -1,49 +1,39 @@
 #define MINUS_LOG_THRESHOLD -18.42
 #define LOGSOFTMAX_THREADS 128
 
-struct addvalue_functor
-{
-  const float value;
-
-  addvalue_functor(float value_) : value(value_) {}
-
-    __host__ __device__ float operator()(const float& x) const
-  {
-    return (x+value);
-  }
-};
-
 __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input, int nframe, int dim)
 {
   __shared__ float buffer[LOGSOFTMAX_THREADS+1];
   int k = blockIdx.x;
   float *input_k = input + k*dim;
   float *output_k = output + k*dim;
+  int tx = threadIdx.x;
 
   int i_start = threadIdx.x;
   int i_end = dim;
   int i_step = blockDim.x;
 
   // max?
-  buffer[threadIdx.x] = -FLT_MAX;
+  buffer[tx] = -FLT_MAX;
   for (int i=i_start; i<i_end; i+=i_step)
   {
     float z = input_k[i];
-    if(buffer[threadIdx.x] < z)
-      buffer[threadIdx.x] = z;
+    if(buffer[tx] < z)
+      buffer[tx] = z;
   }
 
-  __syncthreads();
-
   // reduce
-  if (threadIdx.x == 0)
+  for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
+  {
+    __syncthreads();
+    if ((tx < stride) && (buffer[tx] < buffer[tx+stride]))
+      buffer[tx] = buffer[tx+stride];
+  }
+  if (tx == 0)
   {
     float max_k = -FLT_MAX;
-    for (int i=0; i<blockDim.x; i++)
-    {
-      if(max_k < buffer[i])
-        max_k = buffer[i];
-    }
+    if(max_k < buffer[0])
+      max_k = buffer[0];
     buffer[LOGSOFTMAX_THREADS] = max_k;
   }
 
@@ -51,20 +41,19 @@ __global__ void cunn_LogSoftMax_updateOutput_kernel(float *output, float *input,
 
   // logadd?
   float max_k = buffer[LOGSOFTMAX_THREADS];
-  buffer[threadIdx.x] = 0;
+  buffer[tx] = 0;
   for (int i=i_start; i<i_end; i+=i_step)
-    buffer[threadIdx.x] += __expf(input_k[i]-max_k);
-
-  __syncthreads();
+    buffer[tx] += expf(input_k[i]-max_k);
 
   // reduce
-  if (threadIdx.x == 0)
+  for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
   {
-    float logsum_k = 0;
-    for (int i=0; i<blockDim.x; i++)
-      logsum_k += buffer[i];
-    buffer[LOGSOFTMAX_THREADS] = max_k + __logf(logsum_k);
+    __syncthreads();
+    if (tx < stride)
+      buffer[tx] += buffer[tx+stride];
   }
+  if (tx == 0)
+    buffer[LOGSOFTMAX_THREADS] = max_k + logf(buffer[0]);
 
   __syncthreads();
 
@@ -82,31 +71,28 @@ __global__ void cunn_LogSoftMax_updateGradInput_kernel(float *gradInput, float *
   float *gradInput_k = gradInput + k*dim;
   float *output_k = output + k*dim;
   float *gradOutput_k = gradOutput + k*dim;
+  int tx = threadIdx.x;
 
-  int i_start = threadIdx.x;
   int i_end = dim;
   int i_step = blockDim.x;
 
   // sum?
-  buffer[threadIdx.x] = 0;
-  for (int i=i_start; i<i_end; i+=i_step)
-    buffer[threadIdx.x] += gradOutput_k[i];
-
-  __syncthreads();
+  buffer[tx] = 0;
+  for (int i=tx; i<i_end; i+=i_step)
+    buffer[tx] += gradOutput_k[i];
 
   // reduce
-  if (threadIdx.x == 0)
+  for (unsigned int stride = blockDim.x >> 1; stride > 0; stride >>= 1)
   {
-    float sum_k = 0;
-    for (int i=0; i<blockDim.x; i++)
-      sum_k += buffer[i];
-    buffer[0] = sum_k;
+    __syncthreads();
+    if (tx < stride)
+      buffer[tx] += buffer[tx+stride];
   }
 
   __syncthreads();
 
   float sum_k = buffer[0];
-  for (int i=i_start; i<i_end; i+=i_step)
+  for (int i=tx; i<i_end; i+=i_step)
     gradInput_k[i] = gradOutput_k[i] - __expf(output_k[i])*sum_k;
 }
 
@@ -140,18 +126,6 @@ static int cunn_LogSoftMax_updateOutput(lua_State *L)
   THCudaTensor_free(input);
   return 1;
 }
-
-struct logsoftmaxupdateGradInput_functor
-{
-  float value;
-
-  logsoftmaxupdateGradInput_functor(float value_) : value(value_) {}
-
-  __host__ __device__ float operator()(const float& output, const float& gradOutput) const
-  {
-    return gradOutput - exp(output)*value;
-  }
-};
 
 static int cunn_LogSoftMax_updateGradInput(lua_State *L)
 {
