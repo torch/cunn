@@ -2149,9 +2149,14 @@ function nn.testcuda(tests)
    mytester:add(cunntest)
    mytester:run(tests)
    print ''
+   print ' ------------------------------------------------------------------------------------------------'
+   print '|  Module                                                                          |  Speedup    |'
+   print ' ------------------------------------------------------------------------------------------------'
    for module,tm in pairs(times) do
-      print(module .. ': \t average speedup is ' .. (tm.cpu / (tm.gpu or 1e6)))
+      local str = string.format('| %-80s | %4.2f        |', module, (tm.cpu / (tm.gpu or 1e6)))
+      print(str)
    end
+   print ' ------------------------------------------------------------------------------------------------'
 end
 
 nn.testcuda()
