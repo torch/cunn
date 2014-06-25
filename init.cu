@@ -29,6 +29,7 @@
 #include "AbsCriterion.cu"
 #include "Abs.cu"
 #include "SoftPlus.cu"
+#include "Exp.cu"
 
 LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 
@@ -57,6 +58,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_AbsCriterion_init(L);
   cunn_Abs_init(L);
   cunn_SoftPlus_init(L);
+  cunn_Exp_init(L);
 
   return 1;
 }
