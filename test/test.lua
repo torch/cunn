@@ -6,7 +6,6 @@ local precision_forward = 1e-4
 local precision_backward = 1e-2
 local nloop = 1
 local times = {}
-local cunntestx = {}
 
 torch.setdefaulttensortype('torch.FloatTensor')
 
@@ -2298,11 +2297,6 @@ function cunntest.SpatialUpSamplingNearest_backward_batch()
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
-
-cunntest = {cunntest.SpatialUpSamplingNearest_forward, 
-  cunntest.SpatialUpSamplingNearest_forward_batch,
-  cunntest.SpatialUpSamplingNearest_backward, 
-  cunntest.SpatialUpSamplingNearest_backward_batch}
 
 function nn.testcuda(tests)
    math.randomseed(os.time())
