@@ -2142,6 +2142,168 @@ function cunntest.SoftPlus_backward()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+function cunntest.SpatialUpSamplingNearest_forward()
+   local f = torch.random(3, 15)
+   local h = torch.random(3, 15)
+   local w = torch.random(3, 15)
+   local scale = torch.random(2,5)
+
+   local tm = {}
+   local title = string.format('SpatialUpSamplingNearest.forward %dx%dx%d -> %dx%dx%d',
+                               f, h, w, f, h*scale, w*scale)
+   times[title] = tm
+
+   local input = torch.randn(f, h, w)
+   local sconv = nn.SpatialUpSamplingNearest(scale)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.SpatialUpSamplingNearest_forward_batch()
+   local nbatch = torch.random(3, 15)
+   local f = torch.random(3, 15)
+   local h = torch.random(3, 15)
+   local w = torch.random(3, 15)
+   local scale = torch.random(2,5)
+
+   local tm = {}
+   local title = string.format('SpatialUpSamplingNearest.forward %dx%dx%dx%d -> %dx%dx%dx%d',
+                               nbatch, f, h, w, nbatch, f, h*scale, w*scale) 
+   times[title] = tm
+
+   local input = torch.randn(nbatch, f, h, w)
+   local sconv = nn.SpatialUpSamplingNearest(scale)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+
+end
+
+function cunntest.SpatialUpSamplingNearest_backward()
+   local f = torch.random(3, 15)
+   local h = torch.random(3, 15)
+   local w = torch.random(3, 15)
+   local scale = torch.random(2,5)
+
+   local tm = {}
+   local title = string.format('SpatialUpSamplingNearest.backward %dx%dx%d -> %dx%dx%d',
+                               f, h, w, f, h*scale, w*scale) 
+   times[title] = tm
+
+   local input = torch.randn(f, h, w)
+   local gradOutput = torch.randn(f, h*scale, w*scale)
+   local sconv = nn.SpatialUpSamplingNearest(scale)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+function cunntest.SpatialUpSamplingNearest_backward_batch()
+   local nbatch = torch.random(3, 15)
+   local f = torch.random(3, 15)
+   local h = torch.random(3, 15)
+   local w = torch.random(3, 15)
+   local scale = torch.random(2,5)
+
+   local tm = {}
+   local title = string.format('SpatialUpSamplingNearest.backward %dx%dx%dx%d -> %dx%dx%dx%d',
+                               nbatch, f, h, w, nbatch, f, h*scale, w*scale)
+   times[title] = tm
+
+   local input = torch.randn(nbatch, f, h, w)
+   local gradOutput = torch.randn(nbatch, f, h*scale, w*scale)
+   local sconv = nn.SpatialUpSamplingNearest(scale)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+cunntest = {cunntest.SpatialUpSamplingNearest_forward, 
+  cunntest.SpatialUpSamplingNearest_forward_batch,
+  cunntest.SpatialUpSamplingNearest_backward, 
+  cunntest.SpatialUpSamplingNearest_backward_batch}
+
 function nn.testcuda(tests)
    math.randomseed(os.time())
    jac = nn.Jacobian
