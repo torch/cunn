@@ -30,6 +30,7 @@
 #include "Abs.cu"
 #include "SoftPlus.cu"
 #include "Exp.cu"
+#include "SpatialUpSamplingNearest.cu"
 
 LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 
@@ -59,6 +60,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_Abs_init(L);
   cunn_SoftPlus_init(L);
   cunn_Exp_init(L);
+  cunn_SpatialUpSamplingNearest_init(L);
 
   return 1;
 }
