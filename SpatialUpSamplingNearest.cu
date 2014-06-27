@@ -91,7 +91,10 @@ static int cunn_SpatialUpSamplingNearest_updateOutput(lua_State *L)
 
   // cuda blocks & threads:
   long nthreads = 256;
-  long nblocks = ceil((float)no_elements / nthreads);
+  // Max number of blocks: http://en.wikipedia.org/wiki/CUDA
+  // 65535 for SM 2.x, 2^32 -1 for >= 3.0
+  // TODO: When we move to SM 3.5 we should update this
+  long nblocks = min(max((int)ceil((float)no_elements / nthreads), 1), 65535);
   dim3 blocks(nblocks);
   dim3 threads(nthreads);
 
