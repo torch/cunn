@@ -51,6 +51,7 @@ __global__ void upscale(float *input, float *output, long no_elements,
 {
   // output offset:
   long ii = threadIdx.x + blockDim.x * blockIdx.x;
+  ii += threadIdx.y + blockDim.y * (blockDim.x * gridDim.x) * blockIdx.y;
   if (ii >= no_elements) return;
   int ipidx = translate_idx(ii, d1, d2, d3, scale_factor);
   output[ii]=input[ipidx];
@@ -94,8 +95,12 @@ static int cunn_SpatialUpSamplingNearest_updateOutput(lua_State *L)
   // Max number of blocks: http://en.wikipedia.org/wiki/CUDA
   // 65535 for SM 2.x, 2^32 -1 for >= 3.0
   // TODO: When we move to SM 3.5 we should update this
-  long nblocks = min(max((int)ceil((float)no_elements / nthreads), 1), 65535);
-  dim3 blocks(nblocks);
+  long n_xblocks = min(max((int)ceil((float)no_elements / nthreads), 1), 65535);
+  long n_yblocks = (long)ceil((float)no_elements / (float)(n_xblocks * nthreads));
+  if (n_yblocks > 65535) {
+    THError("Input size is too large!  aborting");
+  }
+  dim3 blocks(n_xblocks, n_yblocks);
   dim3 threads(nthreads);
 
   // kernel:
@@ -122,6 +127,7 @@ __global__ void downscale(float *gradInput_data, float *gradOutput_data, long no
 {
   // output offset:
   long ii = threadIdx.x + blockDim.x * blockIdx.x;
+  ii += threadIdx.y + blockDim.y * (blockDim.x * gridDim.x) * blockIdx.y;
   if (ii >= no_elements) return;
   for (int i=0; i < scale_factor; i++){
     for(int j=0; j < scale_factor; j++){
@@ -164,8 +170,15 @@ static int cunn_SpatialUpSamplingNearest_updateGradInput(lua_State *L)
 
   // cuda blocks & threads:
   long nthreads = 256;
-  long nblocks = ceil((float)no_elements / nthreads);
-  dim3 blocks(nblocks);
+  // Max number of blocks: http://en.wikipedia.org/wiki/CUDA
+  // 65535 for SM 2.x, 2^32 -1 for >= 3.0
+  // TODO: When we move to SM 3.5 we should update this
+  long n_xblocks = min(max((int)ceil((float)no_elements / nthreads), 1), 65535);
+  long n_yblocks = (long)ceil((float)no_elements / (float)(n_xblocks * nthreads));
+  if (n_yblocks > 65535) {
+    THError("Input size is too large!  aborting");
+  }
+  dim3 blocks(n_xblocks, n_yblocks);
   dim3 threads(nthreads);
  
   // kernel:
