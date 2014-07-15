@@ -93,10 +93,10 @@ static void __global__ fillBiasBatch(float *out, const float* __restrict bias,
 }
 
 static void __global__ fillBias(float *out, const float* __restrict bias, 
-				const int oD, const int oH, const int oW) {    
+        const int oD, const int oH, const int oW) {    
     const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
     const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
-    
+
     const int oD_ = blockIdx.x; 
 
     out = out + oD_ * oH * oW;
@@ -175,28 +175,28 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 
         /* add bias */
         {
-	  if (batchSize == 1) {
-	    /* 32 warps per batch-slice
-	       Each warp handles 1 output plane */
-	    dim3 blocks(nOutputPlane);
-            dim3 threads(1024);
-	    fillBias <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
-					   nOutputPlane, outputHeight, outputWidth);
-	  }
-	  else {
-            /* 
-               batchSize/4 blocks
-               32 warps per block, 
-               4 batches per block, 
-               8 warps per batch-slice 
-               Each warp handles 1 batch's nOutputPlane/8 
-             */
-            dim3 blocks(batchSize/4); /* 128/4 = 32 */
-            dim3 threads(1024); 
-            fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
-                    batchSize, nOutputPlane, outputHeight, outputWidth);
-	  }
-	}
+            if (batchSize == 1) {
+                /* 32 warps per batch-slice
+                   Each warp handles 1 output plane */
+                dim3 blocks(nOutputPlane);
+                dim3 threads(1024);
+                fillBias <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
+                        nOutputPlane, outputHeight, outputWidth);
+            }
+            else {
+                /* 
+                   batchSize/4 blocks
+                   32 warps per block, 
+                   4 batches per block, 
+                   8 warps per batch-slice 
+                   Each warp handles 1 batch's nOutputPlane/8 
+                 */
+                dim3 blocks(batchSize/4); /* 128/4 = 32 */
+                dim3 threads(1024); 
+                fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
+                        batchSize, nOutputPlane, outputHeight, outputWidth);
+            }
+        }
 
         // Helper    
         THCudaTensor *output_n = THCudaTensor_new();
@@ -205,10 +205,10 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
         for (int elt = 0; elt < batchSize; elt ++) {
             // Extract columns:
             im2col(
-                THCudaTensor_data(input) + elt * nInputPlane * inputHeight * inputWidth,
-                nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
-                THCudaTensor_data(columns)
-            );
+                    THCudaTensor_data(input) + elt * nInputPlane * inputHeight * inputWidth,
+                    nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
+                    THCudaTensor_data(columns)
+                  );
 
             // Matrix mulitply per output:
             THCudaTensor_select(output_n, output, 0, elt);
