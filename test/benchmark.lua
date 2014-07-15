@@ -77,7 +77,7 @@ for i,run in ipairs(runs) do
 
    cutorch.synchronize()
    sys.tic()
-   for t = 1,10 do
+   for t = 1,steps do
       o2 = n2:updateOutput(i2)
    end
    cutorch.synchronize()
