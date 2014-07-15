@@ -97,7 +97,6 @@ static void __global__ fillBias(float *out, const float* __restrict bias,
     const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
     const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
     
-    /* since 8 warps per batch-slice, divide the slice into ranges */
     const int oD_ = blockIdx.x; 
 
     out = out + oD_ * oH * oW;
