@@ -840,9 +840,9 @@ function cunntest.SpatialConvolution_backward_batch()
 end
 
 function cunntest.SpatialConvolutionMM_forward_batch()
-   local bs = math.random(4,16)
+   local bs = math.random(1,4) * 4
    local from = math.random(1,32)
-   local to = math.random(1,64)
+   local to = math.random(1,8) * 8
    local ki = math.random(3,15)
    local kj = ki
    local si = 1 -- not supported by CPU version yet

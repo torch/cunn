@@ -140,13 +140,14 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
         // Batch size + input planes
         long batchSize = input->size[0];
 	luaL_argcheck(L, batchSize % 4 == 0, 1, "batch size should be a multiple of 4");
+	luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
         // Resize output
         THCudaTensor_resize4d(output, batchSize, nOutputPlane, outputHeight, outputWidth);
 
         // Resize temporary columns
         THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
-        
+
 	/* add bias */
 	{
 	  /* 
@@ -159,8 +160,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 	  dim3 blocks(batchSize/4); /* 128/4 = 32 */
 	  dim3 threads(1024); 
 	  fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
-					      batchSize, 
-					      nOutputPlane, outputHeight, outputWidth);
+					      batchSize, nOutputPlane, outputHeight, outputWidth);
 	}
 
         // Helper    
