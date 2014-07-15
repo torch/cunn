@@ -50,46 +50,46 @@ void im2col(const float* data_im, const int channels,
     int num_kernels = channels * height_col * width_col;
     // Launch
     im2col_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS>>> (
-        num_kernels, data_im, height, width, ksize, 
-        pad, stride, 
-        height_col, width_col, data_col
-    );
+            num_kernels, data_im, height, width, ksize, 
+            pad, stride, 
+            height_col, width_col, data_col
+            );
 }
 
 static void __global__ fillBiasBatch(float *out, const float* __restrict bias, 
-			       const int batchSize, const int oD, const int oH, const int oW) {
-  /* one warp = 1/8th batch */
-  const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
-  const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
-  const int batchIdx = blockIdx.x * 4 + warpIdx / 8 ; /* 0 to batchSize-1 */
+        const int batchSize, const int oD, const int oH, const int oW) {
+    /* one warp = 1/8th batch */
+    const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
+    const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
+    const int batchIdx = blockIdx.x * 4 + warpIdx / 8 ; /* 0 to batchSize-1 */
 
-  /* since 8 warps per batch-slice, divide the slice into ranges */
-  const int outStart = warpIdx % 8 * (oD/8); 
+    /* since 8 warps per batch-slice, divide the slice into ranges */
+    const int outStart = warpIdx % 8 * (oD/8); 
 
-  out = out + batchIdx * oD * oH * oW + outStart * oH * oW;
-  bias = bias + outStart;
-  const int oL = oD/8 * oH * oW;
+    out = out + batchIdx * oD * oH * oW + outStart * oH * oW;
+    bias = bias + outStart;
+    const int oL = oD/8 * oH * oW;
 
-  int i=0;
-  for (; i <= oL - 32; i+=32) {
-    /* calculate which feature map this output location belongs to */
-    const int oD_ = (i + laneIdx) / (oH * oW);
-    
-    /* load the appropriate bias into a register */
-    float b_ = bias[oD_];
-    
-    /* set the bias */
-    out[i + laneIdx] = b_;
-  }
+    int i=0;
+    for (; i <= oL - 32; i+=32) {
+        /* calculate which feature map this output location belongs to */
+        const int oD_ = (i + laneIdx) / (oH * oW);
 
-  /* rest of output */
-  if (laneIdx == 0) {
-    for(; i < oL; ++i) {
-      const int oD_ = i / (oH * oW);
-      float b_ = bias[oD_];
-      out[i] = b_;
+        /* load the appropriate bias into a register */
+        float b_ = bias[oD_];
+
+        /* set the bias */
+        out[i + laneIdx] = b_;
     }
-  }  
+
+    /* rest of output */
+    if (laneIdx == 0) {
+        for(; i < oL; ++i) {
+            const int oD_ = i / (oH * oW);
+            float b_ = bias[oD_];
+            out[i] = b_;
+        }
+    }  
 }
 
 
@@ -123,14 +123,14 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     long inputHeight  = input->size[dimh];
     long outputWidth  = (inputWidth - kW) / dW + 1;
     long outputHeight = (inputHeight - kH) / dH + 1;
-    
+
     luaL_argcheck(L, kW == kH, 1, "filters must be square (kW == kH)");
     luaL_argcheck(L, dW == dH, 1, "stride must be square (dW == dH)");
-    
+
     if (input->nDimension == 3) {
         // Resize output
         THCudaTensor_resize3d(output, nOutputPlane, outputHeight, outputWidth);
-        
+
         // Resize temporary columns
         THCudaTensor_resize2d(columns, outputHeight*outputWidth, nOutputPlane*kW*kH);
 
@@ -139,8 +139,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     } else {
         // Batch size + input planes
         long batchSize = input->size[0];
-	luaL_argcheck(L, batchSize % 4 == 0, 1, "batch size should be a multiple of 4");
-	luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
+        luaL_argcheck(L, batchSize % 4 == 0, 1, "batch size should be a multiple of 4");
+        luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
         // Resize output
         THCudaTensor_resize4d(output, batchSize, nOutputPlane, outputHeight, outputWidth);
@@ -148,20 +148,20 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
         // Resize temporary columns
         THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
 
-	/* add bias */
-	{
-	  /* 
-	     batchSize/4 blocks
-	     32 warps per block, 
-	     4 batches per block, 
-	     8 warps per batch-slice 
-	     Each warp handles 1 batch's nOutputPlane/8 
-	  */
-	  dim3 blocks(batchSize/4); /* 128/4 = 32 */
-	  dim3 threads(1024); 
-	  fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
-					      batchSize, nOutputPlane, outputHeight, outputWidth);
-	}
+        /* add bias */
+        {
+            /* 
+               batchSize/4 blocks
+               32 warps per block, 
+               4 batches per block, 
+               8 warps per batch-slice 
+               Each warp handles 1 batch's nOutputPlane/8 
+             */
+            dim3 blocks(batchSize/4); /* 128/4 = 32 */
+            dim3 threads(1024); 
+            fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
+                    batchSize, nOutputPlane, outputHeight, outputWidth);
+        }
 
         // Helper    
         THCudaTensor *output_n = THCudaTensor_new();
