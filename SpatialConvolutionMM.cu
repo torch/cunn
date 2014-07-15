@@ -92,6 +92,32 @@ static void __global__ fillBiasBatch(float *out, const float* __restrict bias,
     }  
 }
 
+static void __global__ fillBias(float *out, const float* __restrict bias, 
+				const int oD, const int oH, const int oW) {    
+    const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
+    const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
+    
+    /* since 8 warps per batch-slice, divide the slice into ranges */
+    const int oD_ = blockIdx.x; 
+
+    out = out + oD_ * oH * oW;
+    const int oL = oH * oW;
+    float b_ = bias[oD_];  /* load the appropriate bias into a register */
+
+    int i=0;
+    for (; i <= oL - 32; i+=32) {       
+        /* set the bias */
+        out[i + laneIdx] = b_;
+    }
+
+    /* rest of output */
+    if (laneIdx == 0) {
+        for(; i < oL; ++i) {
+            out[i] = b_;
+        }
+    }  
+}
+
 
 static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     // Input
@@ -139,7 +165,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     } else {
         // Batch size + input planes
         long batchSize = input->size[0];
-        luaL_argcheck(L, batchSize % 4 == 0, 1, "batch size should be a multiple of 4");
+        luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
         luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
         // Resize output
@@ -150,6 +176,15 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 
         /* add bias */
         {
+	  if (batchSize == 1) {
+	    /* 32 warps per batch-slice
+	       Each warp handles 1 output plane */
+	    dim3 blocks(nOutputPlane);
+            dim3 threads(1024);
+	    fillBias <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
+					   nOutputPlane, outputHeight, outputWidth);
+	  }
+	  else {
             /* 
                batchSize/4 blocks
                32 warps per block, 
@@ -161,7 +196,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
             dim3 threads(1024); 
             fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
                     batchSize, nOutputPlane, outputHeight, outputWidth);
-        }
+	  }
+	}
 
         // Helper    
         THCudaTensor *output_n = THCudaTensor_new();
