@@ -56,6 +56,43 @@ void im2col(const float* data_im, const int channels,
     );
 }
 
+static void __global__ fillBiasBatch(float *out, const float* __restrict bias, 
+			       const int batchSize, const int oD, const int oH, const int oW) {
+  /* one warp = 1/8th batch */
+  const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
+  const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
+  const int batchIdx = blockIdx.x * 4 + warpIdx / 8 ; /* 0 to batchSize-1 */
+
+  /* since 8 warps per batch-slice, divide the slice into ranges */
+  const int outStart = warpIdx % 8 * (oD/8); 
+
+  out = out + batchIdx * oD * oH * oW + outStart * oH * oW;
+  bias = bias + outStart;
+  const int oL = oD/8 * oH * oW;
+
+  int i=0;
+  for (; i <= oL - 32; i+=32) {
+    /* calculate which feature map this output location belongs to */
+    const int oD_ = (i + laneIdx) / (oH * oW);
+    
+    /* load the appropriate bias into a register */
+    float b_ = bias[oD_];
+    
+    /* set the bias */
+    out[i + laneIdx] = b_;
+  }
+
+  /* rest of output */
+  if (laneIdx == 0) {
+    for(; i < oL; ++i) {
+      const int oD_ = i / (oH * oW);
+      float b_ = bias[oD_];
+      out[i] = b_;
+    }
+  }  
+}
+
+
 static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     // Input
     THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -102,25 +139,32 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     } else {
         // Batch size + input planes
         long batchSize = input->size[0];
+	luaL_argcheck(L, batchSize % 4 == 0, 1, "batch size should be a multiple of 4");
 
         // Resize output
         THCudaTensor_resize4d(output, batchSize, nOutputPlane, outputHeight, outputWidth);
 
         // Resize temporary columns
         THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
-    
+        
+	/* add bias */
+	{
+	  /* 
+	     batchSize/4 blocks
+	     32 warps per block, 
+	     4 batches per block, 
+	     8 warps per batch-slice 
+	     Each warp handles 1 batch's nOutputPlane/8 
+	  */
+	  dim3 blocks(batchSize/4); /* 128/4 = 32 */
+	  dim3 threads(1024); 
+	  fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
+					      batchSize, 
+					      nOutputPlane, outputHeight, outputWidth);
+	}
+
         // Helper    
         THCudaTensor *output_n = THCudaTensor_new();
-    
-        // Add bias first
-        // TODO: replace this by something more optimized
-        // fill doesnt seem that efficient + get1d forces a dev->host copy
-        THCudaTensor *outputPlane = THCudaTensor_new();
-        for (int k=0; k<nOutputPlane; k++) {
-            THCudaTensor_select(outputPlane, output, 1, k);
-            THCudaTensor_fill(outputPlane, THCudaTensor_get1d(bias, k));
-        }
-        THCudaTensor_free(outputPlane);
 
         // For each elt in batch, do:
         for (int elt = 0; elt < batchSize; elt ++) {
