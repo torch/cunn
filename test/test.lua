@@ -882,6 +882,50 @@ function cunntest.SpatialConvolutionMM_forward_batch()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
+function cunntest.SpatialConvolutionMM_BHWD_forward_batch()
+   local bs = math.random(1,4) * 4
+   local from = math.random(1,32)
+   local to = math.random(1,8) * 8
+   local ki = math.random(3,15)
+   local kj = ki
+   local si = 1 -- not supported by CPU version yet
+   local sj = si
+   local outi = math.random(1,64)
+   local outj = math.random(1,64)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+
+   local tm = {}
+   local title = string.format('SpatialConvolutionMM.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]', 
+                               bs, from, inj, ini, kj, ki, bs, to, outj, outi, sj, si)
+   times[title] = tm
+
+   local input = torch.randn(bs,from,inj,ini)
+   local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda():transpose(2,3):transpose(3,4):contiguous()
+   local gconv = nn.SpatialConvolutionMM_BHWD(from,to,ki,kj,si,sj):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+   rescuda = rescuda:transpose(4,3):transpose(3,2):contiguous()
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
 function cunntest.SpatialConvolutionCUDA_forward_batch()
    local bs = 32 
    local from = 4 * math.random(1,4)
