@@ -56,6 +56,56 @@ void im2col(const float* data_im, const int channels,
             );
 }
 
+__global__ void col2im_kernel(const int n, const float* data_col,
+        const int height, const int width, const int channels, const int ksize,
+        const int pad, const int stride, const int height_col, const int width_col,
+        float* data_im) {
+    CUDA_KERNEL_LOOP(index, n) {
+        float val = 0;
+        int w = index % width + pad;
+        int h = (index / width) % height + pad;
+        int c = index / (width * height);
+        // compute the start and end of the output
+        int w_col_start = (w < ksize) ? 0 : (w - ksize) / stride + 1;
+        int w_col_end = min(w / stride + 1, width_col);
+        int h_col_start = (h < ksize) ? 0 : (h - ksize) / stride + 1;
+        int h_col_end = min(h / stride + 1, height_col);
+        /*
+           for (int h_col = h_col_start; h_col < h_col_end; ++h_col) {
+           for (int w_col = w_col_start; w_col < w_col_end; ++w_col) {
+        // the col location: [c * width * height + h_out, w_out]
+        int c_col = c * ksize * ksize + (h - h_col * stride) * ksize + (w - w_col * stride);
+        val += data_col[(c_col * height_col + h_col) * width_col + w_col];
+        }
+        }
+         */
+        // equivalent implementation
+        int offset = (c * ksize * ksize + h * ksize + w) * height_col * width_col;
+        int coeff_h_col = (1 - stride * ksize * height_col) * width_col;
+        int coeff_w_col = (1 - stride * height_col * width_col);
+        for (int h_col = h_col_start; h_col < h_col_end; ++h_col) {
+            for (int w_col = w_col_start; w_col < w_col_end; ++w_col) {
+                val += data_col[offset + h_col * coeff_h_col + w_col * coeff_w_col];
+            }
+        }
+        data_im[index] = val;
+    }
+}
+
+void col2im(const float* data_col, const int channels,
+        const int height, const int width, const int ksize, const int pad,
+        const int stride, float* data_im) {
+    int height_col = (height + 2 * pad - ksize) / stride + 1;
+    int width_col = (width + 2 * pad - ksize) / stride + 1;
+    int num_kernels = channels * height * width;
+    // To avoid involving atomic operations, we will launch one kernel per
+    // bottom dimension, and then in the kernel add up the top dimensions.
+    col2im_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS>>> (
+        num_kernels, data_col, height, width, channels, ksize, pad, stride,
+        height_col, width_col, data_im
+    );
+}
+
 static void __global__ fillBiasBatch(float *out, const float* __restrict bias, 
         const int batchSize, const int oD, const int oH, const int oW) {
     /* one warp = 1/8th batch */
@@ -153,12 +203,6 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     luaL_argcheck(L, dW == dH, 1, "stride must be square (dW == dH)");
 
     if (input->nDimension == 3) {
-        // Resize output
-        THCudaTensor_resize3d(output, nOutputPlane, outputHeight, outputWidth);
-
-        // Resize temporary columns
-        THCudaTensor_resize2d(columns, outputHeight*outputWidth, nOutputPlane*kW*kH);
-
         // implementation in progress...
 
     } else {
@@ -198,25 +242,27 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
             }
         }
 
-        // Helper    
+        // Helpers
+        THCudaTensor *input_n = THCudaTensor_new();
         THCudaTensor *output_n = THCudaTensor_new();
 
         // For each elt in batch, do:
         for (int elt = 0; elt < batchSize; elt ++) {
+            // Matrix mulitply per output:
+            THCudaTensor_select(input_n, input, 0, elt);
+            THCudaTensor_select(output_n, output, 0, elt);
+
             // Extract columns:
             im2col(
-                    THCudaTensor_data(input) + elt * nInputPlane * inputHeight * inputWidth,
-                    nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
-                    THCudaTensor_data(columns)
-                  );
-
-            // Matrix mulitply per output:
-            THCudaTensor_select(output_n, output, 0, elt);
+                THCudaTensor_data(input_n),
+                nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
+                THCudaTensor_data(columns)
+            );
 
             // M,N,K are dims of matrix A and B
             // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
-            long m = output_n->size[0];
-            long n = output_n->size[1] * output_n->size[2];
+            long m = weight->size[0];
+            long n = columns->size[1];
             long k = weight->size[1];
 
             // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
@@ -233,6 +279,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
         }
 
         // Free
+        THCudaTensor_free(input_n);
         THCudaTensor_free(output_n);
     }
 
@@ -241,7 +288,94 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 }
 
 static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
-    // implementation in progress
+    // Inputs
+    THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
+    THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
+
+    // Params
+    int dW = luaT_getfieldcheckint(L, 1, "dW");
+    int dH = luaT_getfieldcheckint(L, 1, "dH");
+    int kW = luaT_getfieldcheckint(L, 1, "kW");
+    int kH = luaT_getfieldcheckint(L, 1, "kH");
+    int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
+    int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
+    int padding = luaT_getfieldcheckint(L, 1, "padding");
+
+    THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
+    THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
+    THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+    
+    int dimw = 2;
+    int dimh = 1;
+    if (input->nDimension == 4) {
+        dimw++;
+        dimh++;
+    }
+    long inputWidth   = input->size[dimw];
+    long inputHeight  = input->size[dimh];
+    long outputWidth  = (inputWidth - kW) / dW + 1;
+    long outputHeight = (inputHeight - kH) / dH + 1;
+
+    if (input->nDimension == 3) {
+        // implementation in progress...
+
+    } else {
+        // Batch size + input planes
+        long batchSize = input->size[0];
+        luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
+        luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
+
+        // Resize output
+        THCudaTensor_resize4d(gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
+
+        // Resize temporary columns
+        THCudaTensor_resize2d(gradColumns, nInputPlane*kW*kH, outputHeight*outputWidth);
+        
+        // Helpers
+        THCudaTensor *input_n = THCudaTensor_new();
+        THCudaTensor *gradInput_n = THCudaTensor_new();
+        THCudaTensor *gradOutput_n = THCudaTensor_new();
+
+        // For each elt in batch, do:
+        for (int elt = 0; elt < batchSize; elt ++) {
+            // Matrix mulitply per sample:
+            THCudaTensor_select(input_n, input, 0, elt);
+            THCudaTensor_select(gradInput_n, gradInput, 0, elt);
+            THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
+            
+            // M,N,K are dims of matrix A and B
+            // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+            long m = weight->size[1];
+            long n = gradColumns->size[1];
+            long k = weight->size[0];
+           
+            // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+            cublasSgemm(
+                'n', 't',
+                n, m, k,
+                1, 
+                THCudaTensor_data(gradOutput_n), n,
+                THCudaTensor_data(weight), m,
+                0,
+                THCudaTensor_data(gradColumns), n
+            );
+            THCublasCheck();
+            
+            // Unpack columns back into input:
+            col2im(
+                THCudaTensor_data(gradColumns),
+                nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
+                THCudaTensor_data(gradInput_n)
+            );
+        }
+
+        // Free
+        THCudaTensor_free(input_n);
+        THCudaTensor_free(gradInput_n);
+        THCudaTensor_free(gradOutput_n);
+    }
+
+    // Return gradInput
     return 1;
 }
 
