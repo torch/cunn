@@ -49,6 +49,17 @@ runs = {
       dw = 1,
       dh = 1,
    },
+   {  -- layers with small inputs/kernels, seen at the lower ends of the network
+      ni = 384,
+      no = 384,
+      kw = 3,
+      kh = 3,
+      iw = 13,
+      ih = 13,
+      bs = 128,
+      dw = 1,
+      dh = 1,
+   },
 }
 
 for i,run in ipairs(runs) do
