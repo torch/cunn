@@ -186,7 +186,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
     THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
-    luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
+    /* luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected"); */
+    luaL_argcheck(L, input->nDimension == 4, 2, "4D (batch mode) tensor is expected");
 
     int dimw = 2;
     int dimh = 1;
@@ -305,6 +306,9 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
     THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
     THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
     
+    /* luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected"); */
+    luaL_argcheck(L, input->nDimension == 4, 2, "4D (batch mode) tensor is expected");
+    
     int dimw = 2;
     int dimh = 1;
     if (input->nDimension == 4) {
@@ -398,7 +402,8 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     THCudaTensor *gradBias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
     THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
 
-    luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
+    /* luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected"); */
+    luaL_argcheck(L, input->nDimension == 4, 2, "4D (batch mode) tensor is expected");
 
     int dimw = 2;
     int dimh = 1;
