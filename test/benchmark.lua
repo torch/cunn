@@ -115,6 +115,26 @@ for i,run in ipairs(runs) do
    cutorch.synchronize()
    tm = sys.toc()/steps
    print('BDHW:updateGradInput(): ' .. (ni*no*kw*kh*(iw-kw+1)*(ih-kh+1) /dw/dh * bs * ops / tm / 1e9) .. ' GFLOP/s (tm = ' .. tm .. ')')
+   
+   collectgarbage()
+   
+   cutorch.synchronize()
+   sys.tic()
+   for t = 1,steps do
+      n1:accGradParameters(i1, o1)
+   end
+   cutorch.synchronize()
+   tm = sys.toc()/steps
+   print('DHWB:accGradParameters(): ' .. (ni*no*kw*kh*(iw-kw+1)*(ih-kh+1) /dw/dh * bs * ops / tm / 1e9) .. ' GFLOP/s (tm = ' .. tm .. ')')
+
+   cutorch.synchronize()
+   sys.tic()
+   for t = 1,steps do
+      n2:accGradParameters(i2, o2)
+   end
+   cutorch.synchronize()
+   tm = sys.toc()/steps
+   print('BDHW:accGradParameters(): ' .. (ni*no*kw*kh*(iw-kw+1)*(ih-kh+1) /dw/dh * bs * ops / tm / 1e9) .. ' GFLOP/s (tm = ' .. tm .. ')')
 end
 
 print('')
