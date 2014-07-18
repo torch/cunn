@@ -896,7 +896,7 @@ function cunntest.SpatialConvolutionMM_backward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolution.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
+   local title = string.format('SpatialConvolutionMM.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
    times[title] = tm
 
