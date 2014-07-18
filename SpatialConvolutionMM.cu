@@ -400,7 +400,7 @@ static void __global__ gradBiasBatch(const float* __restrict out, float* gradBia
   int oD_previous = laneIdx / (oH * oW);
   float gb_ = 0;
   int i=0;
-  int oD_;
+  int oD_ = oD_previous;
   for (; i <= oL - 32; i+=32) {
     /* calculate which feature map this output location belongs to */
     oD_ = (i + laneIdx) / (oH * oW);
@@ -412,11 +412,10 @@ static void __global__ gradBiasBatch(const float* __restrict out, float* gradBia
     }
     /* accumulate */
     gb_ += scale * out[i + laneIdx];
-  }    
+  }
   atomicAdd(gradBias + oD_, gb_); gb_ = 0;
-
   /* rest of output */
-  if (laneIdx == 0) {
+  if (laneIdx == 0) {    
     for(; i < oL; ++i) {
       oD_ = i / (oH * oW);
 	    /* check if it's time to hit global memory */
