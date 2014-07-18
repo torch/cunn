@@ -1,3 +1,5 @@
+// WARNING: this module is incomplete - and just meant for reference for now.
+
 // Kernel for fast unfold+copy
 // (borrowed from Caffe: https://github.com/BVLC/caffe/blob/master/src/caffe/layers/conv_layer.cu)
 __global__ void imt2col_kernel(const int n, const float* data_im,
