@@ -406,7 +406,7 @@ static void __global__ gradBiasBatch(const float* __restrict out, float* gradBia
     oD_ = (i + laneIdx) / (oH * oW);
     /* check if it's time to hit global memory */
     if (oD_ != oD_previous) {
-      atomicAdd(gradBias + oD_, gb_);
+      atomicAdd(gradBias + oD_previous, gb_);
       oD_previous = oD_;
       gb_ = 0;
     }
@@ -421,7 +421,7 @@ static void __global__ gradBiasBatch(const float* __restrict out, float* gradBia
       oD_ = i / (oH * oW);
 	    /* check if it's time to hit global memory */
 	    if (oD_ != oD_previous) {
-	      atomicAdd(gradBias + oD_, gb_);
+	      atomicAdd(gradBias + oD_previous, gb_);
 	      oD_previous = oD_;
 	      gb_ = 0;
 	    }
