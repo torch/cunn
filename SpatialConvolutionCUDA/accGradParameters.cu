@@ -411,7 +411,6 @@ void spatialConv_accGradParameters(
     assert(paddingStart + (numModulesY-1)*moduleStride + filterSize >= imgSizeY);
     assert(moduleStride <= filterSize);
     
-    int preloadCases = 32;
 
     dim3 blocks, threads;
     int bx, by;
@@ -431,7 +430,7 @@ void spatialConv_accGradParameters(
         bx = numFilters % 32 == 0 ? 32 : 16; 
         blocks = dim3((numModules/partialSum)*(numFilters/bx), DIVUP(filterPixels, by*pixelsPerThread));
     }
-    assert((by * bx) % preloadCases == 0);
+    assert((by * bx) % 32 == 0);
     threads = dim3(bx, by);
     bool checkCaseBounds = numImages % 32 != 0;
     

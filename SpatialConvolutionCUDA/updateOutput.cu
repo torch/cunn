@@ -374,7 +374,7 @@ void spatialConv_updateOutput(
 {
     int numGroups = 1;
     int imgStride = numImages;
-    int numFilterColors = numImgColors / numGroups;
+    // not used because numGroups was hardcoded to 1 // int numFilterColors = numImgColors / numGroups;
     int numModules = numModulesY * numModulesX;
     int filterSize = filterSizeX; 
     int numFiltersPerGroup = numFilters / numGroups;
@@ -382,7 +382,7 @@ void spatialConv_updateOutput(
     assert(imgSizeY == imgSizeX);
     assert(filterSizeX == filterSizeY);
     assert(numGroups > 1 || (numImgColors > 0 && (numImgColors <= 3 || numImgColors % 2 == 0)));
-    assert(numGroups == 1 || numFilterColors % 2 == 0);
+    // numGroups has been hard-coded to 1 above, so commenting this assertion. // assert(numGroups == 1 || numFilterColors % 2 == 0);
     assert(numFilters % (16 * numGroups) == 0);
     assert(numImgColors % numGroups == 0);
     assert(paddingStart <= 0);
