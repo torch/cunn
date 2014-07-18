@@ -400,34 +400,35 @@ static void __global__ gradBiasBatch(const float* __restrict out, float* gradBia
   int oD_previous = laneIdx / (oH * oW);
   float gb_ = 0;
   int i=0;
+  int oD_;
   for (; i <= oL - 32; i+=32) {
     /* calculate which feature map this output location belongs to */
-    const int oD_ = (i + laneIdx) / (oH * oW);
+    oD_ = (i + laneIdx) / (oH * oW);
     /* check if it's time to hit global memory */
     if (oD_ != oD_previous) {
-      atomicAdd(gradBias++, gb_);
+      atomicAdd(gradBias + oD_, gb_);
       oD_previous = oD_;
       gb_ = 0;
     }
     /* accumulate */
     gb_ += scale * out[i + laneIdx];
   }    
-  atomicAdd(gradBias, gb_); gb_ = 0;
+  atomicAdd(gradBias + oD_, gb_); gb_ = 0;
 
   /* rest of output */
   if (laneIdx == 0) {
     for(; i < oL; ++i) {
-      const int oD_ = i / (oH * oW);
+      oD_ = i / (oH * oW);
 	    /* check if it's time to hit global memory */
 	    if (oD_ != oD_previous) {
-	      atomicAdd(gradBias++, gb_);
+	      atomicAdd(gradBias + oD_, gb_);
 	      oD_previous = oD_;
 	      gb_ = 0;
 	    }
 	    /* accumulate */
 	    gb_ += scale * out[i];
     }
-    atomicAdd(gradBias, gb_);
+    atomicAdd(gradBias + oD_, gb_);
   }
 }
 
