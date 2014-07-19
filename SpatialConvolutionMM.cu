@@ -195,8 +195,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   }
   long inputWidth   = input->size[dimw];
   long inputHeight  = input->size[dimh];
-  long outputWidth  = (inputWidth - kW) / dW + 1;
-  long outputHeight = (inputHeight - kH) / dH + 1;
+  long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
 
   luaL_argcheck(L, kW == kH, 1, "filters must be square (kW == kH)");
   luaL_argcheck(L, dW == dH, 1, "stride must be square (dW == dH)");
@@ -315,8 +315,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   }
   long inputWidth   = input->size[dimw];
   long inputHeight  = input->size[dimh];
-  long outputWidth  = (inputWidth - kW) / dW + 1;
-  long outputHeight = (inputHeight - kH) / dH + 1;
+  long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
 
   if (input->nDimension == 3) {
     // implementation in progress...
@@ -461,8 +461,8 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   }
   long inputWidth   = input->size[dimw];
   long inputHeight  = input->size[dimh];
-  long outputWidth  = (inputWidth - kW) / dW + 1;
-  long outputHeight = (inputHeight - kH) / dH + 1;
+  long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
 
   luaL_argcheck(L, kW == kH, 1, "filters must be square (kW == kH)");
   luaL_argcheck(L, dW == dH, 1, "stride must be square (dW == dH)");
@@ -521,7 +521,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
       cublasSgemm(
                   't', 'n',
                   n, m, k,
-                  1, 
+                  scale,
                   THCudaTensor_data(columns), k,
                   THCudaTensor_data(gradOutput_n), k,
                   1,
