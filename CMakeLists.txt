@@ -22,7 +22,7 @@ INCLUDE_DIRECTORIES("${Torch_INSTALL_INCLUDE}/THC")
 LINK_DIRECTORIES("${Torch_INSTALL_LIB}")
 
 SET(src-cuda init.cu)
-SET(luasrc init.lua)
+SET(luasrc init.lua test/test.lua)
 
 CUDA_ADD_LIBRARY(cunn MODULE ${src-cuda})
 TARGET_LINK_LIBRARIES(cunn luaT THC TH)
