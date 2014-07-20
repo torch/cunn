@@ -4,8 +4,6 @@ local precision_backward = 1e-2
 local nloop = 1
 local times = {}
 
-torch.setdefaulttensortype('torch.FloatTensor')
-
 --e.g.: th -lcunn -e "nn.testcuda{'copies'}"
 
 function cunntest.copies()
@@ -2444,11 +2442,14 @@ function cunntest.SpatialUpSamplingNearest_backward_batch()
 end
 
 function nn.testcuda(tests)
+   local oldtype = torch.getdefaulttensortype()
+   torch.setdefaulttensortype('torch.FloatTensor')
    math.randomseed(os.time())
    jac = nn.Jacobian
    mytester = torch.Tester()
    mytester:add(cunntest)
    mytester:run(tests)
+   torch.setdefaulttensortype(oldtype)
    print ''
    print ' ------------------------------------------------------------------------------------------------'
    print '|  Module                                                                          |  Speedup    |'
