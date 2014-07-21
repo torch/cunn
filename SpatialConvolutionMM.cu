@@ -280,6 +280,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   // Resize output
   if (batch == 0) {
     THCudaTensor_resize3d(output, nOutputPlane, outputHeight, outputWidth);
+    THCudaTensor_resize3d(input, nInputPlane, inputHeight, inputWidth);
   }
 
   // return output
@@ -304,77 +305,80 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
     
-  /* luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected"); */
-  luaL_argcheck(L, input->nDimension == 4, 2, "4D (batch mode) tensor is expected");
-    
-  int dimw = 2;
-  int dimh = 1;
-  if (input->nDimension == 4) {
-    dimw++;
-    dimh++;
+  luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
+  
+  int batch = 1;
+  if (input->nDimension == 3) {
+    // Force batch
+    batch = 0;
+    THCudaTensor_resize4d(input, 1, input->size[0], input->size[1], input->size[2]);
+    THCudaTensor_resize4d(gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2]);
   }
-  long inputWidth   = input->size[dimw];
-  long inputHeight  = input->size[dimh];
+    
+  long inputWidth   = input->size[3];
+  long inputHeight  = input->size[2];
   long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
   long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
 
-  if (input->nDimension == 3) {
-    // implementation in progress...
+  // Batch size + input planes
+  long batchSize = input->size[0];
+  luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
+  luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
-  } else {
-    // Batch size + input planes
-    long batchSize = input->size[0];
-    luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
-    luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
+  // Resize output
+  THCudaTensor_resize4d(gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
 
-    // Resize output
-    THCudaTensor_resize4d(gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
+  // Resize temporary columns
+  THCudaTensor_resize2d(gradColumns, nInputPlane*kW*kH, outputHeight*outputWidth);
+      
+  // Helpers
+  THCudaTensor *input_n = THCudaTensor_new();
+  THCudaTensor *gradInput_n = THCudaTensor_new();
+  THCudaTensor *gradOutput_n = THCudaTensor_new();
 
-    // Resize temporary columns
-    THCudaTensor_resize2d(gradColumns, nInputPlane*kW*kH, outputHeight*outputWidth);
-        
-    // Helpers
-    THCudaTensor *input_n = THCudaTensor_new();
-    THCudaTensor *gradInput_n = THCudaTensor_new();
-    THCudaTensor *gradOutput_n = THCudaTensor_new();
+  // For each elt in batch, do:
+  for (int elt = 0; elt < batchSize; elt ++) {
+    // Matrix mulitply per sample:
+    THCudaTensor_select(input_n, input, 0, elt);
+    THCudaTensor_select(gradInput_n, gradInput, 0, elt);
+    THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
+          
+    // M,N,K are dims of matrix A and B
+    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+    long m = weight->size[1];
+    long n = gradColumns->size[1];
+    long k = weight->size[0];
+         
+    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+    cublasSgemm(
+                'n', 't',
+                n, m, k,
+                1, 
+                THCudaTensor_data(gradOutput_n), n,
+                THCudaTensor_data(weight), m,
+                0,
+                THCudaTensor_data(gradColumns), n
+                );
+    THCublasCheck();
+          
+    // Unpack columns back into input:
+    col2im(
+           THCudaTensor_data(gradColumns),
+           nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
+           THCudaTensor_data(gradInput_n)
+           );
+  }
 
-    // For each elt in batch, do:
-    for (int elt = 0; elt < batchSize; elt ++) {
-      // Matrix mulitply per sample:
-      THCudaTensor_select(input_n, input, 0, elt);
-      THCudaTensor_select(gradInput_n, gradInput, 0, elt);
-      THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
-            
-      // M,N,K are dims of matrix A and B
-      // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
-      long m = weight->size[1];
-      long n = gradColumns->size[1];
-      long k = weight->size[0];
-           
-      // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-      cublasSgemm(
-                  'n', 't',
-                  n, m, k,
-                  1, 
-                  THCudaTensor_data(gradOutput_n), n,
-                  THCudaTensor_data(weight), m,
-                  0,
-                  THCudaTensor_data(gradColumns), n
-                  );
-      THCublasCheck();
-            
-      // Unpack columns back into input:
-      col2im(
-             THCudaTensor_data(gradColumns),
-             nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
-             THCudaTensor_data(gradInput_n)
-             );
-    }
+  // Free
+  THCudaTensor_free(input_n);
+  THCudaTensor_free(gradInput_n);
+  THCudaTensor_free(gradOutput_n);
 
-    // Free
-    THCudaTensor_free(input_n);
-    THCudaTensor_free(gradInput_n);
-    THCudaTensor_free(gradOutput_n);
+  // Resize output
+  if (batch == 0) {
+    THCudaTensor_resize3d(gradOutput, nOutputPlane, outputHeight, outputWidth);
+    THCudaTensor_resize3d(input, nInputPlane, inputHeight, inputWidth);
+    THCudaTensor_resize3d(gradInput, nInputPlane, inputHeight, inputWidth);
   }
 
   // Return gradInput
@@ -450,89 +454,91 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   THCudaTensor *gradBias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
 
-  /* luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected"); */
-  luaL_argcheck(L, input->nDimension == 4, 2, "4D (batch mode) tensor is expected");
-
-  int dimw = 2;
-  int dimh = 1;
-  if (input->nDimension == 4) {
-    dimw++;
-    dimh++;
+  luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
+  
+  int batch = 1;
+  if (input->nDimension == 3) {
+    // Force batch
+    batch = 0;
+    THCudaTensor_resize4d(input, 1, input->size[0], input->size[1], input->size[2]);
+    THCudaTensor_resize4d(gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2]);
   }
-  long inputWidth   = input->size[dimw];
-  long inputHeight  = input->size[dimh];
+
+  long inputWidth   = input->size[3];
+  long inputHeight  = input->size[2];
   long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
   long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
 
   luaL_argcheck(L, kW == kH, 1, "filters must be square (kW == kH)");
   luaL_argcheck(L, dW == dH, 1, "stride must be square (dW == dH)");
 
-  if (input->nDimension == 3) {
-    // implementation in progress...
-    
-  } else {
-    // Batch size + input planes
-    long batchSize = input->size[0];
-    luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
-    luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
+  // Batch size + input planes
+  long batchSize = input->size[0];
+  luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
+  luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
-    /* gradBias */
-    {
-      /* 
-         batchSize/4 blocks
-         32 warps per block, 
-         4 batches per block, 
-         8 warps per batch-slice 
-         Each warp handles 1 batch's nOutputPlane/8 
-      */
-      dim3 blocks(batchSize/4); /* 128/4 = 32 */
-      dim3 threads(1024); 
-      gradBiasBatch <<<blocks,threads>>> (THCudaTensor_data(gradOutput), THCudaTensor_data(gradBias),
-                                          batchSize, nOutputPlane, outputHeight, outputWidth, scale);
-    }	
+  /* gradBias */
+  {
+    /* 
+       batchSize/4 blocks
+       32 warps per block, 
+       4 batches per block, 
+       8 warps per batch-slice 
+       Each warp handles 1 batch's nOutputPlane/8 
+    */
+    dim3 blocks(batchSize/4); /* 128/4 = 32 */
+    dim3 threads(1024); 
+    gradBiasBatch <<<blocks,threads>>> (THCudaTensor_data(gradOutput), THCudaTensor_data(gradBias),
+                                        batchSize, nOutputPlane, outputHeight, outputWidth, scale);
+  }	
 
-    // Resize temporary columns
-    THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
-        
-    // Helpers
-    THCudaTensor *input_n = THCudaTensor_new();
-    THCudaTensor *gradOutput_n = THCudaTensor_new();
+  // Resize temporary columns
+  THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
+      
+  // Helpers
+  THCudaTensor *input_n = THCudaTensor_new();
+  THCudaTensor *gradOutput_n = THCudaTensor_new();
 
-    // For each elt in batch, do:
-    for (int elt = 0; elt < batchSize; elt ++) {
-      // Matrix mulitply per output:
-      THCudaTensor_select(input_n, input, 0, elt);
-      THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
+  // For each elt in batch, do:
+  for (int elt = 0; elt < batchSize; elt ++) {
+    // Matrix mulitply per output:
+    THCudaTensor_select(input_n, input, 0, elt);
+    THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
 
-      // Extract columns:
-      im2col(
-             THCudaTensor_data(input_n),
-             nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
-             THCudaTensor_data(columns)
-             );
+    // Extract columns:
+    im2col(
+           THCudaTensor_data(input_n),
+           nInputPlane, inputHeight, inputWidth, kW, padding, dW, 
+           THCudaTensor_data(columns)
+           );
 
-      // M,N,K are dims of matrix A and B
-      // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
-      long m = gradWeight->size[0];
-      long n = gradWeight->size[1];
-      long k = columns->size[1];
+    // M,N,K are dims of matrix A and B
+    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+    long m = gradWeight->size[0];
+    long n = gradWeight->size[1];
+    long k = columns->size[1];
 
-      // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-      cublasSgemm(
-                  't', 'n',
-                  n, m, k,
-                  scale,
-                  THCudaTensor_data(columns), k,
-                  THCudaTensor_data(gradOutput_n), k,
-                  1,
-                  THCudaTensor_data(gradWeight), n
-                  );
-      THCublasCheck();
-    }
+    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+    cublasSgemm(
+                't', 'n',
+                n, m, k,
+                scale,
+                THCudaTensor_data(columns), k,
+                THCudaTensor_data(gradOutput_n), k,
+                1,
+                THCudaTensor_data(gradWeight), n
+                );
+    THCublasCheck();
+  }
 
-    // Free
-    THCudaTensor_free(input_n);
-    THCudaTensor_free(gradOutput_n);
+  // Free
+  THCudaTensor_free(input_n);
+  THCudaTensor_free(gradOutput_n);
+  
+  // Resize 
+  if (batch == 0) {
+    THCudaTensor_resize3d(gradOutput, nOutputPlane, outputHeight, outputWidth);
+    THCudaTensor_resize3d(input, nInputPlane, inputHeight, inputWidth);
   }
 
   // Return nothing
