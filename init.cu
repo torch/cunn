@@ -26,6 +26,7 @@
 #include "Sqrt.cu"
 #include "MultiMarginCriterion.cu"
 #include "MSECriterion.cu"
+#include "DistKLDivCriterion.cu"
 #include "Threshold.cu"
 #include "Sigmoid.cu"
 #include "AbsCriterion.cu"
@@ -61,6 +62,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_Threshold_init(L);
   cunn_MSECriterion_init(L);
   cunn_AbsCriterion_init(L);
+  cunn_DistKLDivCriterion_init(L);
   cunn_Abs_init(L);
   cunn_SoftPlus_init(L);
   cunn_Exp_init(L);
