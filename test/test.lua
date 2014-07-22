@@ -991,7 +991,6 @@ function cunntest.SpatialConvolutionMM_forward_batch()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
---[[
 function cunntest.SpatialConvolutionMM_backward_single()
    local from = math.random(1,32)
    local to = math.random(1,8) * 8
@@ -1050,7 +1049,6 @@ function cunntest.SpatialConvolutionMM_backward_single()
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
-]]
 
 function cunntest.SpatialConvolutionMM_backward_batch()
    local bs = math.random(1,4) * 4

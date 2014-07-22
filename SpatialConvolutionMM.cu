@@ -106,66 +106,6 @@ void col2im(const float* data_col, const int channels,
                                                                  );
 }
 
-static void __global__ fillBiasBatch(float *out, const float* __restrict bias, 
-                                     const int batchSize, const int oD, const int oH, const int oW) {
-  /* one warp = 1/8th batch */
-  const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
-  const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
-  const int batchIdx = blockIdx.x * 4 + warpIdx / 8 ; /* 0 to batchSize-1 */
-
-  /* since 8 warps per batch-slice, divide the slice into ranges */
-  const int outStart = warpIdx % 8 * (oD/8); 
-
-  out = out + batchIdx * oD * oH * oW + outStart * oH * oW;
-  bias = bias + outStart;
-  const int oL = oD/8 * oH * oW;
-
-  int i=0;
-  for (; i <= oL - 32; i+=32) {
-    /* calculate which feature map this output location belongs to */
-    const int oD_ = (i + laneIdx) / (oH * oW);
-
-    /* load the appropriate bias into a register */
-    float b_ = bias[oD_];
-
-    /* set the bias */
-    out[i + laneIdx] = b_;
-  }
-
-  /* rest of output */
-  if (laneIdx == 0) {
-    for(; i < oL; ++i) {
-      const int oD_ = i / (oH * oW);
-      float b_ = bias[oD_];
-      out[i] = b_;
-    }
-  }  
-}
-
-static void __global__ fillBias(float *out, const float* __restrict bias, 
-                                const int oD, const int oH, const int oW) {    
-  const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
-
-  const int oD_ = blockIdx.x; 
-
-  out = out + oD_ * oH * oW;
-  const int oL = oH * oW;
-  float b_ = bias[oD_];  /* load the appropriate bias into a register */
-
-  int i=0;
-  for (; i <= oL - 32; i+=32) {       
-    /* set the bias */
-    out[i + laneIdx] = b_;
-  }
-
-  /* rest of output */
-  if (laneIdx == 0) {
-    for(; i < oL; ++i) {
-      out[i] = b_;
-    }
-  }  
-}
-
 static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   // Input
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -182,6 +122,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   THCudaTensor *weight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *bias = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
+  THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
@@ -203,8 +144,6 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   
   // Batch size + input planes
   long batchSize = input->size[0];
-  luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
-  luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
   // Resize output
   THCudaTensor_resize4d(output, batchSize, nOutputPlane, outputHeight, outputWidth);
@@ -212,29 +151,13 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   // Resize temporary columns
   THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
 
-  /* add bias */
-  {
-    if (batchSize == 1) {
-      /* 32 warps per batch-slice
-         Each warp handles 1 output plane */
-      dim3 blocks(nOutputPlane);
-      dim3 threads(1024);
-      fillBias <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
-                                     nOutputPlane, outputHeight, outputWidth);
-    }
-    else {
-      /* 
-         batchSize/4 blocks
-         32 warps per block, 
-         4 batches per block, 
-         8 warps per batch-slice 
-         Each warp handles 1 batch's nOutputPlane/8 
-      */
-      dim3 blocks(batchSize/4); /* 128/4 = 32 */
-      dim3 threads(1024); 
-      fillBiasBatch <<<blocks,threads>>> (THCudaTensor_data(output), THCudaTensor_data(bias),
-                                          batchSize, nOutputPlane, outputHeight, outputWidth);
-    }
+  // Define a buffer of ones, for bias accumulation
+  // Note: this buffer can be shared with other modules, it only ever gets increased, 
+  // and always contains ones.
+  if (ones->nDimension != 2 || ones->size[0]*ones->size[1] < outputHeight*outputWidth) {
+    // Resize plane and fill with ones...
+    THCudaTensor_resize2d(ones, outputHeight, outputWidth);
+    THCudaTensor_fill(ones, 1);
   }
 
   // Helpers
@@ -246,6 +169,24 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     // Matrix mulitply per output:
     THCudaTensor_select(input_n, input, 0, elt);
     THCudaTensor_select(output_n, output, 0, elt);
+   
+    // Do Bias first: 
+    // M,N,K are dims of matrix A and B
+    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+    long m_ = nOutputPlane;
+    long n_ = outputHeight * outputWidth;
+    long k_ = 1;
+
+    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+    cublasSgemm(
+      't', 'n',
+      n_, m_, k_,
+      1, 
+      THCudaTensor_data(ones), k_,
+      THCudaTensor_data(bias), k_,
+      0,
+      THCudaTensor_data(output_n), n_
+    );
 
     // Extract columns:
     im2col(
@@ -322,8 +263,6 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
 
   // Batch size + input planes
   long batchSize = input->size[0];
-  luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
-  luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
 
   // Resize output
   THCudaTensor_resize4d(gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
@@ -385,56 +324,6 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   return 1;
 }
 
-static void __global__ gradBiasBatch(const float* __restrict out, float* gradBias,
-                                     const int batchSize, 
-                                     const int oD, const int oH, const int oW, 
-                                     const float scale) {
-  /* one warp = 1/8th batch */
-  const int laneIdx  = threadIdx.x & 0x1f; /* 0 to 31 because 32 threads in warp */ 
-  const int warpIdx  = threadIdx.x / 32; /* 0 to 31, because 1024 threads */
-  const int batchIdx = blockIdx.x * 4 + warpIdx / 8 ; /* 0 to batchSize-1 */
-
-  /* since 8 warps per batch-slice, divide the slice into ranges */
-  const int outStart = warpIdx % 8 * (oD/8); 
-
-  out = out + batchIdx * oD * oH * oW + outStart * oH * oW;
-  gradBias = gradBias + outStart;
-  const int oL = oD/8 * oH * oW;
-    
-  int oD_previous = laneIdx / (oH * oW);
-  float gb_ = 0;
-  int i=0;
-  int oD_ = oD_previous;
-  for (; i <= oL - 32; i+=32) {
-    /* calculate which feature map this output location belongs to */
-    oD_ = (i + laneIdx) / (oH * oW);
-    /* check if it's time to hit global memory */
-    if (oD_ != oD_previous) {
-      atomicAdd(gradBias + oD_previous, gb_);
-      oD_previous = oD_;
-      gb_ = 0;
-    }
-    /* accumulate */
-    gb_ += scale * out[i + laneIdx];
-  }
-  atomicAdd(gradBias + oD_, gb_); gb_ = 0;
-  /* rest of output */
-  if (laneIdx == 0) {    
-    for(; i < oL; ++i) {
-      oD_ = i / (oH * oW);
-	    /* check if it's time to hit global memory */
-	    if (oD_ != oD_previous) {
-	      atomicAdd(gradBias + oD_previous, gb_);
-	      oD_previous = oD_;
-	      gb_ = 0;
-	    }
-	    /* accumulate */
-	    gb_ += scale * out[i];
-    }
-    atomicAdd(gradBias + oD_, gb_);
-  }
-}
-
 static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -453,6 +342,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
   THCudaTensor *gradBias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
+  THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
 
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
   
@@ -474,23 +364,13 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
 
   // Batch size + input planes
   long batchSize = input->size[0];
-  luaL_argcheck(L, batchSize == 1 || batchSize % 4 == 0, 1, "batch size should be a multiple of 4 or equal to 1");
-  luaL_argcheck(L, nOutputPlane % 8 == 0, 1, "nOutputPlane should be a multiple of 8");
-
-  /* gradBias */
-  {
-    /* 
-       batchSize/4 blocks
-       32 warps per block, 
-       4 batches per block, 
-       8 warps per batch-slice 
-       Each warp handles 1 batch's nOutputPlane/8 
-    */
-    dim3 blocks(batchSize/4); /* 128/4 = 32 */
-    dim3 threads(1024); 
-    gradBiasBatch <<<blocks,threads>>> (THCudaTensor_data(gradOutput), THCudaTensor_data(gradBias),
-                                        batchSize, nOutputPlane, outputHeight, outputWidth, scale);
-  }	
+  
+  // Define a buffer of ones, for bias accumulation
+  if (ones->nDimension != 2 || ones->size[0]*ones->size[1] < outputHeight*outputWidth) {
+    // Resize plane and fill with ones...
+    THCudaTensor_resize2d(ones, outputHeight, outputWidth);
+    THCudaTensor_fill(ones, 1);
+  }
 
   // Resize temporary columns
   THCudaTensor_resize2d(columns, nInputPlane*kW*kH, outputHeight*outputWidth);
@@ -529,6 +409,24 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
                 THCudaTensor_data(gradWeight), n
                 );
     THCublasCheck();
+    
+    // Do Bias: 
+    // M,N,K are dims of matrix A and B
+    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+    long m_ = nOutputPlane;
+    long n_ = 1;
+    long k_ = outputHeight * outputWidth;
+
+    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+    cublasSgemm(
+      'n', 'n',
+      n_, m_, k_,
+      scale, 
+      THCudaTensor_data(ones), n_,
+      THCudaTensor_data(gradOutput_n), k_,
+      1,
+      THCudaTensor_data(gradBias), n_
+    );
   }
 
   // Free
