@@ -706,7 +706,7 @@ function cunntest.SpatialConvolutionMM_forward_single()
    local from = math.random(1,32)
    local to = math.random(1,8) * 8
    local ki = math.random(3,15)
-   local kj = ki
+   local kj = math.random(3,15)
    local si = 1 -- not supported by CPU version yet
    local sj = si
    local outi = math.random(1,64)
@@ -749,7 +749,7 @@ function cunntest.SpatialConvolutionMM_forward_batch()
    local from = math.random(1,32)
    local to = math.random(1,8) * 8
    local ki = math.random(3,15)
-   local kj = ki
+   local kj = math.random(3,15)
    local si = 1 -- not supported by CPU version yet
    local sj = si
    local outi = math.random(1,64)
@@ -791,7 +791,7 @@ function cunntest.SpatialConvolutionMM_backward_single()
    local from = math.random(1,32)
    local to = math.random(1,8) * 8
    local ki = math.random(3,15)
-   local kj = ki
+   local kj = math.random(3,15)
    local si = 1 -- not supported by CPU version yet
    local sj = si
    local outi = math.random(1,64)
@@ -851,7 +851,7 @@ function cunntest.SpatialConvolutionMM_backward_batch()
    local from = math.random(1,32)
    local to = math.random(1,8) * 8
    local ki = math.random(3,15)
-   local kj = ki
+   local kj = math.random(3,15)
    local si = 1 -- not supported by CPU version yet
    local sj = si
    local outi = math.random(1,64)
