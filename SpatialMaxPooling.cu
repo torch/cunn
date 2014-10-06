@@ -3,8 +3,8 @@
 
 /*
  * Description:
- *    this function maxpools an input 3D tensor along dimensions 1 and 2
- *    3D input, 3D output, 3D argmax x and y 
+ *    this function maxpools an input 4D tensor along dimensions 2 and 3
+ *    4D input, 4D output, 4D argmax x and y 
  */
 __global__ void maxpool(float *input, float *output, float *indices_x, float *indices_y,
                         int input_n, int input_h, int input_w,
@@ -14,8 +14,8 @@ __global__ void maxpool(float *input, float *output, float *indices_x, float *in
   int xx, yy;
 
   // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
+  const int output_w = (input_w - kW) / dW + 1;
+  const int output_h = (input_h - kH) / dH + 1;
 
   // compute offsets based on thread/block ID
   int o = blockIdx.x;
@@ -24,11 +24,11 @@ __global__ void maxpool(float *input, float *output, float *indices_x, float *in
 
   int xx_start = threadIdx.x;
   int xx_end = output_w;
-  int xx_step = blockDim.x;
+  const int xx_step = blockDim.x;
 
   int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
   int yy_end = output_h;
-  int yy_step = blockDim.y*gridDim.y;
+  const int yy_step = blockDim.y*gridDim.y;
 
   // select input/output plane
   output = output + o*output_w*output_h;
@@ -46,12 +46,12 @@ __global__ void maxpool(float *input, float *output, float *indices_x, float *in
       float *ptr_ind_y = indices_y + yy*output_w + xx;
       int argmax_x = -1;
       int argmax_y = -1;
-      float max = 0;
+      float max = -FLT_MAX;
       int kx, ky;
       for(ky = 0; ky < kH; ky++) {
         for(kx = 0; kx < kW; kx++) {
           float val = ptr_input[kx];
-          if (val > max || argmax_x == -1) {
+          if (val > max) {
             max = val;
             argmax_x = kx;
             argmax_y = ky;
@@ -114,6 +114,60 @@ __global__ void maxgradinput(float *gradInput, float *gradOutput, float *indices
       int argmax_y = (*ptr_ind_y)-1;
 
       ptr_gradInput[argmax_x + argmax_y*input_w] += z;
+    }
+  }
+}
+
+/*
+ * Description:
+ *    this function computes the gradInput from weight and gradOutput
+ *    when kH != dH or kW != dW (uses atomic add)
+ */
+__global__ void atomicmaxgradinput(
+  float *gradInput, float *gradOutput, float *indices_x, float *indices_y,
+  int input_n, int input_h, int input_w, int kH, int kW, int dH, int dW
+)
+{
+  // iterators
+  int xx, yy;
+
+  // output size
+  int output_w = (input_w - kW) / dW + 1;
+  int output_h = (input_h - kH) / dH + 1;
+
+  // compute offsets based on thread/block ID
+  int o = blockIdx.x;
+  int i = o;
+  //int k = blockIdx.x % input_n;
+
+  int xx_start = threadIdx.x;
+  int xx_end = output_w;
+  int xx_step = blockDim.x;
+
+  int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
+  int yy_end = output_h;
+  int yy_step = blockDim.y*gridDim.y;
+
+  // select input/output plane
+  gradOutput = gradOutput + o*output_w*output_h;
+  gradInput = gradInput + i*input_w*input_h;
+  indices_x = indices_x + o*output_w*output_h;
+  indices_y = indices_y + o*output_w*output_h;
+
+  // compute gradInput
+  for(yy = yy_start; yy < yy_end; yy+=yy_step) {
+    for(xx = xx_start; xx < xx_end; xx+=xx_step) {
+      float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
+      float *ptr_gradOutput = gradOutput + yy*output_w + xx;
+      float *ptr_ind_x = indices_x + yy*output_w + xx;
+      float *ptr_ind_y = indices_y + yy*output_w + xx;
+      float z = *ptr_gradOutput;
+
+      int argmax_x = (*ptr_ind_x)-1;
+      int argmax_y = (*ptr_ind_y)-1;
+
+      // atomic add since different threads could update same variable
+      atomicAdd(&(ptr_gradInput[argmax_x + argmax_y*input_w]), z);
     }
   }
 }
@@ -214,9 +268,7 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
-
-  luaL_argcheck(L, dW == kW, 1, "dW and kW must be equal (this will be fixed soon)");
-  luaL_argcheck(L, dH == kH, 1, "dH and kH must be equal (this will be fixed soon)");
+  bool atomic = (dW != kW) || (dH != kH); 
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   THCudaTensor *indices = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
@@ -245,10 +297,20 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     dim3 blocks(nInputPlane,yblocks);
     dim3 threads(32,8);
 
-    // run updateGradInput kernel
-    maxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, 
-                                        indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
-                                        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    if(atomic)
+    {
+      // run updateGradInput kernel, accumulate gradients atomically
+      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, 
+                                          indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
+                                          nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    }
+    else
+    {
+      // run updateGradInput kernel
+      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, 
+                                          indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
+                                          nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    }
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
@@ -270,10 +332,20 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     dim3 blocks(nInputPlane*nbatch,yblocks);
     dim3 threads(32,8);
 
-    // run updateGradInput kernel
-    maxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
-                                        indices_data+nbatch*nInputPlane*nOutputCols*nOutputRows, indices_data,
-                                        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    if(atomic)
+    {
+      // run updateGradInput kernel, accumulate gradients atomically
+      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+                                          indices_data+nbatch*nInputPlane*nOutputCols*nOutputRows, indices_data,
+                                          nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    }
+    else
+    {
+      // run updateGradInput kernel, accumulate gradients atomically
+      maxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+                                          indices_data+nbatch*nInputPlane*nOutputCols*nOutputRows, indices_data,
+                                          nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    }
   }
 
   // check for errors

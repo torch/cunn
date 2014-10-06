@@ -1280,8 +1280,8 @@ function cunntest.SpatialMaxPooling_forward()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(1,4)
+   local sj = math.random(1,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
    local ini = (outi-1)*si+ki
@@ -1324,8 +1324,8 @@ function cunntest.SpatialMaxPooling_forward_batch()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(2,4)
+   local sj = math.random(2,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
    local ini = (outi-1)*si+ki
@@ -1364,8 +1364,8 @@ function cunntest.SpatialMaxPooling_backward()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(1,4)
+   local sj = math.random(1,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
    local ini = (outi-1)*si+ki
@@ -1414,6 +1414,7 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
+   -- enforce testing non-atomic kernel (dW == kW) and (dH == kH)
    local si = ki
    local sj = kj
    local outi = math.random(32,64)
@@ -1424,6 +1425,57 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local tm = {}
    local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(bs,from,inj,ini)
+   local gradOutput = torch.randn(bs,to,outj,outi)
+   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj):cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+function cunntest.SpatialMaxPooling_backward_batch_atomic()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local ki = math.random(2,4)
+   local kj = math.random(2,4)
+   -- enforce that kW ~= dW or kH ~= dH (which trigers the atomic kernel)
+   local si = ki + ((math.random(0,1) == 1) and -math.random(1,ki-1) or math.random(1,2))
+   local sj = kj + ((math.random(0,1) == 1) and  -math.random(1,kj-1) or math.random(1,2))
+   local outi = math.random(32,64)
+   local outj = math.random(32,64)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+
+   local tm = {}
+   local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d (%dx%d) -> %dx%dx%dx%d', 
+                               bs, from, inj, ini, kj, ki, si, sj, bs, to, outj, outi)
    times[title] = tm
 
    local input = torch.randn(bs,from,inj,ini)
