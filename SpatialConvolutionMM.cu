@@ -177,7 +177,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     long k_ = 1;
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    cublasSgemm(
+    THCudaBlas_gemm(
       't', 'n',
       n_, m_, k_,
       1, 
@@ -201,7 +201,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     long k = weight->size[1];
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    cublasSgemm(
+    THCudaBlas_gemm(
                 'n', 'n',
                 n, m, k,
                 1, 
@@ -210,7 +210,6 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
                 1,
                 THCudaTensor_data(output_n), n
                 );
-    THCublasCheck();
   }
 
   // Free
@@ -288,7 +287,7 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
     long k = weight->size[0];
          
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    cublasSgemm(
+    THCudaBlas_gemm(
                 'n', 't',
                 n, m, k,
                 1, 
@@ -297,7 +296,6 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
                 0,
                 THCudaTensor_data(gradColumns), n
                 );
-    THCublasCheck();
           
     // Unpack columns back into input:
     col2im(
@@ -397,7 +395,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     long k = columns->size[1];
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    cublasSgemm(
+    THCudaBlas_gemm(
                 't', 'n',
                 n, m, k,
                 scale,
@@ -406,7 +404,6 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
                 1,
                 THCudaTensor_data(gradWeight), n
                 );
-    THCublasCheck();
     
     // Do Bias: 
     // M,N,K are dims of matrix A and B
@@ -416,7 +413,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     long k_ = outputHeight * outputWidth;
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    cublasSgemm(
+    THCudaBlas_gemm(
       'n', 'n',
       n_, m_, k_,
       scale, 
