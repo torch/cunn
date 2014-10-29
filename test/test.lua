@@ -36,6 +36,231 @@ function cunntest.copies()
    mytester:asserteq(t:transpose(1,2):add(-1,t2):abs():max(), 0, 'host copy, plus transpoe')
 end
 
+function cunntest.Linear_nonblocking()
+   local nLoop = 100
+   local nBlock = 0
+   for i=1,100 do
+      collectgarbage()
+      local batchSize = math.random(32,72)
+      local inputSize = math.random(300, 2000)
+      local outputSize = math.random(300, 2000)
+      local l = nn.Linear(inputSize, outputSize):cuda()
+      local input = torch.randn(batchSize, inputSize):cuda()
+      local gradOutput = torch.randn(batchSize, outputSize):cuda()
+
+      l:forward(input)
+      l:backward(input, gradOutput)
+      cutorch.synchronize()
+      local startTime = os.clock()
+      for i=1,nLoop do
+         l:forward(input) 
+         l:backward(input, gradOutput)
+         l:updateParameters(0.1)
+      end
+      local asyncTime = os.clock()-startTime
+      cutorch.synchronize()
+      local syncTime = os.clock()-startTime
+      if syncTime < asyncTime*1.5 then
+         nBlock = nBlock + 1
+      end
+   end
+   mytester:assert(nBlock <= 5, "Linear non-blocking error (ignore for now) ~"..nBlock.."% blocking")
+end
+
+function cunntest.Linear_forward()
+   local inputSize = math.random(1,100)
+   local outputSize = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('Linear forward %d -> %d', inputSize, outputSize)
+   times[title] = tm
+
+   local input = torch.randn(inputSize)
+   local sconv = nn.Linear(inputSize, outputSize)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'Linear error on state (forward) ')
+end
+
+function cunntest.Linear_backward()
+   local inputSize = math.random(1,100)
+   local outputSize = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('Linear backward %d -> %d', inputSize, outputSize)
+   times[title] = tm
+
+   local input = torch.randn(inputSize)
+   local gradOutput = torch.randn(outputSize)
+   local sconv = nn.Linear(inputSize, outputSize)
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:cuda()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = sconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'Linear error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'Linear error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'Linear error on bias (backward) ')
+end
+
+
+function cunntest.Linear_forward_batch()
+   local batchSize = math.random(1,32)
+   local inputSize = math.random(1,100)
+   local outputSize = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('Linear (batch) forward %d,%d -> %d,%d', batchSize, inputSize, batchSize, outputSize)
+   times[title] = tm
+
+   local input = torch.randn(batchSize, inputSize)
+   local sconv = nn.Linear(inputSize, outputSize)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'Linear (batch) error on state (forward) ')
+   
+   -- test outputSize = 1 corner case
+   outputSize = 1
+   local input = torch.randn(batchSize, inputSize)
+   local sconv = nn.Linear(inputSize, outputSize)
+   local groundtruth = sconv:forward(input)
+   input = input:cuda()
+   local gconv = sconv:cuda()
+   local rescuda = gconv:forward(input)
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'Linear (batch) error on state (forward) (outputSize=1) ')
+end
+
+function cunntest.Linear_backward_batch()
+   local batchSize = math.random(1,32)
+   local inputSize = math.random(1,100)
+   local outputSize = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('Linear (batch) backward %d,%d -> %d,%d', batchSize, inputSize, batchSize, outputSize)
+   times[title] = tm
+
+   local input = torch.randn(batchSize, inputSize)
+   local gradOutput = torch.randn(batchSize, outputSize)
+   local sconv = nn.Linear(inputSize, outputSize)
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:cuda()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = sconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'Linear (batch) error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'Linear (batch) error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'Linear (batch) error on bias (backward) ')
+   
+   -- test outputSize = 1 corner case
+   outputSize = 1
+   local input = torch.randn(batchSize, inputSize)
+   local gradOutput = torch.randn(batchSize, outputSize)
+   local sconv = nn.Linear(inputSize, outputSize)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+   
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+   mytester:assertlt(error:abs():max(), precision_backward, 'Linear (batch) error on state (backward) (outputSize=1)')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'Linear (batch) error on weight (backward) (outputSize=1)')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'Linear (batch) error on bias (backward) (outputSize=1)')
+end
+
 function cunntest.Tanh_forward()
    local size = math.random(1,100)
 
@@ -2049,7 +2274,7 @@ function cunntest.TemporalConvolution_forward_batch()
 end
 
 function cunntest.TemporalConvolution_backward()
-  local from = math.random(1,64)
+   local from = math.random(1,64)
    local to = math.random(1,64)
    local ki = math.random(3,15)
    local si = math.random(1,2)
