@@ -266,7 +266,7 @@ static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
     for(k = 0; k < nOutputFrame; k++)
     {
       THCudaTensor_select(gradOutputWindow, gradOutput, 0, k);
-      THCudaTensor_cadd(gradBias, scale, gradOutputWindow);
+      THCudaTensor_cadd(gradBias, gradBias, scale, gradOutputWindow);
     }
 
     /* ouch */
@@ -308,7 +308,7 @@ static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
       for(k = 0; k < nOutputFrame; k++)
       {
         THCudaTensor_select(gradOutputWindow, gradOutputSample, 0, k);
-        THCudaTensor_cadd(gradBias, scale, gradOutputWindow);
+        THCudaTensor_cadd(gradBias, gradBias, scale, gradOutputWindow);
       }
 
       /* ouch */
