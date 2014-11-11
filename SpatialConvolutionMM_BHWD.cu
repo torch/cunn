@@ -41,7 +41,7 @@ void imt2col(const float* data_im, const int channels,
     // Launch
     for (int bidx = 0; bidx < batch; bidx++) {
         imt2col_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS>>> (
-            num_kernels, data_im, height, width, ksize, 
+            num_kernels, data_im, height, width, ksize,
             pad, stride, channels,
             height_col, width_col, bidx, batch,
             data_col
@@ -116,7 +116,7 @@ static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
         }
         THCudaTensor_free(outputPlane);
 
-        // Helper    
+        // Helper
         THCudaTensor *output_n = THCudaTensor_new();
 
         // For each elt in batch, do:
@@ -138,16 +138,15 @@ static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
             long k = weight->size[1];
 
             // Do GEMM_BHWD (note: this is a bit confusing because gemm assumes column-major matrices)
-            cublasSgemm(
+            THCudaBlas_gemm(
                 't', 't',
                 m, n, k,
-                1, 
+                1,
                 THCudaTensor_data(weight), k,
                 THCudaTensor_data(columns), n,
                 1,
-                THCudaTensor_data(output_n), m 
+                THCudaTensor_data(output_n), m
             );
-            THCublasCheck();
         }
 
         // Free

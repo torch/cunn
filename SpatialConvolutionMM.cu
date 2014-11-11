@@ -407,7 +407,6 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     // M,N,K are dims of matrix A and B
     // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
     long m_ = nOutputPlane;
-    long n_ = 1;
     long k_ = outputHeight * outputWidth;
 
     // Do GEMV (note: this is a bit confusing because gemv assumes column-major matrices)
