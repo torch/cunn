@@ -7,26 +7,26 @@ local times = {}
 --e.g.: th -lcunn -e "nn.testcuda{'copies'}"
 
 function cunntest.copies()
-   -- test vector   
+   -- test vector
    local t = torch.CudaTensor(100,10)
 
    -- simple copy
    t:normal()
-   t2 = t:clone()
+   local t2 = t:clone()
    mytester:asserteq( t:add(-1,t2):abs():max(), 0, 'simple copy')
 
    -- transpose copy
    t:normal()
-   t3 = t:transpose(1,2)
-   t4 = t3:clone()
+   local t3 = t:transpose(1,2)
+   local t4 = t3:clone()
    mytester:asserteq( t3:add(-1,t4):abs():max(), 0, 'transpose copy')
-   
+
    -- unfold copy
    t:normal()
-   t5 = t:unfold(2,5,1)
-   t6 = t5:clone()
+   local t5 = t:unfold(2,5,1)
+   local t6 = t5:clone()
    mytester:asserteq( t5:add(-1,t6):abs():max(), 0, 'transpose copy')
-   
+
    -- host copy
    t = torch.FloatTensor(100,10)
    t:normal()
@@ -457,7 +457,7 @@ function cunntest.Max_forward()
 
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   
+
    local error = gconv.indices:float() - sconv.indices
    mytester:assertlt(error:abs():max(), 1e-8, 'error on indices ')
 end
@@ -715,7 +715,7 @@ function cunntest.SpatialConvolutionMM_forward_single()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolutionMM.forward %dx%dx%d o %dx%d -> %dx%dx%d [s: %dx%d]', 
+   local title = string.format('SpatialConvolutionMM.forward %dx%dx%d o %dx%d -> %dx%dx%d [s: %dx%d]',
                                from, inj, ini, kj, ki, to, outj, outi, sj, si)
    times[title] = tm
 
@@ -758,7 +758,7 @@ function cunntest.SpatialConvolutionMM_forward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolutionMM.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]', 
+   local title = string.format('SpatialConvolutionMM.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi, sj, si)
    times[title] = tm
 
@@ -800,7 +800,7 @@ function cunntest.SpatialConvolutionMM_backward_single()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolutionMM.backward %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialConvolutionMM.backward %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -837,9 +837,9 @@ function cunntest.SpatialConvolutionMM_backward_single()
    cutorch.synchronize()
    tm.gpu = a:time().real
 
-   error = rescuda:float() - groundgrad
-   werror = weightcuda:float() - groundweight
-   berror = biascuda:float() - groundbias
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
@@ -860,7 +860,7 @@ function cunntest.SpatialConvolutionMM_backward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolutionMM.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
+   local title = string.format('SpatialConvolutionMM.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
    times[title] = tm
 
@@ -897,9 +897,9 @@ function cunntest.SpatialConvolutionMM_backward_batch()
    cutorch.synchronize()
    tm.gpu = a:time().real
 
-   error = rescuda:float() - groundgrad
-   werror = weightcuda:float() - groundweight
-   berror = biascuda:float() - groundbias
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
@@ -920,7 +920,7 @@ function cunntest.SpatialConvolutionMM_BHWD_forward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolutionMM.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]', 
+   local title = string.format('SpatialConvolutionMM.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi, sj, si)
    times[title] = tm
 
@@ -951,7 +951,7 @@ function cunntest.SpatialConvolutionMM_BHWD_forward_batch()
 end
 
 function cunntest.SpatialConvolutionCUDA_forward_batch()
-   local bs = 32 
+   local bs = 32
    local from = 4 * math.random(1,4)
    local to = 32
    local ki = math.random(3,15)
@@ -964,7 +964,7 @@ function cunntest.SpatialConvolutionCUDA_forward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolutionCUDA.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]', 
+   local title = string.format('SpatialConvolutionCUDA.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d]',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi, sj, si)
    times[title] = tm
 
@@ -1015,7 +1015,7 @@ function cunntest.SpatialConvolutionCUDA_backward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialConvolution.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
+   local title = string.format('SpatialConvolution.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
    times[title] = tm
 
@@ -1037,7 +1037,7 @@ function cunntest.SpatialConvolutionCUDA_backward_batch()
    input = input:resize(bs,from*ini*inj):t():contiguous():resize(from,ini,inj,bs):cuda()
    gradOutput = gradOutput:resize(bs,to*outi*outj):t():contiguous():resize(to,outi,outj,bs):cuda()
    local gconv = nn.SpatialConvolutionCUDA(from,to,ki,kj,si,sj):cuda()
-   
+
    local weight = sconv.weight:clone()
    weight:resize(to, from*ki*kj)
    weight = weight:t():contiguous()
@@ -1057,13 +1057,13 @@ function cunntest.SpatialConvolutionCUDA_backward_batch()
    local biascuda = gconv.gradBias
    cutorch.synchronize()
    tm.gpu = a:time().real
-   
+
    rescuda = rescuda:resize(from*ini*inj,bs):t():contiguous():resize(bs,from,ini,inj)
    weightcuda = weightcuda:resize(from*ki*kj, to):t():contiguous():resize(to, from, ki, kj)
 
-   error = rescuda:float() - groundgrad
-   werror = weightcuda:float() - groundweight
-   berror = biascuda:float() - groundbias
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
@@ -1084,7 +1084,7 @@ function cunntest.SpatialSubSampling_forward()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialSubSampling.forward %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialSubSampling.forward %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -1169,7 +1169,7 @@ function cunntest.SpatialSubSampling_backward()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialSubSampling.backward %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialSubSampling.backward %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -1229,7 +1229,7 @@ function cunntest.SpatialSubSampling_backward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialSubSampling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
+   local title = string.format('SpatialSubSampling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
    times[title] = tm
 
@@ -1288,7 +1288,7 @@ function cunntest.SpatialMaxPooling_forward()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialMaxPooling.forward %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialMaxPooling.forward %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -1314,7 +1314,6 @@ function cunntest.SpatialMaxPooling_forward()
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
    local error_ind = gconv.indices:float() - sconv.indices
-   s = { {},1,1,{1,10} }
    mytester:asserteq(error_ind:max(), 0, 'error on indices (forward) ')
 end
 
@@ -1372,7 +1371,7 @@ function cunntest.SpatialMaxPooling_backward()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialMaxPooling.backward %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialMaxPooling.backward %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -1423,7 +1422,7 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
+   local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
    times[title] = tm
 
@@ -1474,7 +1473,7 @@ function cunntest.SpatialMaxPooling_backward_batch_atomic()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d (%dx%d) -> %dx%dx%dx%d', 
+   local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d (%dx%d) -> %dx%dx%dx%d',
                                bs, from, inj, ini, kj, ki, si, sj, bs, to, outj, outi)
    times[title] = tm
 
@@ -1546,7 +1545,7 @@ function cunntest.SpatialMaxPoolingCUDA_forward_batch()
    end
    cutorch.synchronize()
    tm.gpu = a:time().real
-   
+
    rescuda = rescuda:resize(to*outi*outj,bs):t():contiguous():resize(bs,to,outi,outj):float()
 
    local error = rescuda - groundtruth
@@ -1567,7 +1566,7 @@ function cunntest.SpatialMaxPoolingCUDA_backward_batch()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialMaxPoolingCUDA.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d', 
+   local title = string.format('SpatialMaxPoolingCUDA.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
                                bs, from, inj, ini, kj, ki, bs, to, outj, outi)
    times[title] = tm
 
@@ -1597,7 +1596,7 @@ function cunntest.SpatialMaxPoolingCUDA_backward_batch()
    end
    cutorch.synchronize()
    tm.gpu = a:time().real
-   
+
    rescuda = rescuda:resize(from*ini*inj,bs):t():contiguous():resize(bs,from,ini,inj)
 
    local error = rescuda:float() - groundgrad
@@ -1619,7 +1618,7 @@ function cunntest.SpatialLPPooling_forward()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialLPPooling.forward (P=2 only) %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialLPPooling.forward (P=2 only) %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -1660,7 +1659,7 @@ function cunntest.SpatialLPPooling_backward()
    local inj = (outj-1)*sj+kj
 
    local tm = {}
-   local title = string.format('SpatialLPPooling.backward (P=2 only) %dx%dx%d o %dx%d -> %dx%dx%d', 
+   local title = string.format('SpatialLPPooling.backward (P=2 only) %dx%dx%d o %dx%d -> %dx%dx%d',
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
@@ -1981,7 +1980,7 @@ function cunntest.TemporalConvolution_forward()
    local ini = (outi-1)*si+ki -- nInputFrame
 
    local tm = {}
-   local title = string.format('TemporalConvolution.forward %dx%d o %d -> %dx%d [s: %d]', 
+   local title = string.format('TemporalConvolution.forward %dx%d o %d -> %dx%d [s: %d]',
                                from, ini, ki, to, outi, si)
    times[title] = tm
 
@@ -2020,7 +2019,7 @@ function cunntest.TemporalConvolution_forward_batch()
    local ini = (outi-1)*si+ki
 
    local tm = {}
-   local title = string.format('TemporalConvolution.forward %dx%dx%d o %d -> %dx%dx%d [s: %d]', 
+   local title = string.format('TemporalConvolution.forward %dx%dx%d o %d -> %dx%dx%d [s: %d]',
                                bs, from, ini, ki, bs, to, outi, si)
    times[title] = tm
 
@@ -2058,9 +2057,9 @@ function cunntest.TemporalConvolution_backward()
    local ini = (outi-1)*si+ki
 
    local tm = {}
-   local title = string.format('TemporalConvolution.backward %dx%d o %d -> %dx%d', 
+   local title = string.format('TemporalConvolution.backward %dx%d o %d -> %dx%d',
                                from, ini, ki, to, outi)
-                  
+
    times[title] = tm
 
    local input = torch.randn(ini,from)
@@ -2113,9 +2112,9 @@ function cunntest.TemporalConvolution_backward_batch()
    local si = math.random(1,2)
    local outi = math.random(1,256)
    local ini = (outi-1)*si+ki
-   
+
    local tm = {}
-   local title = string.format('TemporalConvolution.backward %dx%dx%d o %d -> %dx%dx%d', 
+   local title = string.format('TemporalConvolution.backward %dx%dx%d o %d -> %dx%dx%d',
                                bs, from, ini, ki, bs, to, outi)
    times[title] = tm
 
@@ -2152,9 +2151,9 @@ function cunntest.TemporalConvolution_backward_batch()
    cutorch.synchronize()
    tm.gpu = a:time().real
 
-   error = rescuda:float() - groundgrad
-   werror = weightcuda:float() - groundweight
-   berror = biascuda:float() - groundbias
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
@@ -2334,7 +2333,7 @@ function cunntest.SpatialUpSamplingNearest_forward_batch()
 
    local tm = {}
    local title = string.format('SpatialUpSamplingNearest.forward %dx%dx%dx%d -> %dx%dx%dx%d',
-                               nbatch, f, h, w, nbatch, f, h*scale, w*scale) 
+                               nbatch, f, h, w, nbatch, f, h*scale, w*scale)
    times[title] = tm
 
    local input = torch.randn(nbatch, f, h, w)
@@ -2369,7 +2368,7 @@ function cunntest.SpatialUpSamplingNearest_backward()
 
    local tm = {}
    local title = string.format('SpatialUpSamplingNearest.backward %dx%dx%d -> %dx%dx%d',
-                               f, h, w, f, h*scale, w*scale) 
+                               f, h, w, f, h*scale, w*scale)
    times[title] = tm
 
    local input = torch.randn(f, h, w)
@@ -2452,7 +2451,6 @@ function nn.testcuda(tests)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
    math.randomseed(os.time())
-   jac = nn.Jacobian
    mytester = torch.Tester()
    mytester:add(cunntest)
    mytester:run(tests)
