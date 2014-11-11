@@ -410,15 +410,15 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     long n_ = 1;
     long k_ = outputHeight * outputWidth;
 
-    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    THCudaBlas_gemm(
-        'n', 'n',
-        n_, m_, k_,
+    // Do GEMV (note: this is a bit confusing because gemv assumes column-major matrices)
+    THCudaBlas_gemv(
+        't',
+        k_, m_,
         scale,
-        THCudaTensor_data(ones), n_,
         THCudaTensor_data(gradOutput_n), k_,
+        THCudaTensor_data(ones), 1,
         1,
-        THCudaTensor_data(gradBias), n_
+        THCudaTensor_data(gradBias), 1
     );
   }
 
