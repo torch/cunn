@@ -2495,6 +2495,33 @@ function cunntest.SpatialUpSamplingNearest_backward_batch()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+function cunntest.l1cost()
+   local size = math.random(300,500)
+   local input = torch.randn(size)
+   local mod = nn.L1Cost()
+
+   local tm = {}
+   local title = string.format('L1Cost %d ',size)
+   times[title] = tm
+
+   local a = torch.Timer()
+   local fout = mod:forward(input)
+   local fgin = mod:backward(input):clone()
+   tm.cpu = a:time().real
+
+   local cinput = input:cuda()
+   local cmod = nn.L1Cost():cuda()
+   a:reset()
+   local cout = cmod:forward(cinput)
+   local cgin = cmod:backward(cinput)
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   mytester:assertlt(math.abs(fout-cout), precision_forward, 'error  on output')
+   local gerr = cgin:float() - fgin
+   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+end
+
 function nn.testcuda(tests)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
