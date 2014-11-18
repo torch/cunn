@@ -126,6 +126,15 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
+  const int device = THCudaTensor_getDevice(weight);
+  luaL_argcheck(L, THCudaTensor_getDevice(bias) == device, 1,
+                "weight and bias need to be on the same device");
+  luaL_argcheck(L, THCudaTensor_getDevice(output) == device ||
+                THCudaTensor_getDevice(output) == -1, 1,
+                "weight and output need to be on the same device");
+  luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 2,
+                "weight and input need to be on the same device");
+
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
   int batch = 1;
@@ -244,6 +253,17 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
+  const int device = THCudaTensor_getDevice(weight);
+  luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 2,
+                "weight and input need to be on the same device");
+  luaL_argcheck(L, THCudaTensor_getDevice(gradInput) == device
+                || THCudaTensor_getDevice(gradInput) == -1, 2,
+                "weight and gradInput need to be on the same device");
+  luaL_argcheck(L, THCudaTensor_getDevice(gradOutput) == device
+                || THCudaTensor_getDevice(gradOutput) == -1, 2,
+                "weight and gradOutput need to be on the same device");
+
+
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
   int batch = 1;
@@ -340,6 +360,14 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   THCudaTensor *gradBias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
+
+  const int device = THCudaTensor_getDevice(gradWeight);
+  luaL_argcheck(L, THCudaTensor_getDevice(gradBias) == device, 1,
+                "gradWeight and gradBias need to be on the same device");
+  luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 1,
+                "gradWeight and input need to be on the same device");
+  luaL_argcheck(L, THCudaTensor_getDevice(gradOutput) == device, 1,
+                "gradWeight and gradOutput need to be on the same device");
 
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
