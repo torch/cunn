@@ -67,6 +67,16 @@ static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
     THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
     THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
+    const int device = THCudaTensor_getDevice(weight);
+    luaL_argcheck(L, THCudaTensor_getDevice(bias) == device, 1,
+                  "weight and bias need to be on the same device");
+    luaL_argcheck(L, THCudaTensor_getDevice(output) == device
+                  || THCudaTensor_getDevice(output) == -1, 1,
+                  "weight and output need to be on the same device");
+    luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 2,
+                  "weight and input need to be on the same device");
+
+
     luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
     int dimw = 1;
