@@ -8,6 +8,7 @@
 #include <thrust/functional.h>
 #include <thrust/device_ptr.h>
 
+#include "ClassNLLCriterion.cu"
 #include "HardTanh.cu"
 #include "L1Cost.cu"
 #include "Tanh.cu"
@@ -41,6 +42,7 @@ int luaopen_libcunn(lua_State *L)
 {
   lua_newtable(L);
 
+  cunn_ClassNLLCriterion_init(L);
   cunn_Tanh_init(L);
   cunn_Sigmoid_init(L);
   cunn_Max_init(L);

@@ -2522,7 +2522,69 @@ function cunntest.l1cost()
    mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
 end
 
-function nn.testcuda(tests)
+
+function cunntest.ClassNLLCriterionSingleTarget()
+   local size = math.random(3000,5000)
+   local input = torch.randn(size)
+   local target = 1
+   local mod = nn.ClassNLLCriterion()
+
+   local tm = {}
+   local title = string.format('ClassNLLCriterionSingleTarget %d ',size)
+   times[title] = tm
+
+   local a = torch.Timer()
+   local fout = mod:forward(input, target)
+   local fgin = mod:backward(input, target):clone()
+   tm.cpu = a:time().real
+
+   local cinput = input:cuda()
+   local ctarget = torch.CudaTensor(1):fill(target)
+   local cmod = nn.ClassNLLCriterion():cuda()
+   a:reset()
+   local cout = cmod:forward(cinput,ctarget)
+   local cgin = cmod:backward(cinput,ctarget)
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   mytester:assertlt(
+       math.abs(fout-cout), precision_forward, 'error  on output')
+   local gerr = cgin:float() - fgin
+   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+end
+
+function cunntest.ClassNLLCriterionMultipleTarget()
+   local size = math.random(3000,5000)
+   local input = torch.randn(size, size)
+   local target = torch.randperm(size)
+   local mod = nn.ClassNLLCriterion()
+
+   local tm = {}
+   local title = string.format('ClassNLLCriterionMultiTarget %d ',size)
+   times[title] = tm
+
+   local a = torch.Timer()
+   local fout = mod:forward(input, target)
+   local fgin = mod:backward(input, target):clone()
+   tm.cpu = a:time().real
+
+   local cinput = input:cuda()
+   local ctarget = target:cuda()
+   local cmod = nn.ClassNLLCriterion():cuda()
+   a:reset()
+   local cout = cmod:forward(cinput,ctarget)
+   local cgin = cmod:backward(cinput,ctarget)
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   mytester:assertlt(
+       math.abs(fout-cout), precision_forward, 'error on output')
+
+   local gerr = cgin:float() - fgin
+   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+end
+
+function nn.testcuda(tests, print_timing)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
    math.randomseed(os.time())
@@ -2530,13 +2592,15 @@ function nn.testcuda(tests)
    mytester:add(cunntest)
    mytester:run(tests)
    torch.setdefaulttensortype(oldtype)
-   print ''
-   print ' ------------------------------------------------------------------------------------------------'
-   print '|  Module                                                                          |  Speedup    |'
-   print ' ------------------------------------------------------------------------------------------------'
-   for module,tm in pairs(times) do
-      local str = string.format('| %-80s | %4.2f        |', module, (tm.cpu / (tm.gpu or 1e6)))
-      print(str)
+   if print_timing then
+       print ''
+       print ' ------------------------------------------------------------------------------------------------'
+       print '|  Module                                                                          |  Speedup    |'
+       print ' ------------------------------------------------------------------------------------------------'
+       for module,tm in pairs(times) do
+           local str = string.format('| %-80s | %4.2f        |', module, (tm.cpu / (tm.gpu or 1e6)))
+           print(str)
+       end
+       print ' ------------------------------------------------------------------------------------------------'
    end
-   print ' ------------------------------------------------------------------------------------------------'
 end
