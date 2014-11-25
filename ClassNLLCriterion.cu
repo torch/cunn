@@ -2,6 +2,8 @@
  * Copyright 2014 Facebook
  */
 
+#include<assert.h>
+
 static const int NTHREADS = 32;
 
 __global__ void cunn_ClassNLLCriterion_updateOutput_kernel1(float *output,
