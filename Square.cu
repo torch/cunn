@@ -40,6 +40,7 @@ static int cunn_Square_updateGradInput(lua_State *L)
   long size = THCudaTensor_nElement(input);
 
   gradOutput = THCudaTensor_newContiguous(gradOutput);
+  input = THCudaTensor_newContiguous(input);
   THCudaTensor_resizeAs(gradInput, input);
 
   thrust::device_ptr<float> input_data(THCudaTensor_data(input));
@@ -47,6 +48,7 @@ static int cunn_Square_updateGradInput(lua_State *L)
   thrust::device_ptr<float> gradInput_data(THCudaTensor_data(gradInput));
   thrust::transform(input_data, input_data+size, gradOutput_data, gradInput_data, squareupdateGradInput_functor());
 
+  THCudaTensor_free(input);
   THCudaTensor_free(gradOutput);
   return 1;
 }
