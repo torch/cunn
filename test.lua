@@ -36,6 +36,43 @@ function cunntest.copies()
    mytester:asserteq(t:transpose(1,2):add(-1,t2):abs():max(), 0, 'host copy, plus transpoe')
 end
 
+local function pointwise_transposed(proto_module, name, max_error)
+   max_error = max_error or 1e-7
+   local tm = {}
+   local title = name .. '.transposed'
+   times[title] = tm
+
+   local input = torch.Tensor(11, 19):uniform(-1, 1)
+   if name == 'Sqrt' then
+      input:uniform(0.1, 1)
+   end
+   local inputCUDA = input:clone():cuda()
+
+   local cuda_module = proto_module:clone():cuda()
+
+   -- transpose the inputs and DON'T make contiguous
+   input = input:transpose(1, 2)
+   inputCUDA = inputCUDA:transpose(1, 2)
+
+   local output = proto_module:forward(input)
+   local outputCUDA = cuda_module:forward(inputCUDA)
+
+   local error = outputCUDA:float() - output
+   mytester:assertlt(error:abs():max(), max_error, 'error on state (forward) ')
+
+   local gradOutput = torch.Tensor(11, 19):uniform(-1, 1)
+   local gradOutputCUDA = gradOutput:clone():cuda()
+
+   gradOutput = gradOutput:transpose(1, 2)
+   gradOutputCUDA = gradOutputCUDA:transpose(1, 2)
+
+   local gradInput = proto_module:backward(input, gradOutput)
+   local gradInputCUDA  = cuda_module:backward(inputCUDA, gradOutputCUDA)
+
+   local error = gradInputCUDA:float() - gradInput
+   mytester:assertlt(error:abs():max(), max_error,  'error on state (backward) ')
+end
+
 function cunntest.Tanh_forward()
    local size = math.random(1,100)
 
@@ -99,6 +136,10 @@ function cunntest.Tanh_backward()
    local error = rescuda:float() - groundgrad
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+cunntest.Tanh_transposed = function()
+      pointwise_transposed(nn.Tanh(), 'Tanh', 1.5e-7)
 end
 
 function cunntest.Abs_forward()
@@ -166,6 +207,10 @@ function cunntest.Abs_backward()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+cunntest.Abs_transposed = function()
+      pointwise_transposed(nn.Abs(), 'Abs')
+end
+
 function cunntest.Sigmoid_forward()
    local size = math.random(1,100)
 
@@ -229,6 +274,10 @@ function cunntest.Sigmoid_backward()
    local error = rescuda:float() - groundgrad
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+cunntest.Sigmoid_transposed = function()
+      pointwise_transposed(nn.Sigmoid(), 'Sigmoid')
 end
 
 function cunntest.Threshold_forward()
@@ -298,6 +347,10 @@ function cunntest.Threshold_backward()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+cunntest.Threshold_transposed = function()
+   pointwise_transposed(nn.Threshold(), "Threshold")
+end
+
 function cunntest.Sqrt_forward()
    local size = math.random(1,100)
 
@@ -363,6 +416,10 @@ function cunntest.Sqrt_backward()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+cunntest.Sqrt_transposed = function()
+      pointwise_transposed(nn.Sqrt(), 'Sqrt')
+end
+
 function cunntest.Square_forward()
    local size = math.random(1,100)
 
@@ -426,6 +483,10 @@ function cunntest.Square_backward()
    local error = rescuda:float() - groundgrad
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+cunntest.Square_transposed = function()
+      pointwise_transposed(nn.Square(), 'Square')
 end
 
 function cunntest.Max_forward()
