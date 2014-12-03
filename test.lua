@@ -2826,6 +2826,40 @@ function cunntest.ClassNLLCriterionMultipleTarget()
    mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
 end
 
+function cunntest.TemporalMaxPooling()
+   local input = torch.rand(16, 18, 3)
+   local settings = {{2, 2}, {3, 3}, {4, 2}, {2, 4}, {3, 5}}
+
+   for i, setting in ipairs(settings) do
+      local mod = nn.TemporalMaxPooling(setting[1], setting[2])
+
+      local tm = {}
+      local title = 'TemporalMaxPooling '..setting[1]..' '..setting[2]
+      times[title] = tm
+
+      local a = torch.Timer()
+      local fout = mod:forward(input)
+      local fgout = torch.rand(fout:size())
+      local fgin = mod:backward(input, fgout):clone()
+      tm.cpu = a:time().real
+
+      local cinput = input:cuda()
+      local cgout = fgout:cuda()
+      local cmod = nn.TemporalMaxPooling(setting[1], setting[2]):cuda()
+      a:reset()
+      local cout = cmod:forward(cinput)
+      local cgin = cmod:backward(cinput, cgout)
+      cutorch.synchronize()
+      tm.gpu = a:time().real
+
+      local outerror = cout:float() - fout
+      mytester:assertlt(outerror:abs():max(), precision_forward, 'error on output')
+
+      local ginerror = cgin:float() - fgin
+      mytester:assertlt(ginerror:abs():max(), precision_backward, 'error on gradInput')
+   end
+end
+
 function nn.testcuda(tests, print_timing)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
