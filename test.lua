@@ -2860,6 +2860,53 @@ function cunntest.TemporalMaxPooling()
    end
 end
 
+function cunntest.VolumetricConvolution_forward_single()
+   local from = math.random(1,32)
+   local to = math.random(1,8) * 8
+   local ki = math.random(3,15)
+   local kj = math.random(3,15)
+   local kk = math.random(3,15)
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
+   local sk = math.random(1,kk)
+   local outi = math.random(1,64)
+   local outj = math.random(1,64)
+   local outk = math.random(1,64)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+   local ink = (outk-1)*sk+kk
+
+   local tm = {}
+   local title = string.format('VolumetricConvolution.forward %dx%dx%d o %dx%d -> %dx%dx%d [s: %dx%d]',
+                               from, ink, inj, ini, kk, kj, ki, to, outk, outj, outi, sk, sj, si)
+   times[title] = tm
+
+   local input = torch.randn(from,ink,inj,ini)
+   local sconv = nn.VolumetricConvolution(from,to,ki,kj,kk,si,sj,sk)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sj,sk):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+
 function nn.testcuda(tests, print_timing)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
