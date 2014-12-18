@@ -155,11 +155,11 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   // Input
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   // Params:
-  int dD = luaT_getfieldcheckint(L, 1, "dT");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
-  int dH = luaT_getfieldcheckint(L, 1, "dH");
-  int kD = luaT_getfieldcheckint(L, 1, "kH");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
+  int dD = luaT_getfieldcheckint(L, 1, "dW");
+  int dW = luaT_getfieldcheckint(L, 1, "dH");
+  int dH = luaT_getfieldcheckint(L, 1, "dT");
+  int kD = luaT_getfieldcheckint(L, 1, "kW");
+  int kW = luaT_getfieldcheckint(L, 1, "kH");
   int kH = luaT_getfieldcheckint(L, 1, "kT");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
@@ -195,7 +195,6 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   long outputWidth  = (inputWidth  - kW) / dW + 1;
   long outputHeight = (inputHeight - kH) / dH + 1;
   long outputDepth  = (inputDepth - kD) / dD + 1;
-
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -276,8 +275,8 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
 
   // Resize output
   if (batch == 0) {
-    THCudaTensor_resize4d(output, nOutputPlane, outputDepth, outputHeight, outputWidth);
-    THCudaTensor_resize4d(input, nInputPlane, inputDepth, inputHeight, inputWidth);
+    THCudaTensor_resize4d(output, nOutputPlane, outputHeight, outputWidth, outputDepth);
+    THCudaTensor_resize4d(input, nInputPlane, inputHeight, inputWidth, inputDepth);
   }
 
   // return output
@@ -290,11 +289,11 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
 
   // Params
-  int dD = luaT_getfieldcheckint(L, 1, "dT");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
-  int dH = luaT_getfieldcheckint(L, 1, "dH");
-  int kD = luaT_getfieldcheckint(L, 1, "kH");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
+  int dD = luaT_getfieldcheckint(L, 1, "dW");
+  int dW = luaT_getfieldcheckint(L, 1, "dH");
+  int dH = luaT_getfieldcheckint(L, 1, "dT");
+  int kD = luaT_getfieldcheckint(L, 1, "kW");
+  int kW = luaT_getfieldcheckint(L, 1, "kH");
   int kH = luaT_getfieldcheckint(L, 1, "kT");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
@@ -384,9 +383,9 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
 
   // Resize output
   if (batch == 0) {
-    THCudaTensor_resize4d(gradOutput, nOutputPlane, outputDepth, outputHeight, outputWidth);
-    THCudaTensor_resize4d(input, nInputPlane, inputDepth, inputHeight, inputWidth);
-    THCudaTensor_resize4d(gradInput, nInputPlane, inputDepth, inputHeight, inputWidth);
+    THCudaTensor_resize4d(gradOutput, nOutputPlane, outputHeight, outputWidth, outputDepth);
+    THCudaTensor_resize4d(input, nInputPlane, inputHeight, inputWidth, inputDepth);
+    THCudaTensor_resize4d(gradInput, nInputPlane, inputHeight, inputWidth, inputDepth);
   }
 
   // Return gradInput
@@ -399,11 +398,11 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
 
   // Params
-  int dD = luaT_getfieldcheckint(L, 1, "dT");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
-  int dH = luaT_getfieldcheckint(L, 1, "dH");
-  int kD = luaT_getfieldcheckint(L, 1, "kH");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
+  int dD = luaT_getfieldcheckint(L, 1, "dW");
+  int dW = luaT_getfieldcheckint(L, 1, "dH");
+  int dH = luaT_getfieldcheckint(L, 1, "dT");
+  int kD = luaT_getfieldcheckint(L, 1, "kW");
+  int kW = luaT_getfieldcheckint(L, 1, "kH");
   int kH = luaT_getfieldcheckint(L, 1, "kT");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
@@ -510,8 +509,8 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
 
   // Resize
   if (batch == 0) {
-    THCudaTensor_resize4d(gradOutput, nOutputPlane, outputDepth, outputHeight, outputWidth);
-    THCudaTensor_resize4d(input, nInputPlane, inputDepth, inputHeight, inputWidth);
+    THCudaTensor_resize4d(gradOutput, nOutputPlane, outputHeight, outputWidth, outputDepth);
+    THCudaTensor_resize4d(input, nInputPlane, inputHeight, inputWidth, inputDepth);
   }
 
   // Return nothing

@@ -2881,8 +2881,8 @@ function cunntest.VolumetricConvolution_forward_single()
                                from, ink, inj, ini, kk, kj, ki, to, outk, outj, outi, sk, sj, si)
    times[title] = tm
 
-   local input = torch.randn(from,ink,inj,ini)
-   local sconv = nn.VolumetricConvolution(from,to,ki,kj,kk,si,sj,sk)
+   local input = torch.randn(from,ini,inj,ink)
+   local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sj,sk)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
    for i = 1,nloop do
