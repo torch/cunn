@@ -233,7 +233,6 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
     long k_ = 1;
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    // This is for bias, we dont care about it as of now.
     THCudaBlas_gemm(
         't', 'n',
         n_, m_, k_,
@@ -371,7 +370,7 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
     // Unpack columns back into input:
     col2im3d(
       THCudaTensor_data(gradColumns),
-      nInputPlane, inputDepth, inputHeight, inputWidth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
+      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
       THCudaTensor_data(gradInput_n)
     );
   }
