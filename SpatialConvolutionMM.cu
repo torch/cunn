@@ -139,9 +139,12 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 
   int batch = 1;
   if (input->nDimension == 3) {
+    luaL_argcheck(L, input->size[0] == nInputPlane, 2, "input channels and nInputPlane dont match");
     // Force batch
     batch = 0;
     THCudaTensor_resize4d(input, 1, input->size[0], input->size[1], input->size[2]);
+  } else {
+    luaL_argcheck(L, input->size[1] == nInputPlane, 2, "input channels and nInputPlane dont match");
   }
 
   long inputWidth   = input->size[3];
