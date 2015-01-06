@@ -20,6 +20,8 @@ static int cunn_MSECriterion_updateOutput(lua_State *L)
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
+  luaL_argcheck(L, THCudaTensor_nElement(input) == THCudaTensor_nElement(target), 2,
+                "input and target need to have the same number of elements");
 
   float sum;
 
@@ -37,7 +39,7 @@ static int cunn_MSECriterion_updateOutput(lua_State *L)
 
   THCudaTensor_free(input);
   THCudaTensor_free(target);
- 
+
   lua_pushnumber(L, sum);
   lua_setfield(L, 1, "output");
 
@@ -64,6 +66,8 @@ static int cunn_MSECriterion_updateGradInput(lua_State *L)
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  luaL_argcheck(L, THCudaTensor_nElement(input) == THCudaTensor_nElement(target), 2,
+                "input and target need to have the same number of elements");
 
   long size = THCudaTensor_nElement(input);
   float norm = (sizeAverage ? 2./size : 2.);
@@ -106,7 +110,7 @@ __global__ void cunn_MSECriterion_updateOutput_kernel(float* output, float *inpu
   }
   __syncthreads();
 
-  
+
   //reduce
   if (threadIdx.x == 0)
   {
@@ -153,8 +157,8 @@ static int cunn_MSECriterion_updateOutput2(lua_State *L)
   dim3 threads(MSECRITERION_THREADS);
 
   cunn_MSECriterion_updateOutput_kernel<<<blocks,threads>>>(output->data,
-						       THCudaTensor_data(input), 
-						       THCudaTensor_data(target), 
+						       THCudaTensor_data(input),
+						       THCudaTensor_data(target),
 						       1, size,
 						       sizeAverage);
 
@@ -183,7 +187,7 @@ static int cunn_MSECriterion_updateGradInput2(lua_State *L)
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   long size = THCudaTensor_nElement(input);
   float norm = (sizeAverage ? 2./size : 2.);
-  
+
   input = THCudaTensor_newContiguous(input);
   target = THCudaTensor_newContiguous(target);
 
@@ -201,7 +205,7 @@ static int cunn_MSECriterion_updateGradInput2(lua_State *L)
   cudaError errcode = cudaGetLastError();
   if(errcode != cudaSuccess)
     THError(cudaGetErrorString(errcode));
-  
+
   THCudaTensor_free(input);
   THCudaTensor_free(target);
   return 1;
