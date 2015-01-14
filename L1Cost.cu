@@ -1,3 +1,5 @@
+#include "utils.h"
+
 #include <thrust/reduce.h>
 #include <thrust/transform.h>
 
@@ -13,15 +15,16 @@ struct l1cost_functor
 
 static int cunn_L1Cost_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
 
   float sum;
-  long size = THCudaTensor_nElement(input);
-  input = THCudaTensor_newContiguous(input);
-  thrust::device_ptr<float> input_data(THCudaTensor_data(input));
+  long size = THCudaTensor_nElement(state, input);
+  input = THCudaTensor_newContiguous(state, input);
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
   sum = thrust::reduce(input_data, input_data+size, (float) 0, l1cost_functor());
 
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
 
   lua_pushnumber(L, sum);
   lua_setfield(L, 1, "output");
@@ -47,20 +50,21 @@ struct l1cost_updateGradInput_functor
 
 static int cunn_L1Cost_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
-  long size = THCudaTensor_nElement(input);
+  long size = THCudaTensor_nElement(state, input);
 
-  input = THCudaTensor_newContiguous(input);
-  THCudaTensor_resizeAs(gradInput, input);
+  input = THCudaTensor_newContiguous(state, input);
+  THCudaTensor_resizeAs(state, gradInput, input);
 
-  thrust::device_ptr<float> input_data(THCudaTensor_data(input));
-  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(gradInput));
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
+  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
 
   thrust::transform(input_data, input_data+size, gradInput_data, l1cost_updateGradInput_functor());
 
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
   return 1;
 }
 
