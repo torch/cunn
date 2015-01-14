@@ -1,3 +1,4 @@
+#include "utils.h"
 
 #define CUDA_MAX_THREADS 1024   // this is safe, in reality 256 is our limit
 
@@ -174,6 +175,7 @@ __global__ void atomicmaxgradinput(
 
 static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
@@ -198,14 +200,14 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
 
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
-    THCudaTensor_resize3d(output, nInputPlane, nOutputRows, nOutputCols);
-    THCudaTensor_resize4d(indices, 2, nInputPlane, nOutputRows, nOutputCols);
-    
-    indices_data = THCudaTensor_data(indices);
-    output_data = THCudaTensor_data(output);
+    THCudaTensor_resize3d(state, output, nInputPlane, nOutputRows, nOutputCols);
+    THCudaTensor_resize4d(state, indices, 2, nInputPlane, nOutputRows, nOutputCols);
+
+    indices_data = THCudaTensor_data(state, indices);
+    output_data = THCudaTensor_data(state, output);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -214,7 +216,7 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
     dim3 threads(32,8);
 
     // run maxpool kernel
-    maxpool <<<blocks, threads>>> (input_data, output_data, 
+    maxpool <<<blocks, threads>>> (input_data, output_data,
                                    indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
                                    nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
   } else {
@@ -227,14 +229,14 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
 
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
-    THCudaTensor_resize4d(output, nbatch, nInputPlane, nOutputRows, nOutputCols);
-    THCudaTensor_resize5d(indices, 2, nbatch, nInputPlane, nOutputRows, nOutputCols);
+    THCudaTensor_resize4d(state, output, nbatch, nInputPlane, nOutputRows, nOutputCols);
+    THCudaTensor_resize5d(state, indices, 2, nbatch, nInputPlane, nOutputRows, nOutputCols);
 
-    indices_data = THCudaTensor_data(indices);
-    output_data = THCudaTensor_data(output);
+    indices_data = THCudaTensor_data(state, indices);
+    output_data = THCudaTensor_data(state, output);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -249,7 +251,7 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
   }
 
   // clean
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
@@ -262,13 +264,14 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
 
 static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
-  bool atomic = (dW != kW) || (dH != kH); 
+  bool atomic = (dW != kW) || (dH != kH);
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   THCudaTensor *indices = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
@@ -284,12 +287,12 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     long nOutputCols = gradOutput->size[2];
     long nOutputRows = gradOutput->size[1];
 
-    THCudaTensor_resizeAs(gradInput, input);
-    THCudaTensor_zero(gradInput);
+    THCudaTensor_resizeAs(state, gradInput, input);
+    THCudaTensor_zero(state, gradInput);
 
-    indices_data = THCudaTensor_data(indices);
-    gradOutput_data = THCudaTensor_data(gradOutput);
-    gradInput_data = THCudaTensor_data(gradInput);
+    indices_data = THCudaTensor_data(state, indices);
+    gradOutput_data = THCudaTensor_data(state, gradOutput);
+    gradInput_data = THCudaTensor_data(state, gradInput);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -300,14 +303,14 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     if(atomic)
     {
       // run updateGradInput kernel, accumulate gradients atomically
-      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, 
+      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
                                           indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
                                           nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
     }
     else
     {
       // run updateGradInput kernel
-      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, 
+      atomicmaxgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
                                           indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
                                           nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
     }
@@ -319,12 +322,12 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     long nOutputCols = gradOutput->size[3];
     long nOutputRows = gradOutput->size[2];
 
-    THCudaTensor_resizeAs(gradInput, input);
-    THCudaTensor_zero(gradInput);
+    THCudaTensor_resizeAs(state, gradInput, input);
+    THCudaTensor_zero(state, gradInput);
 
-    indices_data = THCudaTensor_data(indices);
-    gradOutput_data = THCudaTensor_data(gradOutput);
-    gradInput_data = THCudaTensor_data(gradInput);
+    indices_data = THCudaTensor_data(state, indices);
+    gradOutput_data = THCudaTensor_data(state, gradOutput);
+    gradInput_data = THCudaTensor_data(state, gradInput);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);

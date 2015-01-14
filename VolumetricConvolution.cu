@@ -1,3 +1,5 @@
+#include "utils.h"
+
 // CUDA: grid stride looping
 #define CUDA_KERNEL_LOOP(i, n)                        \
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
@@ -152,6 +154,8 @@ void col2im3d(const float* data_col, const int channels,
 
 
 static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
+  THCState *state = getCutorchState(L);
+
   // Input
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   // Params:
@@ -170,13 +174,13 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
-  const int device = THCudaTensor_getDevice(weight);
-  luaL_argcheck(L, THCudaTensor_getDevice(bias) == device, 1,
+  const int device = THCudaTensor_getDevice(state, weight);
+  luaL_argcheck(L, THCudaTensor_getDevice(state, bias) == device, 1,
                 "weight and bias need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(output) == device ||
-                THCudaTensor_getDevice(output) == -1, 1,
+  luaL_argcheck(L, THCudaTensor_getDevice(state, output) == device ||
+                THCudaTensor_getDevice(state, output) == -1, 1,
                 "weight and output need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 2,
+  luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 2,
                 "weight and input need to be on the same device");
 
   luaL_argcheck(L, input->nDimension == 4 || input->nDimension == 5, 2, "4D or 5D (batch mode) tensor is expected");
@@ -185,7 +189,7 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   if (input->nDimension == 4) {
     // Force batch
     batch = 0;
-    THCudaTensor_resize5d(input, 1, input->size[0], input->size[1],
+    THCudaTensor_resize5d(state, input, 1, input->size[0], input->size[1],
                           input->size[2], input->size[3]);
   }
 
@@ -200,30 +204,30 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   long batchSize = input->size[0];
 
   // Resize output
-  THCudaTensor_resize5d(output, batchSize, nOutputPlane, outputDepth,
+  THCudaTensor_resize5d(state, output, batchSize, nOutputPlane, outputDepth,
                         outputHeight, outputWidth);
 
   // Resize temporary columns
-  THCudaTensor_resize2d(columns, nInputPlane*kD*kW*kH, outputDepth*outputHeight*outputWidth);
+  THCudaTensor_resize2d(state, columns, nInputPlane*kD*kW*kH, outputDepth*outputHeight*outputWidth);
 
   // Define a buffer of ones, for bias accumulation
   // Note: this buffer can be shared with other modules, it only ever gets increased,
   // and always contains ones.
   if (ones->nDimension != 3 || ones->size[0]*ones->size[1]*ones->size[2] < outputDepth*outputHeight*outputWidth) {
     // Resize plane and fill with ones...
-    THCudaTensor_resize3d(ones, outputDepth, outputHeight, outputWidth);
-    THCudaTensor_fill(ones, 1);
+    THCudaTensor_resize3d(state, ones, outputDepth, outputHeight, outputWidth);
+    THCudaTensor_fill(state, ones, 1);
   }
 
   // Helpers
-  THCudaTensor *input_n = THCudaTensor_new();
-  THCudaTensor *output_n = THCudaTensor_new();
+  THCudaTensor *input_n = THCudaTensor_new(state);
+  THCudaTensor *output_n = THCudaTensor_new(state);
 
   // For each elt in batch, do:
   for (int elt = 0; elt < batchSize; elt ++) {
     // Matrix mulitply per output:
-    THCudaTensor_select(input_n, input, 0, elt);
-    THCudaTensor_select(output_n, output, 0, elt);
+    THCudaTensor_select(state, input_n, input, 0, elt);
+    THCudaTensor_select(state, output_n, output, 0, elt);
 
     // Do Bias first:
     // M,N,K are dims of matrix A and B
@@ -234,20 +238,21 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
     THCudaBlas_gemm(
+        state,
         't', 'n',
         n_, m_, k_,
         1,
-        THCudaTensor_data(ones), k_,
-        THCudaTensor_data(bias), k_,
+        THCudaTensor_data(state, ones), k_,
+        THCudaTensor_data(state, bias), k_,
         0,
-        THCudaTensor_data(output_n), n_
+        THCudaTensor_data(state, output_n), n_
     );
 
     // Extract columns:
     im3d2col(
-        THCudaTensor_data(input_n),
+        THCudaTensor_data(state, input_n),
         nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
-        THCudaTensor_data(columns)
+        THCudaTensor_data(state, columns)
     );
 
     // M,N,K are dims of matrix A and B
@@ -258,24 +263,25 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
     THCudaBlas_gemm(
+        state,
         'n', 'n',
         n, m, k,
         1,
-        THCudaTensor_data(columns), n,
-        THCudaTensor_data(weight), k,
+        THCudaTensor_data(state, columns), n,
+        THCudaTensor_data(state, weight), k,
         1,
-        THCudaTensor_data(output_n), n
+        THCudaTensor_data(state, output_n), n
     );
   }
 
   // Free
-  THCudaTensor_free(input_n);
-  THCudaTensor_free(output_n);
+  THCudaTensor_free(state, input_n);
+  THCudaTensor_free(state, output_n);
 
   // Resize output
   if (batch == 0) {
-    THCudaTensor_resize4d(output, nOutputPlane, outputHeight, outputWidth, outputDepth);
-    THCudaTensor_resize4d(input, nInputPlane, inputHeight, inputWidth, inputDepth);
+    THCudaTensor_resize4d(state, output, nOutputPlane, outputHeight, outputWidth, outputDepth);
+    THCudaTensor_resize4d(state, input, nInputPlane, inputHeight, inputWidth, inputDepth);
   }
 
   // return output
@@ -283,6 +289,8 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
 }
 
 static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
+  THCState *state = getCutorchState(L);
+
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
@@ -301,14 +309,14 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
-  const int device = THCudaTensor_getDevice(weight);
-  luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 2,
+  const int device = THCudaTensor_getDevice(state, weight);
+  luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 2,
                 "weight and input need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(gradInput) == device
-                || THCudaTensor_getDevice(gradInput) == -1, 2,
+  luaL_argcheck(L, THCudaTensor_getDevice(state, gradInput) == device
+                || THCudaTensor_getDevice(state, gradInput) == -1, 2,
                 "weight and gradInput need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(gradOutput) == device
-                || THCudaTensor_getDevice(gradOutput) == -1, 2,
+  luaL_argcheck(L, THCudaTensor_getDevice(state, gradOutput) == device
+                || THCudaTensor_getDevice(state, gradOutput) == -1, 2,
                 "weight and gradOutput need to be on the same device");
 
 
@@ -318,8 +326,8 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   if (input->nDimension == 4) {
     // Force batch
     batch = 0;
-    THCudaTensor_resize5d(input, 1, input->size[0], input->size[1], input->size[2], input->size[3]);
-    THCudaTensor_resize5d(gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2], gradOutput->size[3]);
+    THCudaTensor_resize5d(state, input, 1, input->size[0], input->size[1], input->size[2], input->size[3]);
+    THCudaTensor_resize5d(state, gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2], gradOutput->size[3]);
   }
 
   long inputWidth   = input->size[3];
@@ -333,22 +341,22 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   long batchSize = input->size[0];
 
   // Resize output
-  THCudaTensor_resize5d(gradInput, batchSize, nInputPlane, inputDepth, inputHeight, inputWidth);
+  THCudaTensor_resize5d(state, gradInput, batchSize, nInputPlane, inputDepth, inputHeight, inputWidth);
 
   // Resize temporary columns
-  THCudaTensor_resize2d(gradColumns, nInputPlane*kW*kH*kD, outputDepth*outputHeight*outputWidth);
+  THCudaTensor_resize2d(state, gradColumns, nInputPlane*kW*kH*kD, outputDepth*outputHeight*outputWidth);
 
   // Helpers
-  THCudaTensor *input_n = THCudaTensor_new();
-  THCudaTensor *gradInput_n = THCudaTensor_new();
-  THCudaTensor *gradOutput_n = THCudaTensor_new();
+  THCudaTensor *input_n = THCudaTensor_new(state);
+  THCudaTensor *gradInput_n = THCudaTensor_new(state);
+  THCudaTensor *gradOutput_n = THCudaTensor_new(state);
 
   // For each elt in batch, do:
   for (int elt = 0; elt < batchSize; elt ++) {
     // Matrix mulitply per sample:
-    THCudaTensor_select(input_n, input, 0, elt);
-    THCudaTensor_select(gradInput_n, gradInput, 0, elt);
-    THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
+    THCudaTensor_select(state, input_n, input, 0, elt);
+    THCudaTensor_select(state, gradInput_n, gradInput, 0, elt);
+    THCudaTensor_select(state, gradOutput_n, gradOutput, 0, elt);
 
     // M,N,K are dims of matrix A and B
     // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
@@ -358,33 +366,34 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
     THCudaBlas_gemm(
+        state,
         'n', 't',
         n, m, k,
         1,
-        THCudaTensor_data(gradOutput_n), n,
-        THCudaTensor_data(weight), m,
+        THCudaTensor_data(state, gradOutput_n), n,
+        THCudaTensor_data(state, weight), m,
         0,
-        THCudaTensor_data(gradColumns), n
+        THCudaTensor_data(state, gradColumns), n
     );
 
     // Unpack columns back into input:
     col2im3d(
-      THCudaTensor_data(gradColumns),
+      THCudaTensor_data(state, gradColumns),
       nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
-      THCudaTensor_data(gradInput_n)
+      THCudaTensor_data(state, gradInput_n)
     );
   }
 
   // Free
-  THCudaTensor_free(input_n);
-  THCudaTensor_free(gradInput_n);
-  THCudaTensor_free(gradOutput_n);
+  THCudaTensor_free(state, input_n);
+  THCudaTensor_free(state, gradInput_n);
+  THCudaTensor_free(state, gradOutput_n);
 
   // Resize output
   if (batch == 0) {
-    THCudaTensor_resize4d(gradOutput, nOutputPlane, outputHeight, outputWidth, outputDepth);
-    THCudaTensor_resize4d(input, nInputPlane, inputHeight, inputWidth, inputDepth);
-    THCudaTensor_resize4d(gradInput, nInputPlane, inputHeight, inputWidth, inputDepth);
+    THCudaTensor_resize4d(state, gradOutput, nOutputPlane, outputHeight, outputWidth, outputDepth);
+    THCudaTensor_resize4d(state, input, nInputPlane, inputHeight, inputWidth, inputDepth);
+    THCudaTensor_resize4d(state, gradInput, nInputPlane, inputHeight, inputWidth, inputDepth);
   }
 
   // Return gradInput
@@ -392,6 +401,8 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
 }
 
 static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
+  THCState *state = getCutorchState(L);
+
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
@@ -412,12 +423,12 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
 
-  const int device = THCudaTensor_getDevice(gradWeight);
-  luaL_argcheck(L, THCudaTensor_getDevice(gradBias) == device, 1,
+  const int device = THCudaTensor_getDevice(state, gradWeight);
+  luaL_argcheck(L, THCudaTensor_getDevice(state, gradBias) == device, 1,
                 "gradWeight and gradBias need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 1,
+  luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 1,
                 "gradWeight and input need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(gradOutput) == device, 1,
+  luaL_argcheck(L, THCudaTensor_getDevice(state, gradOutput) == device, 1,
                 "gradWeight and gradOutput need to be on the same device");
 
   luaL_argcheck(L, input->nDimension == 4 || input->nDimension == 5, 2, "3D or 4D (batch mode) tensor is expected");
@@ -426,8 +437,8 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   if (input->nDimension == 4) {
     // Force batch
     batch = 0;
-    THCudaTensor_resize5d(input, 1, input->size[0], input->size[1], input->size[2], input->size[3]);
-    THCudaTensor_resize5d(gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2], gradOutput->size[3]);
+    THCudaTensor_resize5d(state, input, 1, input->size[0], input->size[1], input->size[2], input->size[3]);
+    THCudaTensor_resize5d(state, gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2], gradOutput->size[3]);
   }
 
   long inputWidth   = input->size[3];
@@ -443,28 +454,28 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   // Define a buffer of ones, for bias accumulation
   if (ones->nDimension != 3 || ones->size[0]*ones->size[1]*ones->size[2] < outputDepth*outputHeight*outputWidth) {
     // Resize plane and fill with ones...
-    THCudaTensor_resize3d(ones, outputDepth, outputHeight, outputWidth);
-    THCudaTensor_fill(ones, 1);
+    THCudaTensor_resize3d(state, ones, outputDepth, outputHeight, outputWidth);
+    THCudaTensor_fill(state, ones, 1);
   }
 
   // Resize temporary columns
-  THCudaTensor_resize2d(columns, nInputPlane*kW*kH*kD, outputDepth*outputHeight*outputWidth);
+  THCudaTensor_resize2d(state, columns, nInputPlane*kW*kH*kD, outputDepth*outputHeight*outputWidth);
 
   // Helpers
-  THCudaTensor *input_n = THCudaTensor_new();
-  THCudaTensor *gradOutput_n = THCudaTensor_new();
+  THCudaTensor *input_n = THCudaTensor_new(state);
+  THCudaTensor *gradOutput_n = THCudaTensor_new(state);
 
   // For each elt in batch, do:
   for (int elt = 0; elt < batchSize; elt ++) {
     // Matrix mulitply per output:
-    THCudaTensor_select(input_n, input, 0, elt);
-    THCudaTensor_select(gradOutput_n, gradOutput, 0, elt);
+    THCudaTensor_select(state, input_n, input, 0, elt);
+    THCudaTensor_select(state, gradOutput_n, gradOutput, 0, elt);
 
     // Extract columns:
     im3d2col(
-        THCudaTensor_data(input_n),
+        THCudaTensor_data(state, input_n),
         nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
-        THCudaTensor_data(columns)
+        THCudaTensor_data(state, columns)
     );
 
     // M,N,K are dims of matrix A and B
@@ -475,13 +486,14 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
     THCudaBlas_gemm(
+        state,
         't', 'n',
         n, m, k,
         scale,
-        THCudaTensor_data(columns), k,
-        THCudaTensor_data(gradOutput_n), k,
+        THCudaTensor_data(state, columns), k,
+        THCudaTensor_data(state, gradOutput_n), k,
         1,
-        THCudaTensor_data(gradWeight), n
+        THCudaTensor_data(state, gradWeight), n
     );
 
     // Do Bias:
@@ -492,24 +504,25 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
 
     // Do GEMV (note: this is a bit confusing because gemv assumes column-major matrices)
     THCudaBlas_gemv(
+        state,
         't',
         k_, m_,
         scale,
-        THCudaTensor_data(gradOutput_n), k_,
-        THCudaTensor_data(ones), 1,
+        THCudaTensor_data(state, gradOutput_n), k_,
+        THCudaTensor_data(state, ones), 1,
         1,
-        THCudaTensor_data(gradBias), 1
+        THCudaTensor_data(state, gradBias), 1
     );
   }
 
   // Free
-  THCudaTensor_free(input_n);
-  THCudaTensor_free(gradOutput_n);
+  THCudaTensor_free(state, input_n);
+  THCudaTensor_free(state, gradOutput_n);
 
   // Resize
   if (batch == 0) {
-    THCudaTensor_resize4d(gradOutput, nOutputPlane, outputHeight, outputWidth, outputDepth);
-    THCudaTensor_resize4d(input, nInputPlane, inputHeight, inputWidth, inputDepth);
+    THCudaTensor_resize4d(state, gradOutput, nOutputPlane, outputHeight, outputWidth, outputDepth);
+    THCudaTensor_resize4d(state, input, nInputPlane, inputHeight, inputWidth, inputDepth);
   }
 
   // Return nothing

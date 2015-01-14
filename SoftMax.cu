@@ -1,3 +1,5 @@
+#include "utils.h"
+
 #define MINUS_LOG_THRESHOLD -18.42
 #define SOFTMAX_THREADS 128
 
@@ -103,23 +105,28 @@ __global__ void cunn_SoftMax_updateGradInput_kernel(float *gradInput, float *out
 
 static int cunn_SoftMax_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
-  input = THCudaTensor_newContiguous(input);
-  THCudaTensor_resizeAs(output, input);
+  input = THCudaTensor_newContiguous(state, input);
+  THCudaTensor_resizeAs(state, output, input);
 
   if(input->nDimension == 1)
   {
     dim3 blocks(1);
     dim3 threads(SOFTMAX_THREADS);
-    cunn_SoftMax_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(output), THCudaTensor_data(input), 1, input->size[0]);
+    cunn_SoftMax_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, output),
+                                                         THCudaTensor_data(state, input),
+                                                         1, input->size[0]);
   }
   else if(input->nDimension == 2)
   {
     dim3 blocks(input->size[0]);
     dim3 threads(SOFTMAX_THREADS);
-    cunn_SoftMax_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(output), THCudaTensor_data(input), input->size[0], input->size[1]);
+    cunn_SoftMax_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, output),
+                                                         THCudaTensor_data(state, input),
+                                                         input->size[0], input->size[1]);
   }
   else
     THError("vector or matrix expected");
@@ -128,7 +135,7 @@ static int cunn_SoftMax_updateOutput(lua_State *L)
   if(errcode != cudaSuccess)
     THError(cudaGetErrorString(errcode));
 
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
   return 1;
 }
 
@@ -146,34 +153,35 @@ struct softmaxupdateGradInput_functor
 
 static int cunn_SoftMax_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
-  output = THCudaTensor_newContiguous(output);
-  gradOutput = THCudaTensor_newContiguous(gradOutput);
+  output = THCudaTensor_newContiguous(state, output);
+  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
-  THCudaTensor_resizeAs(gradInput, output);
+  THCudaTensor_resizeAs(state, gradInput, output);
 
   if(gradInput->nDimension == 1)
   {
     dim3 blocks(1);
     dim3 threads(SOFTMAX_THREADS);
 
-    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(gradInput),
-                                                        THCudaTensor_data(output),
-                                                        THCudaTensor_data(gradOutput),
-                                                        1, gradInput->size[0]);
+    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
+                                                            THCudaTensor_data(state, output),
+                                                            THCudaTensor_data(state, gradOutput),
+                                                            1, gradInput->size[0]);
   }
   else if(gradInput->nDimension == 2)
   {
     dim3 blocks(gradInput->size[0]);
     dim3 threads(SOFTMAX_THREADS);
 
-    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(gradInput),
-                                                        THCudaTensor_data(output),
-                                                        THCudaTensor_data(gradOutput),
-                                                        gradInput->size[0], gradInput->size[1]);
+    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
+                                                            THCudaTensor_data(state, output),
+                                                            THCudaTensor_data(state, gradOutput),
+                                                            gradInput->size[0], gradInput->size[1]);
   }
   else
     THError("vector or matrix expected");
@@ -182,8 +190,8 @@ static int cunn_SoftMax_updateGradInput(lua_State *L)
   if(errcode != cudaSuccess)
     THError(cudaGetErrorString(errcode));
 
-  THCudaTensor_free(gradOutput);
-  THCudaTensor_free(output);
+  THCudaTensor_free(state, gradOutput);
+  THCudaTensor_free(state, output);
   return 1;
 }
 
