@@ -259,3 +259,5 @@ static void cunn_SpatialAveragePooling_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialAveragePooling__, "nn");
   lua_pop(L,1);
 }
+
+#undef CUDA_MAX_THREADS
