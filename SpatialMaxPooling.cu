@@ -369,3 +369,5 @@ static void cunn_SpatialMaxPooling_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialMaxPooling__, "nn");
   lua_pop(L,1);
 }
+
+#undef CUDA_MAX_THREADS
