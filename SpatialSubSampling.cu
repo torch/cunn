@@ -428,3 +428,5 @@ static void cunn_SpatialSubSampling_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialSubSampling__, "nn");
   lua_pop(L,1);
 }
+
+#undef CUDA_MAX_THREADS
