@@ -25,6 +25,7 @@
 #include "SpatialMaxPooling.cu"
 #include "SpatialMaxPoolingCUDA.cu"
 #include "SpatialAveragePooling.cu"
+#include "SpatialAdaptiveMaxPooling.cu"
 #include "Square.cu"
 #include "Sqrt.cu"
 #include "MultiMarginCriterion.cu"
@@ -61,6 +62,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_SpatialConvolutionMM_BHWD_init(L);
   cunn_SpatialMaxPooling_init(L);
   cunn_SpatialMaxPoolingCUDA_init(L);
+  cunn_SpatialAdaptiveMaxPooling_init(L);
   cunn_SpatialSubSampling_init(L);
   cunn_SpatialAveragePooling_init(L);
   cunn_MultiMarginCriterion_init(L);
