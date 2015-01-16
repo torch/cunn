@@ -19,6 +19,8 @@ static int cunn_DistKLDivCriterion_updateOutput(lua_State *L)
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
+  luaL_argcheck(L, THCudaTensor_nElement(input) == THCudaTensor_nElement(target), 2,
+                "input and target need to have the same number of elements");
 
   float sum;
 
@@ -36,7 +38,7 @@ static int cunn_DistKLDivCriterion_updateOutput(lua_State *L)
 
   THCudaTensor_free(input);
   THCudaTensor_free(target);
- 
+
   lua_pushnumber(L, sum);
   lua_setfield(L, 1, "output");
 
@@ -63,6 +65,8 @@ static int cunn_DistKLDivCriterion_updateGradInput(lua_State *L)
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  luaL_argcheck(L, THCudaTensor_nElement(input) == THCudaTensor_nElement(target), 2,
+                "input and target need to have the same number of elements");
 
   long size = THCudaTensor_nElement(input);
   float norm = (sizeAverage ? 2./size : 2.);

@@ -3140,6 +3140,339 @@ function cunntest.ClassNLLCriterionMultipleTarget()
    mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
 end
 
+function cunntest.TemporalMaxPooling()
+   local input = torch.rand(16, 18, 3)
+   local settings = {{2, 2}, {3, 3}, {4, 2}, {2, 4}, {3, 5}}
+
+   for i, setting in ipairs(settings) do
+      local mod = nn.TemporalMaxPooling(setting[1], setting[2])
+
+      local tm = {}
+      local title = 'TemporalMaxPooling '..setting[1]..' '..setting[2]
+      times[title] = tm
+
+      local a = torch.Timer()
+      local fout = mod:forward(input)
+      local fgout = torch.rand(fout:size())
+      local fgin = mod:backward(input, fgout):clone()
+      tm.cpu = a:time().real
+
+      local cinput = input:cuda()
+      local cgout = fgout:cuda()
+      local cmod = nn.TemporalMaxPooling(setting[1], setting[2]):cuda()
+      a:reset()
+      local cout = cmod:forward(cinput)
+      local cgin = cmod:backward(cinput, cgout)
+      cutorch.synchronize()
+      tm.gpu = a:time().real
+
+      local outerror = cout:float() - fout
+      mytester:assertlt(outerror:abs():max(), precision_forward, 'error on output')
+
+      local ginerror = cgin:float() - fgin
+      mytester:assertlt(ginerror:abs():max(), precision_backward, 'error on gradInput')
+   end
+end
+
+function cunntest.VolumetricConvolution_forward_single()
+   local from = math.random(1,32)
+   local to = math.random(1,8) * 8
+   local ki = math.random(3,15)
+   local kj = math.random(3,15)
+   local kk = math.random(3,15)
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
+   local sk = math.random(1,kk)
+   local outi = math.random(1,64)
+   local outj = math.random(1,64)
+   local outk = math.random(1,64)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+   local ink = (outk-1)*sk+kk
+
+   local tm = {}
+   local title = string.format('VolumetricConvolution.forward %dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%d',
+                           from, ink, inj, ini, kk, kj, ki, to, outk, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(from,ini,inj,ink)
+   local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.VolumetricConvolution_forward_batch()
+   local bs = math.random(1,4) * 4
+   local from = math.random(1,8)
+   local to = math.random(1,4) * 4
+   local ki = math.random(3,8)
+   local kj = math.random(3,8)
+   local kk = math.random(3,8)
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
+   local sk = math.random(1,kk)
+   local outi = math.random(1,16)
+   local outj = math.random(1,16)
+   local outk = math.random(1,16)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+   local ink = (outk-1)*sk+kk
+
+   local tm = {}
+   local title = string.format('VolumetricConvolution.forward %dx%dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%dx%d',
+                           bs, from, ink, inj, ini, kk, kj, ki, bs, to, outk, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(bs,from,ini,inj, ink)
+   local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sj,sk)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input, sconv)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sj,sk):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.VolumetricConvolution_backward_single()
+   local from = math.random(1,4)
+   local to = math.random(1,3) * 8
+   local ki = math.random(3,8)
+   local kj = math.random(3,8)
+   local kk = math.random(3,8)
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
+   local sk = math.random(1,kk)
+   local outi = math.random(1,16)
+   local outj = math.random(1,16)
+   local outk = math.random(1,16)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+   local ink = (outk-1)*sk+kk
+
+   local tm = {}
+   local title = string.format('VolumetricConvolution.backward %dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%d',
+                               from, ink, inj, ini, kk, kj, ki, to, outk, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(from, ini, inj, ink)
+   local gradOutput = torch.randn(to, outi, outj, outk)
+   local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+end
+
+function cunntest.VolumetricConvolution_backward_batch()
+   local bs = math.random(1,4) * 4
+   local from = math.random(1,4)
+   local to = math.random(1,3) * 8
+   local ki = math.random(3,8)
+   local kj = math.random(3,8)
+   local kk = math.random(3,8)
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
+   local sk = math.random(1,kk)
+   local outi = math.random(1,16)
+   local outj = math.random(1,16)
+   local outk = math.random(1,16)
+   local ini = (outi-1)*si+ki
+   local inj = (outj-1)*sj+kj
+   local ink = (outk-1)*sk+kk
+
+   local tm = {}
+   local title = string.format('VolumetricConvolution.backward %dx%dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%dx%d',
+                           bs, from, ink, inj, ini, kk, kj, ki, bs, to, outk, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(bs, from, ini, inj, ink)
+   local gradOutput = torch.randn(bs, to, outi, outj, outk)
+   local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+end
+
+function cunntest.CMul_forward_batch()
+   local bs = math.random(8,32)
+   local nini = math.random(1,100)
+   local ninj = math.random(1,100)
+   local nink = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('CMul forward %d %d %d %d', bs, nini, ninj, nink)
+   times[title] = tm
+
+   local input = torch.randn(bs, nini, ninj, nink)
+   local sconv = nn.CMul(nini, ninj, nink)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) batch ')
+end
+
+function cunntest.CMul_backward_batch()
+   local bs = math.random(8,32)
+   local nini = math.random(1,100)
+   local ninj = math.random(1,100)
+   local nink = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('CMul backward %d %d %d %d', bs, nini, ninj, nink)
+   times[title] = tm
+
+   local input = torch.randn(bs, nini, ninj, nink)
+   local gradOutput = torch.randn(bs, nini, ninj, nink)
+   local sconv = nn.CMul(nini, ninj, nink)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   local groundweight = sconv.gradWeight
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local weightcuda = gconv.gradWeight
+   
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+end
+
+
 function nn.testcuda(tests, print_timing)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
