@@ -1,3 +1,5 @@
+#include "utils.h"
+
 struct softPlusupdateOutput_functor
 {
   const float threshold;
@@ -14,22 +16,23 @@ struct softPlusupdateOutput_functor
 
 static int cunn_SoftPlus_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   float beta = luaT_getfieldchecknumber(L, 1, "beta");
   float threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-  long size = THCudaTensor_nElement(input);
+  long size = THCudaTensor_nElement(state, input);
 
-  input = THCudaTensor_newContiguous(input);
+  input = THCudaTensor_newContiguous(state, input);
 
-  THCudaTensor_resizeAs(output, input);
+  THCudaTensor_resizeAs(state, output, input);
 
-  thrust::device_ptr<float> output_data(THCudaTensor_data(output));
-  thrust::device_ptr<float> input_data(THCudaTensor_data(input));
-  thrust::transform(input_data, input_data+size, output_data, 
+  thrust::device_ptr<float> output_data(THCudaTensor_data(state, output));
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
+  thrust::transform(input_data, input_data+size, output_data,
                     softPlusupdateOutput_functor(threshold, beta));
 
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
   return 1;
 }
 
@@ -50,24 +53,25 @@ struct softPlusupdateGradInput_functor
 
 static int cunn_SoftPlus_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   float beta = luaT_getfieldchecknumber(L, 1, "beta");
   float threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-  long size = THCudaTensor_nElement(output);
+  long size = THCudaTensor_nElement(state, output);
 
-  gradOutput = THCudaTensor_newContiguous(gradOutput);
-  THCudaTensor_resizeAs(gradInput, output);
+  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
+  THCudaTensor_resizeAs(state, gradInput, output);
 
-  thrust::device_ptr<float> output_data(THCudaTensor_data(output));
-  thrust::device_ptr<float> gradOutput_data(THCudaTensor_data(gradOutput));
-  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(gradInput));
-  thrust::transform(output_data, output_data+size, gradOutput_data, gradInput_data, 
+  thrust::device_ptr<float> output_data(THCudaTensor_data(state, output));
+  thrust::device_ptr<float> gradOutput_data(THCudaTensor_data(state, gradOutput));
+  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
+  thrust::transform(output_data, output_data+size, gradOutput_data, gradInput_data,
                     softPlusupdateGradInput_functor(threshold, beta));
 
-  THCudaTensor_free(gradOutput);
+  THCudaTensor_free(state, gradOutput);
   return 1;
 }
 

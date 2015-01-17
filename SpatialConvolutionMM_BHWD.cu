@@ -1,4 +1,5 @@
 // WARNING: this module is incomplete - and just meant for reference for now.
+#include "utils.h"
 
 // Kernel for fast unfold+copy
 // (borrowed from Caffe: https://github.com/BVLC/caffe/blob/master/src/caffe/layers/conv_layer.cu)
@@ -50,6 +51,7 @@ void imt2col(const float* data_im, const int channels,
 }
 
 static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
+    THCState *state = getCutorchState(L);
     // Input
     THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
 
@@ -67,13 +69,13 @@ static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
     THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
     THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
-    const int device = THCudaTensor_getDevice(weight);
-    luaL_argcheck(L, THCudaTensor_getDevice(bias) == device, 1,
+    const int device = THCudaTensor_getDevice(state, weight);
+    luaL_argcheck(L, THCudaTensor_getDevice(state, bias) == device, 1,
                   "weight and bias need to be on the same device");
-    luaL_argcheck(L, THCudaTensor_getDevice(output) == device
-                  || THCudaTensor_getDevice(output) == -1, 1,
+    luaL_argcheck(L, THCudaTensor_getDevice(state, output) == device
+                  || THCudaTensor_getDevice(state, output) == -1, 1,
                   "weight and output need to be on the same device");
-    luaL_argcheck(L, THCudaTensor_getDevice(input) == device, 2,
+    luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 2,
                   "weight and input need to be on the same device");
 
 
@@ -111,35 +113,35 @@ static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
         }
 
         // Resize output
-        THCudaTensor_resize4d(output, batchSize, outputHeight, outputWidth, nOutputPlane);
+        THCudaTensor_resize4d(state, output, batchSize, outputHeight, outputWidth, nOutputPlane);
 
         // Resize temporary columns
-        THCudaTensor_resize2d(columns, kH*kW*nInputPlane, stepBatchSize*outputHeight*outputWidth);
+        THCudaTensor_resize2d(state, columns, kH*kW*nInputPlane, stepBatchSize*outputHeight*outputWidth);
 
         // Add bias first
         // TODO: replace this by more efficient, custom kernel
         long k;
-        THCudaTensor *outputPlane = THCudaTensor_new();
+        THCudaTensor *outputPlane = THCudaTensor_new(state);
         for(k=0; k<nOutputPlane; k++) {
-            THCudaTensor_select(outputPlane, output, 3, k);
-            THCudaTensor_fill(outputPlane, THCudaTensor_get1d(bias, k));
+            THCudaTensor_select(state, outputPlane, output, 3, k);
+            THCudaTensor_fill(state, outputPlane, THCudaTensor_get1d(state, bias, k));
         }
-        THCudaTensor_free(outputPlane);
+        THCudaTensor_free(state, outputPlane);
 
         // Helper
-        THCudaTensor *output_n = THCudaTensor_new();
+        THCudaTensor *output_n = THCudaTensor_new(state);
 
         // For each elt in batch, do:
         for (int elt = 0; elt < batchSize; elt += stepBatchSize) {
             // Extract columns:
             imt2col(
-                THCudaTensor_data(input) + elt * inputHeight * inputWidth * nInputPlane,
+                THCudaTensor_data(state, input) + elt * inputHeight * inputWidth * nInputPlane,
                 nInputPlane, inputHeight, inputWidth, kW, padding, dW, stepBatchSize,
-                THCudaTensor_data(columns)
+                THCudaTensor_data(state, columns)
             );
 
             // Matrix mulitply per output:
-            THCudaTensor_narrow(output_n, output, 0, elt, stepBatchSize);
+            THCudaTensor_narrow(state, output_n, output, 0, elt, stepBatchSize);
 
             // M,N,K are dims of matrix A and B
             // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
@@ -149,18 +151,19 @@ static int cunn_SpatialConvolutionMM_BHWD_updateOutput(lua_State *L) {
 
             // Do GEMM_BHWD (note: this is a bit confusing because gemm assumes column-major matrices)
             THCudaBlas_gemm(
+                state,
                 't', 't',
                 m, n, k,
                 1,
-                THCudaTensor_data(weight), k,
-                THCudaTensor_data(columns), n,
+                THCudaTensor_data(state, weight), k,
+                THCudaTensor_data(state, columns), n,
                 1,
-                THCudaTensor_data(output_n), m
+                THCudaTensor_data(state, output_n), m
             );
         }
 
         // Free
-        THCudaTensor_free(output_n);
+        THCudaTensor_free(state, output_n);
     }
 
     // return output

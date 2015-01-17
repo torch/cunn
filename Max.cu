@@ -1,3 +1,4 @@
+#include "utils.h"
 
 /*
  * Description:
@@ -51,6 +52,7 @@ __global__ void max_gradInput(float *input, float *output, float *indices,
 
 static int cunn_Max_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   int dimension = luaT_getfieldcheckint(L, 1, "dimension")-1;
   THCudaTensor *indices = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
@@ -59,22 +61,22 @@ static int cunn_Max_updateOutput(lua_State *L)
   luaL_argcheck(L, dimension >= 0 && dimension < input->nDimension, 2, "dimension out of range");
   luaL_argcheck(L, dimension == input->nDimension-1, 2, "only supported dimension is innermost (CUDA kernel only)");
 
-  input = THCudaTensor_newContiguous(input);
+  input = THCudaTensor_newContiguous(state, input);
 
   THLongStorage *dim = THLongStorage_newWithSize(input->nDimension);
   long i;
   for(i = 0; i < input->nDimension; i++)
     dim->data[i] = input->size[i];
   dim->data[dimension] = 1;
-  THCudaTensor_resize(output, dim, NULL);
-  THCudaTensor_resize(indices, dim, NULL);
+  THCudaTensor_resize(state, output, dim, NULL);
+  THCudaTensor_resize(state, indices, dim, NULL);
   THLongStorage_free(dim);
 
-  float *input_data = THCudaTensor_data(input);
-  float *output_data = THCudaTensor_data(output);
-  float *indices_data = THCudaTensor_data(indices);
+  float *input_data = THCudaTensor_data(state, input);
+  float *output_data = THCudaTensor_data(state, output);
+  float *indices_data = THCudaTensor_data(state, indices);
 
-  long nrows = THCudaTensor_nElement(output);
+  long nrows = THCudaTensor_nElement(state, output);
   long ncols = input->size[dimension];
 
   // cuda blocks & threads:
@@ -92,30 +94,31 @@ static int cunn_Max_updateOutput(lua_State *L)
     printf("error in Max.updateOutput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
- 
+
   // final cut:
-  THCudaTensor_free(input); 
-  THCudaTensor_select(output, NULL, dimension, 0);
+  THCudaTensor_free(state, input);
+  THCudaTensor_select(state, output, NULL, dimension, 0);
 
   return 1;
 }
 
 static int cunn_Max_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *indices = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
   int dimension  = luaT_getfieldcheckint(L, 1, "dimension")-1;
   THCudaTensor *gradInput  = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
-  THCudaTensor_resizeAs(gradInput, input);
-  THCudaTensor_zero(gradInput);
-  
-  float *gradInput_data = THCudaTensor_data(gradInput);
-  float *gradOutput_data = THCudaTensor_data(gradOutput);
-  float *indices_data = THCudaTensor_data(indices);
-  
-  long nrows = THCudaTensor_nElement(gradOutput);
+  THCudaTensor_resizeAs(state, gradInput, input);
+  THCudaTensor_zero(state, gradInput);
+
+  float *gradInput_data = THCudaTensor_data(state, gradInput);
+  float *gradOutput_data = THCudaTensor_data(state, gradOutput);
+  float *indices_data = THCudaTensor_data(state, indices);
+
+  long nrows = THCudaTensor_nElement(state, gradOutput);
   long ncols = gradInput->size[dimension];
 
   // cuda blocks & threads:
@@ -123,7 +126,7 @@ static int cunn_Max_updateGradInput(lua_State *L)
   long nblocks = ceil((float)nrows / nthreads);
   dim3 blocks(nblocks);
   dim3 threads(nthreads);
-  
+
   // kernel:
   max_gradInput <<<blocks, threads>>> (gradInput_data, gradOutput_data, indices_data, nrows, ncols);
 

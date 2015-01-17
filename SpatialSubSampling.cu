@@ -1,3 +1,4 @@
+#include "utils.h"
 
 #define CUDA_MAX_THREADS 1024   // this is safe, in reality 256 is our limit
 
@@ -130,7 +131,7 @@ __global__ void subgradweight(float *input, float *gradOutput, float *gradWeight
   __syncthreads();
 
   // reduce gradBias
-  if ((threadIdx.x == 0) && (threadIdx.y == 0)) { 
+  if ((threadIdx.x == 0) && (threadIdx.y == 0)) {
     for (int i=0; i<(blockDim.x*blockDim.y); i++)
       gradBias[k] += scale*sums[i];
   }
@@ -189,6 +190,7 @@ __global__ void subgradinput(float *gradInput, float *gradOutput, float *weight,
 
 static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
@@ -200,8 +202,8 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
   THCudaTensor *bias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
-  float *weight_data = THCudaTensor_data(weight);
-  float *bias_data = THCudaTensor_data(bias);
+  float *weight_data = THCudaTensor_data(state, weight);
+  float *bias_data = THCudaTensor_data(state, bias);
   float *output_data;
   float *input_data;
 
@@ -216,11 +218,11 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
     luaL_argcheck(L, input->size[0] == nInputPlane, 2, "invalid number of input planes");
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
-    THCudaTensor_resize3d(output, nInputPlane, nOutputRows, nOutputCols);
-    output_data = THCudaTensor_data(output);
+    THCudaTensor_resize3d(state, output, nInputPlane, nOutputRows, nOutputCols);
+    output_data = THCudaTensor_data(state, output);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -241,11 +243,11 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
     luaL_argcheck(L, input->size[1] == nInputPlane, 2, "invalid number of input planes");
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
-    THCudaTensor_resize4d(output, nbatch, nInputPlane, nOutputRows, nOutputCols);
-    output_data = THCudaTensor_data(output);
+    THCudaTensor_resize4d(state, output, nbatch, nInputPlane, nOutputRows, nOutputCols);
+    output_data = THCudaTensor_data(state, output);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -259,7 +261,7 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
   }
 
   // clean
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
@@ -272,6 +274,7 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
 
 static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
@@ -290,13 +293,13 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
 
-    float *weight_data = THCudaTensor_data(weight);
-    float *gradOutput_data = THCudaTensor_data(gradOutput);
+    float *weight_data = THCudaTensor_data(state, weight);
+    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *gradInput_data;
 
-    THCudaTensor_resizeAs(gradInput, input);
-    THCudaTensor_zero(gradInput);
-    gradInput_data = THCudaTensor_data(gradInput);
+    THCudaTensor_resizeAs(state, gradInput, input);
+    THCudaTensor_zero(state, gradInput);
+    gradInput_data = THCudaTensor_data(state, gradInput);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -312,13 +315,13 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
     long nInputRows = input->size[2];
     long nbatch = input->size[0];
 
-    float *weight_data = THCudaTensor_data(weight);
-    float *gradOutput_data = THCudaTensor_data(gradOutput);
+    float *weight_data = THCudaTensor_data(state, weight);
+    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *gradInput_data;
 
-    THCudaTensor_resizeAs(gradInput, input);
-    THCudaTensor_zero(gradInput);
-    gradInput_data = THCudaTensor_data(gradInput);
+    THCudaTensor_resizeAs(state, gradInput, input);
+    THCudaTensor_zero(state, gradInput);
+    gradInput_data = THCudaTensor_data(state, gradInput);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -342,6 +345,7 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
 
 static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
@@ -361,13 +365,13 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
 
-    float *gradWeight_data = THCudaTensor_data(gradWeight);
-    float *gradBias_data = THCudaTensor_data(gradBias);
-    float *gradOutput_data = THCudaTensor_data(gradOutput);
+    float *gradWeight_data = THCudaTensor_data(state, gradWeight);
+    float *gradBias_data = THCudaTensor_data(state, gradBias);
+    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *input_data;
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
     // cuda blocks & threads:
     dim3 blocks(nInputPlane);
@@ -381,13 +385,13 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
     long nInputRows = input->size[2];
     long nbatch = input->size[0];
 
-    float *gradWeight_data = THCudaTensor_data(gradWeight);
-    float *gradBias_data = THCudaTensor_data(gradBias);
-    float *gradOutput_data = THCudaTensor_data(gradOutput);
+    float *gradWeight_data = THCudaTensor_data(state, gradWeight);
+    float *gradBias_data = THCudaTensor_data(state, gradBias);
+    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *input_data;
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
     // cuda blocks & threads:
     dim3 blocks(nInputPlane);
@@ -396,15 +400,15 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
     // run gradweight kernel
     long sl;
     for (sl=0; sl<nbatch; sl++) {
-      subgradweight <<<blocks, threads>>> (input_data + sl*input->stride[0], 
-                                           gradOutput_data + sl*gradOutput->stride[0], 
+      subgradweight <<<blocks, threads>>> (input_data + sl*input->stride[0],
+                                           gradOutput_data + sl*gradOutput->stride[0],
                                            gradWeight_data, gradBias_data,
                                            nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW, scale);
     }
   }
 
   // clean
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
