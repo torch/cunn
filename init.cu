@@ -8,6 +8,7 @@
 #include <thrust/functional.h>
 #include <thrust/device_ptr.h>
 
+#include "utils.c"
 #include "ClassNLLCriterion.cu"
 #include "HardTanh.cu"
 #include "L1Cost.cu"
