@@ -130,7 +130,7 @@ __global__ void subgradweight(float *input, float *gradOutput, float *gradWeight
   __syncthreads();
 
   // reduce gradBias
-  if ((threadIdx.x == 0) && (threadIdx.y == 0)) { 
+  if ((threadIdx.x == 0) && (threadIdx.y == 0)) {
     for (int i=0; i<(blockDim.x*blockDim.y); i++)
       gradBias[k] += scale*sums[i];
   }
@@ -181,6 +181,58 @@ __global__ void subgradinput(float *gradInput, float *gradOutput, float *weight,
       for(ky = 0; ky < kH; ky++) {
         for(kx = 0; kx < kW; kx++)
           ptr_gradInput[kx] += z;
+        ptr_gradInput += input_w;
+      }
+    }
+  }
+}
+
+/*
+ * Description:
+ *    this function computes the gradInput from weight and gradOutput
+ */
+__global__ void subgradinputAtomic(float *gradInput, float *gradOutput, float *weight,
+                                   int input_n, int input_h, int input_w,
+                                   int kH, int kW, int dH, int dW)
+{
+  // iterators
+  int xx, yy;
+
+  // output size
+  int output_w = (input_w - kW) / dW + 1;
+  int output_h = (input_h - kH) / dH + 1;
+
+  // compute offsets based on thread/block ID
+  int o = blockIdx.x;
+  int i = o;
+  int k = blockIdx.x % input_n;
+
+  int xx_start = threadIdx.x;
+  int xx_end = output_w;
+  int xx_step = blockDim.x;
+
+  int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
+  int yy_end = output_h;
+  int yy_step = blockDim.y*gridDim.y;
+
+  // select input/output plane
+  gradOutput = gradOutput + o*output_w*output_h;
+  gradInput = gradInput + i*input_w*input_h;
+
+  // get weight
+  float the_weight = weight[k];
+
+  // compute gradInput
+  for(yy = yy_start; yy < yy_end; yy+=yy_step) {
+    for(xx = xx_start; xx < xx_end; xx+=xx_step) {
+      float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
+      float *ptr_gradOutput = gradOutput + yy*output_w + xx;
+      float z = *ptr_gradOutput * the_weight;
+      int kx, ky;
+      for(ky = 0; ky < kH; ky++) {
+        for(kx = 0; kx < kW; kx++) {
+          atomicAdd(&(ptr_gradInput[kx]), z);
+        }
         ptr_gradInput += input_w;
       }
     }
@@ -280,9 +332,6 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
   int dH = luaT_getfieldcheckint(L, 1, "dH");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
 
-  luaL_argcheck(L, dW == kW, 1, "dW and kW must be equal (this will be fixed soon)");
-  luaL_argcheck(L, dH == kH, 1, "dH and kH must be equal (this will be fixed soon)");
-
   THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
@@ -327,8 +376,14 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
     dim3 threads(32,8);
 
     // run updateGradInput kernel
-    subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, weight_data,
-                                        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    if (kH == dH && kW == dW) {
+      subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, weight_data,
+                                          nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    } else {
+      subgradinputAtomic <<<blocks, threads>>> (gradInput_data, gradOutput_data, weight_data,
+                                                nInputPlane, nInputRows, nInputCols,
+                                                kH, kW, dH, dW);
+    }
   }
 
   // check for errors
@@ -396,8 +451,8 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
     // run gradweight kernel
     long sl;
     for (sl=0; sl<nbatch; sl++) {
-      subgradweight <<<blocks, threads>>> (input_data + sl*input->stride[0], 
-                                           gradOutput_data + sl*gradOutput->stride[0], 
+      subgradweight <<<blocks, threads>>> (input_data + sl*input->stride[0],
+                                           gradOutput_data + sl*gradOutput->stride[0],
                                            gradWeight_data, gradBias_data,
                                            nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW, scale);
     }
