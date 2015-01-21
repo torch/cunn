@@ -1222,8 +1222,8 @@ function cunntest.SpatialSubSampling_backward()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(2,4)
+   local sj = math.random(2,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
    local ini = (outi-1)*si+ki
@@ -1282,8 +1282,8 @@ function cunntest.SpatialSubSampling_backward_batch()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(2,4)
+   local sj = math.random(2,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
    local ini = (outi-1)*si+ki
@@ -1671,8 +1671,8 @@ function cunntest.SpatialAveragePooling_forward()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
    local ini = (outi-1)*si+ki
@@ -1712,8 +1712,8 @@ function cunntest.SpatialAveragePooling_forward_batch()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
    local ini = (outi-1)*si+ki
@@ -1752,8 +1752,8 @@ function cunntest.SpatialAveragePooling_backward()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
    local ini = (outi-1)*si+ki
@@ -1802,8 +1802,8 @@ function cunntest.SpatialAveragePooling_backward_batch()
    local to = from
    local ki = math.random(2,4)
    local kj = math.random(2,4)
-   local si = ki
-   local sj = kj
+   local si = math.random(1,ki)
+   local sj = math.random(1,kj)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
    local ini = (outi-1)*si+ki
@@ -3316,10 +3316,10 @@ function cunntest.CMul_backward_batch()
    tm.gpu = a:time().real
 
    local weightcuda = gconv.gradWeight
-   
+
    local error = rescuda:float() - groundgrad
    local werror = weightcuda:float() - groundweight
-   
+
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
 end

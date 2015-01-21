@@ -6,7 +6,7 @@
  *    this function avg-pools an input 3D tensor along dimensions 1 and 2
  *    3D input, 3D output
  */
-__global__ void subsample(float *input, float *output, 
+__global__ void subsample(float *input, float *output,
                           int input_n, int input_h, int input_w,
                           int kH, int kW, int dH, int dW)
 {
@@ -73,7 +73,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
     long nOutputCols = (nInputCols - kW) / dW + 1;
     long nOutputRows = (nInputRows - kH) / dH + 1;
     long nInputPlane = input->size[0];
-    
+
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
     input = THCudaTensor_newContiguous(input);
@@ -135,7 +135,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
  * Description:
  *    this function computes the gradInput from gradOutput
  */
-__global__ void subgradinput(float *gradInput, float *gradOutput, 
+__global__ void subgradinput(float *gradInput, float *gradOutput,
                              int input_n, int input_h, int input_w,
                              int kH, int kW, int dH, int dW)
 {
@@ -178,6 +178,56 @@ __global__ void subgradinput(float *gradInput, float *gradOutput,
   }
 }
 
+/*
+ * Description:
+ *    this function computes the gradInput from gradOutput
+ *    but with an atomic accumulation. It is needed to be done so
+ *    for cases of kH != dH and kW != dW
+ */
+__global__ void subgradinputAtomic(float *gradInput, float *gradOutput,
+                                   int input_n, int input_h, int input_w,
+                                   int kH, int kW, int dH, int dW)
+{
+  // iterators
+  int xx, yy;
+
+  // output size
+  int output_w = (input_w - kW) / dW + 1;
+  int output_h = (input_h - kH) / dH + 1;
+
+  // compute offsets based on thread/block ID
+  int o = blockIdx.x;
+  int i = o;
+
+  int xx_start = threadIdx.x;
+  int xx_end = output_w;
+  int xx_step = blockDim.x;
+
+  int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
+  int yy_end = output_h;
+  int yy_step = blockDim.y*gridDim.y;
+
+  // select input/output plane
+  gradOutput = gradOutput + o*output_w*output_h;
+  gradInput = gradInput + i*input_w*input_h;
+
+  // compute gradInput
+  for(yy = yy_start; yy < yy_end; yy+=yy_step) {
+    for(xx = xx_start; xx < xx_end; xx+=xx_step) {
+      float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
+      float *ptr_gradOutput = gradOutput + yy*output_w + xx;
+      float z = *ptr_gradOutput;
+      int kx, ky;
+      for(ky = 0; ky < kH; ky++) {
+        for(kx = 0; kx < kW; kx++) {
+          atomicAdd(&(ptr_gradInput[kx]), z);
+        }
+        ptr_gradInput += input_w;
+      }
+    }
+  }
+}
+
 
 static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
 {
@@ -187,9 +237,6 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
-
-  luaL_argcheck(L, dW == kW, 1, "dW and kW must be equal (this will be fixed soon)");
-  luaL_argcheck(L, dH == kH, 1, "dH and kH must be equal (this will be fixed soon)");
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
@@ -234,8 +281,15 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     dim3 threads(32,8);
 
     // run updateGradInput kernel
-    subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, 
-                                        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    if (kH == dH && kW == dW) {
+      subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+                                          nInputPlane, nInputRows, nInputCols,
+                                          kH, kW, dH, dW);
+    } else {
+      subgradinputAtomic <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+                                                nInputPlane, nInputRows, nInputCols,
+                                                kH, kW, dH, dW);
+    }
   }
 
   // check for errors
