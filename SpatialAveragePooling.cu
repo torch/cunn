@@ -126,7 +126,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   // check for errors
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
-    printf("error in SpatialSubsampling.updateOutput: %s\n", cudaGetErrorString(err));
+    printf("error in SpatialAveragePooling.updateOutput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
   return 1;
@@ -298,7 +298,7 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
   // check for errors
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
-    printf("error in SpatialSubsampling.updateGradInput: %s\n", cudaGetErrorString(err));
+    printf("error in SpatialAveragePooling.updateGradInput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
   return 1;

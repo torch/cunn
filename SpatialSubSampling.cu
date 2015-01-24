@@ -410,9 +410,6 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   float scale = luaL_optnumber(L, 4, 1);
 
-  luaL_argcheck(L, dW == kW, 1, "dW and kW must be equal (this will be fixed soon)");
-  luaL_argcheck(L, dH == kH, 1, "dH and kH must be equal (this will be fixed soon)");
-
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
   THCudaTensor *gradBias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
 
