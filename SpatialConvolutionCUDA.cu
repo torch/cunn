@@ -1,3 +1,4 @@
+#include "utils.h"
 
 #ifndef DIVUP
 #define DIVUP(x,y) (((x) + (y) - 1) / (y))
@@ -19,6 +20,7 @@
 
 static int cunn_SpatialConvolutionCUDA_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
@@ -40,22 +42,22 @@ static int cunn_SpatialConvolutionCUDA_updateOutput(lua_State *L)
   long outputWidth  = (padding + inputWidth - kW) / dW + 1;
 
   // resize output
-  THCudaTensor_resize4d(output, nOutputPlane, outputHeight, outputWidth, batchSize);
-  
+  THCudaTensor_resize4d(state, output, nOutputPlane, outputHeight, outputWidth, batchSize);
+
   // asserts
   luaL_argcheck(L, inputWidth == inputHeight, 1, "input must be square");
   luaL_argcheck(L, kH == kW, 1, "kH must be equal to kW");
   luaL_argcheck(L, dH == dW, 1, "dH must be equal to dW");
 
-  // all the data must be contiguous: 
-  luaL_argcheck(L, THCudaTensor_isContiguous(input), 2, "input must be contiguous");
-  luaL_argcheck(L, THCudaTensor_isContiguous(weight), 1, "weight must be contiguous");
-  luaL_argcheck(L, THCudaTensor_isContiguous(output), 1, "output must be contiguous");
+  // all the data must be contiguous:
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, input), 2, "input must be contiguous");
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, weight), 1, "weight must be contiguous");
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, output), 1, "output must be contiguous");
 
-  // raw pointers 
-  float *input_data = THCudaTensor_data(input);
-  float *weight_data = THCudaTensor_data(weight);
-  float *output_data = THCudaTensor_data(output);
+  // raw pointers
+  float *input_data = THCudaTensor_data(state, input);
+  float *weight_data = THCudaTensor_data(state, weight);
+  float *output_data = THCudaTensor_data(state, output);
 
   // convolutions
   spatialConv_updateOutput(
@@ -66,12 +68,13 @@ static int cunn_SpatialConvolutionCUDA_updateOutput(lua_State *L)
     -floor((double)padding/2), dW,
     0, 1, true
   );
-  
+
   return 1;
 }
 
 static int cunn_SpatialConvolutionCUDA_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
@@ -80,7 +83,7 @@ static int cunn_SpatialConvolutionCUDA_updateGradInput(lua_State *L)
 
   THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-  
+
   long nOutputPlane = weight->size[3];
   long nInputPlane  = weight->size[0];
   long kH           = weight->size[1];
@@ -92,26 +95,26 @@ static int cunn_SpatialConvolutionCUDA_updateGradInput(lua_State *L)
   long outputWidth  = (padding + inputWidth - kW) / dW + 1;
 
   // resize gradInput
-  THCudaTensor_resize4d(gradInput, nInputPlane, inputHeight, inputWidth, batchSize);
-  
+  THCudaTensor_resize4d(state, gradInput, nInputPlane, inputHeight, inputWidth, batchSize);
+
   // asserts
   luaL_argcheck(L, inputWidth == inputHeight, 1, "input must be square");
   luaL_argcheck(L, kH == kW, 1, "kH must be equal to kW");
   luaL_argcheck(L, dH == dW, 1, "dH must be equal to dW");
 
-  // all the data must be contiguous: 
-  luaL_argcheck(L, THCudaTensor_isContiguous(gradInput), 2, "input must be contiguous");
-  luaL_argcheck(L, THCudaTensor_isContiguous(weight), 1, "weight must be contiguous");
-  luaL_argcheck(L, THCudaTensor_isContiguous(gradOutput), 1, "output must be contiguous");
+  // all the data must be contiguous:
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, gradInput), 2, "input must be contiguous");
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, weight), 1, "weight must be contiguous");
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, gradOutput), 1, "output must be contiguous");
 
-  // raw pointers 
-  float *gradInput_data = THCudaTensor_data(gradInput);
-  float *weight_data = THCudaTensor_data(weight);
-  float *gradOutput_data = THCudaTensor_data(gradOutput);
+  // raw pointers
+  float *gradInput_data = THCudaTensor_data(state, gradInput);
+  float *weight_data = THCudaTensor_data(state, weight);
+  float *gradOutput_data = THCudaTensor_data(state, gradOutput);
 
   // convolutions
   spatialConv_updateGradInput(
-    gradOutput_data, weight_data, gradInput_data, 
+    gradOutput_data, weight_data, gradInput_data,
     nInputPlane, inputHeight, inputWidth, batchSize,
     nOutputPlane, outputHeight, outputWidth,
     kH, kW,
@@ -124,10 +127,11 @@ static int cunn_SpatialConvolutionCUDA_updateGradInput(lua_State *L)
 
 static int cunn_SpatialConvolutionCUDA_accGradParameters(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
-  
+
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
   int padding = luaT_getfieldcheckint(L, 1, "padding");
@@ -143,7 +147,7 @@ static int cunn_SpatialConvolutionCUDA_accGradParameters(lua_State *L)
   long batchSize    = input->size[3];
   long outputHeight = (padding + inputHeight - kH) / dH + 1;
   long outputWidth  = (padding + inputWidth - kW) / dW + 1;
-  
+
   // asserts
   luaL_argcheck(L, inputWidth == inputHeight, 1, "input must be square");
   luaL_argcheck(L, kH == kW, 1, "kH must be equal to kW");
@@ -152,19 +156,19 @@ static int cunn_SpatialConvolutionCUDA_accGradParameters(lua_State *L)
   if (partialSum) {
     // compute partial gradients for outputHeight*outputWidth/partialSum groups of filters separately
     gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeightPartial", "torch.CudaTensor");
-    THCudaTensor_resize4d(gradWeight, outputHeight*outputWidth/partialSum, nInputPlane, kH*kW, nOutputPlane);
+    THCudaTensor_resize4d(state, gradWeight, outputHeight*outputWidth/partialSum, nInputPlane, kH*kW, nOutputPlane);
     // numModuleY*numModulesX/partialSum, numFilterColors, filterPixels, numFilters
   }
 
-  // all the data must be contiguous: 
-  luaL_argcheck(L, THCudaTensor_isContiguous(input), 2, "input must be contiguous");
-  luaL_argcheck(L, THCudaTensor_isContiguous(gradWeight), 1, "weight must be contiguous");
-  luaL_argcheck(L, THCudaTensor_isContiguous(gradOutput), 1, "output must be contiguous");
+  // all the data must be contiguous:
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, input), 2, "input must be contiguous");
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, gradWeight), 1, "weight must be contiguous");
+  luaL_argcheck(L, THCudaTensor_isContiguous(state, gradOutput), 1, "output must be contiguous");
 
-  // raw pointers 
-  float *input_data = THCudaTensor_data(input);
-  float *gradWeight_data = THCudaTensor_data(gradWeight);
-  float *gradOutput_data = THCudaTensor_data(gradOutput);
+  // raw pointers
+  float *input_data = THCudaTensor_data(state, input);
+  float *gradWeight_data = THCudaTensor_data(state, gradWeight);
+  float *gradOutput_data = THCudaTensor_data(state, gradOutput);
 
   // convolutions
   spatialConv_accGradParameters(

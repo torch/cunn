@@ -1,3 +1,4 @@
+#include "utils.h"
 
 #define CUDA_MAX_THREADS 1024   // this is safe, in reality 256 is our limit
 
@@ -54,6 +55,7 @@ __global__ void subsample(float *input, float *output,
 
 static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
@@ -76,11 +78,11 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
-    THCudaTensor_resize3d(output, nInputPlane, nOutputRows, nOutputCols);
-    output_data = THCudaTensor_data(output);
+    THCudaTensor_resize3d(state, output, nInputPlane, nOutputRows, nOutputCols);
+    output_data = THCudaTensor_data(state, output);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -101,11 +103,11 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
-    input = THCudaTensor_newContiguous(input);
-    input_data = THCudaTensor_data(input);
+    input = THCudaTensor_newContiguous(state, input);
+    input_data = THCudaTensor_data(state, input);
 
-    THCudaTensor_resize4d(output, nbatch, nInputPlane, nOutputRows, nOutputCols);
-    output_data = THCudaTensor_data(output);
+    THCudaTensor_resize4d(state, output, nbatch, nInputPlane, nOutputRows, nOutputCols);
+    output_data = THCudaTensor_data(state, output);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -119,12 +121,12 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   }
 
   // clean
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
-    printf("error in SpatialSubsampling.updateOutput: %s\n", cudaGetErrorString(err));
+    printf("error in SpatialAveragePooling.updateOutput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
   return 1;
@@ -231,6 +233,7 @@ __global__ void subgradinputAtomic(float *gradInput, float *gradOutput,
 
 static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
@@ -245,12 +248,12 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     long nInputRows = input->size[1];
     long nInputPlane = input->size[0];
 
-    float *gradOutput_data = THCudaTensor_data(gradOutput);
+    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *gradInput_data;
 
-    THCudaTensor_resizeAs(gradInput, input);
-    THCudaTensor_zero(gradInput);
-    gradInput_data = THCudaTensor_data(gradInput);
+    THCudaTensor_resizeAs(state, gradInput, input);
+    THCudaTensor_zero(state, gradInput);
+    gradInput_data = THCudaTensor_data(state, gradInput);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -267,12 +270,12 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     long nInputPlane = input->size[1];
     long nbatch = input->size[0];
 
-    float *gradOutput_data = THCudaTensor_data(gradOutput);
+    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *gradInput_data;
 
-    THCudaTensor_resizeAs(gradInput, input);
-    THCudaTensor_zero(gradInput);
-    gradInput_data = THCudaTensor_data(gradInput);
+    THCudaTensor_resizeAs(state, gradInput, input);
+    THCudaTensor_zero(state, gradInput);
+    gradInput_data = THCudaTensor_data(state, gradInput);
 
     // cuda blocks & threads:
     int yblocks = (int)(16L / nInputPlane);
@@ -295,7 +298,7 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
   // check for errors
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
-    printf("error in SpatialSubsampling.updateGradInput: %s\n", cudaGetErrorString(err));
+    printf("error in SpatialAveragePooling.updateGradInput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
   return 1;

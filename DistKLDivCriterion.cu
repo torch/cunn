@@ -1,3 +1,5 @@
+#include "utils.h"
+
 #include <thrust/fill.h>
 #include <thrust/functional.h>
 #include <thrust/reduce.h>
@@ -16,28 +18,29 @@ struct kl_functor
 
 static int cunn_DistKLDivCriterion_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
-  luaL_argcheck(L, THCudaTensor_nElement(input) == THCudaTensor_nElement(target), 2,
+  luaL_argcheck(L, THCudaTensor_nElement(state, input) == THCudaTensor_nElement(state, target), 2,
                 "input and target need to have the same number of elements");
 
   float sum;
 
-  long size = THCudaTensor_nElement(input);
+  long size = THCudaTensor_nElement(state, input);
 
-  input = THCudaTensor_newContiguous(input);
-  target = THCudaTensor_newContiguous(target);
+  input = THCudaTensor_newContiguous(state, input);
+  target = THCudaTensor_newContiguous(state, target);
 
-  thrust::device_ptr<float> input_data(THCudaTensor_data(input));
-  thrust::device_ptr<float> target_data(THCudaTensor_data(target));
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
+  thrust::device_ptr<float> target_data(THCudaTensor_data(state, target));
   sum = thrust::inner_product(input_data, input_data+size, target_data, (float) 0, thrust::plus<float>(), kl_functor());
 
   if(sizeAverage)
     sum /= size;
 
-  THCudaTensor_free(input);
-  THCudaTensor_free(target);
+  THCudaTensor_free(state, input);
+  THCudaTensor_free(state, target);
 
   lua_pushnumber(L, sum);
   lua_setfield(L, 1, "output");
@@ -61,29 +64,30 @@ struct kl_updateGradInput_functor
 
 static int cunn_DistKLDivCriterion_updateGradInput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-  luaL_argcheck(L, THCudaTensor_nElement(input) == THCudaTensor_nElement(target), 2,
+  luaL_argcheck(L, THCudaTensor_nElement(state, input) == THCudaTensor_nElement(state, target), 2,
                 "input and target need to have the same number of elements");
 
-  long size = THCudaTensor_nElement(input);
+  long size = THCudaTensor_nElement(state, input);
   float norm = (sizeAverage ? 2./size : 2.);
 
-  input = THCudaTensor_newContiguous(input);
-  target = THCudaTensor_newContiguous(target);
+  input = THCudaTensor_newContiguous(state, input);
+  target = THCudaTensor_newContiguous(state, target);
 
-  THCudaTensor_resizeAs(gradInput, input);
+  THCudaTensor_resizeAs(state, gradInput, input);
 
-  thrust::device_ptr<float> input_data(THCudaTensor_data(input));
-  thrust::device_ptr<float> target_data(THCudaTensor_data(target));
-  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(gradInput));
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
+  thrust::device_ptr<float> target_data(THCudaTensor_data(state, target));
+  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
 
   thrust::transform(input_data, input_data+size, target_data, gradInput_data, kl_updateGradInput_functor(norm));
 
-  THCudaTensor_free(input);
-  THCudaTensor_free(target);
+  THCudaTensor_free(state, input);
+  THCudaTensor_free(state, target);
   return 1;
 }
 

@@ -1,3 +1,5 @@
+#include "utils.h"
+
 #define TEMPORAL_MAX_POOLING_THREADS 1024
 
 __global__ void cunn_TemporalMaxPooling_updateOutputKernel(float *input, float *output, float *indices, int input_w, int input_n, int output_w, int kW, int dW) {
@@ -73,6 +75,7 @@ __global__ void cunn_TemporalMaxPooling_updateGradInputKernelAtomic(float *gradI
 
 static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
 {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
@@ -103,7 +106,7 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
   }
   luaL_argcheck(L, input->size[dimT] >= kW, 2, "input sequence smaller than kernel size");
 
-  input = THCudaTensor_newContiguous(input);
+  input = THCudaTensor_newContiguous(state, input);
 
   input_w = input->size[dimT];
   input_n = input->size[dimF];
@@ -111,25 +114,25 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
 
   if (input->nDimension == 2)
   {
-    THCudaTensor_resize2d(output, output_w, input->size[dimF]);
-    THCudaTensor_resize2d(indices, output_w, input->size[dimF]);
+    THCudaTensor_resize2d(state, output, output_w, input->size[dimF]);
+    THCudaTensor_resize2d(state, indices, output_w, input->size[dimF]);
   }
   else
   {
-    THCudaTensor_resize3d(output, batch, output_w, input->size[dimF]);
-    THCudaTensor_resize3d(indices, batch, output_w, input->size[dimF]);
+    THCudaTensor_resize3d(state, output, batch, output_w, input->size[dimF]);
+    THCudaTensor_resize3d(state, indices, batch, output_w, input->size[dimF]);
   }
 
-  input_data = THCudaTensor_data(input);
-  output_data = THCudaTensor_data(output);
-  indices_data = THCudaTensor_data(indices);
+  input_data = THCudaTensor_data(state, input);
+  output_data = THCudaTensor_data(state, output);
+  indices_data = THCudaTensor_data(state, indices);
 
   dim3 blocks(batch);
   nthreads = (output_w / 32) * 32;
   if (output_w % 32 > 0) {
     nthreads += 32;
   }
-  
+
   if (nthreads > TEMPORAL_MAX_POOLING_THREADS) {
     nthreads = TEMPORAL_MAX_POOLING_THREADS;
     blocks.y = nthreads / TEMPORAL_MAX_POOLING_THREADS;
@@ -142,12 +145,13 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
   cunn_TemporalMaxPooling_updateOutputKernel <<< blocks, threads >>>(
       input_data, output_data, indices_data, input_w, input_n, output_w, kW, dW);
 
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, input);
 
   return 1;
 }
 
 static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
@@ -171,8 +175,8 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
 
   luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
 
-  THCudaTensor_resizeAs(gradInput, input);
-  THCudaTensor_zero(gradInput);
+  THCudaTensor_resizeAs(state, gradInput, input);
+  THCudaTensor_zero(state, gradInput);
 
   if (input->nDimension == 3)
   {
@@ -182,22 +186,22 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
   }
   luaL_argcheck(L, input->size[dimT] >= kW, 2, "input sequence smaller than kernel size");
 
-  gradOutput = THCudaTensor_newContiguous(gradOutput);
+  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
   input_w = input->size[dimT];
   input_n = input->size[dimF];
   output_w = (input_w - kW) / dW + 1;
 
-  gradInput_data = THCudaTensor_data(gradInput);
-  gradOutput_data = THCudaTensor_data(gradOutput);
-  indices_data = THCudaTensor_data(indices);
+  gradInput_data = THCudaTensor_data(state, gradInput);
+  gradOutput_data = THCudaTensor_data(state, gradOutput);
+  indices_data = THCudaTensor_data(state, indices);
 
   dim3 blocks(batch);
   nthreads = (output_w / 32) * 32;
   if (output_w % 32 > 0) {
     nthreads += 32;
   }
-  
+
   if (nthreads > TEMPORAL_MAX_POOLING_THREADS) {
     nthreads = TEMPORAL_MAX_POOLING_THREADS;
     blocks.y = nthreads / TEMPORAL_MAX_POOLING_THREADS;
@@ -215,7 +219,7 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
         gradInput_data, gradOutput_data, indices_data, input_w, input_n, output_w, kW, dW);
   }
 
-  THCudaTensor_free(gradOutput);
+  THCudaTensor_free(state, gradOutput);
 
   return 1;
 }

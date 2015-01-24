@@ -2,6 +2,7 @@
  * Copyright 2014 Facebook
  */
 
+#include "utils.h"
 #include<assert.h>
 
 static const int NTHREADS = 32;
@@ -73,23 +74,24 @@ __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel(float *gradInput,
 }
 
 static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
+  THCState *state = getCutorchState(L);
   THCudaTensor *input =
       (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
-  input = THCudaTensor_newContiguous(input);
-  float *input_data = THCudaTensor_data(input);
+  input = THCudaTensor_newContiguous(state, input);
+  float *input_data = THCudaTensor_data(state, input);
 
   THCudaTensor *target =
       (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
-  target = THCudaTensor_newContiguous(target);
-  float *target_data = THCudaTensor_data(target);
+  target = THCudaTensor_newContiguous(state, target);
+  float *target_data = THCudaTensor_data(state, target);
   int ntarget = 1;
   if (target->nDimension > 1)
     ntarget = target->size[1];
 
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(
       L, 1, "outputTensor", "torch.CudaTensor");
-  output = THCudaTensor_newContiguous(output);
-  float *output_data = THCudaTensor_data(output);
+  output = THCudaTensor_newContiguous(state, output);
+  float *output_data = THCudaTensor_data(state, output);
 
   if (input->nDimension == 1) {
     cunn_ClassNLLCriterion_updateOutput_kernel1 << <1, 1>>>
@@ -98,7 +100,7 @@ static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
     dim3 blocks(1);
     dim3 threads(NTHREADS);
     int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
-    cunn_ClassNLLCriterion_updateOutput_kernel << <blocks, threads>>>
+    cunn_ClassNLLCriterion_updateOutput_kernel <<<blocks, threads>>>
         (output_data,
          input_data,
          target_data,
@@ -113,31 +115,32 @@ static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
   if (errcode != cudaSuccess)
     THError(cudaGetErrorString(errcode));
 
-  THCudaTensor_free(output);
-  THCudaTensor_free(target);
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, output);
+  THCudaTensor_free(state, target);
+  THCudaTensor_free(state, input);
 
   return 1;
 }
 
 static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
+  THCState *state = getCutorchState(L);
 
   THCudaTensor *input =
       (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
-  input = THCudaTensor_newContiguous(input);
+  input = THCudaTensor_newContiguous(state, input);
 
   THCudaTensor *target =
       (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
-  target = THCudaTensor_newContiguous(target);
-  float *target_data = THCudaTensor_data(target);
+  target = THCudaTensor_newContiguous(state, target);
+  float *target_data = THCudaTensor_data(state, target);
   int ntarget = 1;
   if (target->nDimension > 1)
     ntarget = target->size[1];
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(
       L, 1, "gradInput", "torch.CudaTensor");
-  gradInput = THCudaTensor_newContiguous(gradInput);
-  float *gradInput_data = THCudaTensor_data(gradInput);
+  gradInput = THCudaTensor_newContiguous(state, gradInput);
+  float *gradInput_data = THCudaTensor_data(state, gradInput);
 
   float grad = -1.0;
   if (input->nDimension == 1) {
@@ -157,7 +160,7 @@ static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
       grad /= nframe;
     dim3 blocks(1);
     dim3 threads(NTHREADS);
-    cunn_ClassNLLCriterion_updateGradInput_kernel << <blocks, threads>>>
+    cunn_ClassNLLCriterion_updateGradInput_kernel <<<blocks, threads>>>
         (gradInput_data, target_data, nframe, ndim, grad, ntarget);
   } else
     THArgCheck(0, 2, "vector or matrix expected");
@@ -166,9 +169,9 @@ static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
   if (errcode != cudaSuccess)
     THError(cudaGetErrorString(errcode));
 
-  THCudaTensor_free(gradInput);
-  THCudaTensor_free(target);
-  THCudaTensor_free(input);
+  THCudaTensor_free(state, gradInput);
+  THCudaTensor_free(state, target);
+  THCudaTensor_free(state, input);
 
   return 1;
 }
