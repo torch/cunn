@@ -2,6 +2,7 @@
 
 #define MULTIMARGIN_THREADS 128
 
+template <int P>
 __global__ void cunn_MultiMarginCriterion_updateOutput_kernel(float *output, float *input, float *target, int nframe, int dim, int sizeaverage)
 {
   __shared__ float buffer[MULTIMARGIN_THREADS];
@@ -23,7 +24,7 @@ __global__ void cunn_MultiMarginCriterion_updateOutput_kernel(float *output, flo
       continue;
 
     if(z > 0)
-      buffer[threadIdx.x] += z;
+      buffer[threadIdx.x] += (P==1) ? z : z*z;
   }
   __syncthreads();
 
@@ -41,7 +42,7 @@ __global__ void cunn_MultiMarginCriterion_updateOutput_kernel(float *output, flo
   }
 }
 
-
+template <int P>
 __global__ void cunn_MultiMarginCriterion_updateGradInput_kernel(float *gradInput, float *input, float *target, int nframe, int dim, int sizeaverage)
 {
   __shared__ float buffer[MULTIMARGIN_THREADS];
@@ -65,8 +66,9 @@ __global__ void cunn_MultiMarginCriterion_updateGradInput_kernel(float *gradInpu
 
     if(z > 0)
     {
-      buffer[threadIdx.x] -= g;
-      gradInput_k[i] = g;
+      float h = (P == 1) ? g : 2*g*z;
+      buffer[threadIdx.x] -= h;
+      gradInput_k[i] = h;
     }
     else
       gradInput_k[i] = 0;
@@ -88,6 +90,7 @@ static int cunn_MultiMarginCriterion_updateOutput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
+  int p = luaT_getfieldchecknumber(L, 1, "p");
   int sizeaverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
 
   input = THCudaTensor_newContiguous(state, input);
@@ -102,7 +105,14 @@ static int cunn_MultiMarginCriterion_updateOutput(lua_State *L)
 
     THCudaStorage_fill(state, target, target_);
 
-    cunn_MultiMarginCriterion_updateOutput_kernel<<<blocks,threads>>>(output->data,
+    if(p==1)
+      cunn_MultiMarginCriterion_updateOutput_kernel<1> <<<blocks,threads>>>(output->data,
+                                                                      THCudaTensor_data(state, input),
+                                                                      target->data,
+                                                                      1, input->size[0],
+                                                                      sizeaverage);
+    else if(p==2)
+      cunn_MultiMarginCriterion_updateOutput_kernel<2> <<<blocks,threads>>>(output->data,
                                                                       THCudaTensor_data(state, input),
                                                                       target->data,
                                                                       1, input->size[0],
@@ -118,7 +128,14 @@ static int cunn_MultiMarginCriterion_updateOutput(lua_State *L)
     THCudaTensor *output = THCudaTensor_newWithSize1d(state, input->size[0]);
     dim3 blocks(input->size[0]);
     dim3 threads(MULTIMARGIN_THREADS);
-    cunn_MultiMarginCriterion_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, output),
+    if(p==1)
+      cunn_MultiMarginCriterion_updateOutput_kernel<1> <<<blocks,threads>>>(THCudaTensor_data(state, output),
+                                                                      THCudaTensor_data(state, input),
+                                                                      THCudaTensor_data(state, target),
+                                                                      input->size[0], input->size[1],
+                                                                      sizeaverage);
+    else if(p==2)
+      cunn_MultiMarginCriterion_updateOutput_kernel<2> <<<blocks,threads>>>(THCudaTensor_data(state, output),
                                                                       THCudaTensor_data(state, input),
                                                                       THCudaTensor_data(state, target),
                                                                       input->size[0], input->size[1],
@@ -146,6 +163,7 @@ static int cunn_MultiMarginCriterion_updateGradInput(lua_State *L)
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   int sizeaverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
+  int p = luaT_getfieldchecknumber(L, 1, "p");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
   THCudaTensor_resizeAs(state, gradInput, input);
@@ -159,7 +177,14 @@ static int cunn_MultiMarginCriterion_updateGradInput(lua_State *L)
 
     THCudaTensor_fill(state, target, target_);
 
-    cunn_MultiMarginCriterion_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
+    if(p==1)
+      cunn_MultiMarginCriterion_updateGradInput_kernel<1> <<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
+                                                                         THCudaTensor_data(state, input),
+                                                                         THCudaTensor_data(state, target),
+                                                                         1, gradInput->size[0],
+                                                                         sizeaverage);
+    else if(p==2)
+      cunn_MultiMarginCriterion_updateGradInput_kernel<2> <<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
                                                                          THCudaTensor_data(state, input),
                                                                          THCudaTensor_data(state, target),
                                                                          1, gradInput->size[0],
@@ -173,7 +198,14 @@ static int cunn_MultiMarginCriterion_updateGradInput(lua_State *L)
     dim3 blocks(gradInput->size[0]);
     dim3 threads(LOGSOFTMAX_THREADS);
 
-    cunn_MultiMarginCriterion_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
+    if(p==1)
+      cunn_MultiMarginCriterion_updateGradInput_kernel<1> <<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
+                                                                         THCudaTensor_data(state, input),
+                                                                         THCudaTensor_data(state, target),
+                                                                         gradInput->size[0], gradInput->size[1],
+                                                                         sizeaverage);
+    else if(p==2)
+      cunn_MultiMarginCriterion_updateGradInput_kernel<2> <<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
                                                                          THCudaTensor_data(state, input),
                                                                          THCudaTensor_data(state, target),
                                                                          gradInput->size[0], gradInput->size[1],
