@@ -211,6 +211,167 @@ cunntest.Abs_transposed = function()
       pointwise_transposed(nn.Abs(), 'Abs')
 end
 
+
+function cunntest.Euclidean_forward_batch()
+   local bs = math.random(8,32)
+   local nin = math.random(1,100)
+   local nout = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('Euclidean forward %d %d -> %d %d', bs, nin, bs, nout)
+   times[title] = tm
+
+   local input = torch.randn(bs, nin)
+   local sconv = nn.Euclidean(nin, nout)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) batch ')
+end
+
+function cunntest.Euclidean_backward_batch()
+   local bs = math.random(8,32)
+   local nin = math.random(1,100)
+   local nout = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('Euclidean backward %d %d <- %d %d', bs, nin, bs, nout)
+   times[title] = tm
+
+   local input = torch.randn(bs, nin)
+   local gradOutput = torch.randn(bs, nout)
+   local sconv = nn.Euclidean(nin, nout)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   local groundweight = sconv.gradWeight
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local weightcuda = gconv.gradWeight
+   
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+end
+
+function cunntest.WeightedEuclidean_forward_batch()
+   local bs = math.random(8,32)
+   local nin = math.random(1,100)
+   local nout = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('WeightedEuclidean forward %d %d -> %d %d', bs, nin, bs, nout)
+   times[title] = tm
+
+   local input = torch.randn(bs, nin)
+   local sconv = nn.WeightedEuclidean(nin, nout)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) batch ')
+end
+
+function cunntest.WeightedEuclidean_backward_batch()
+   local bs = math.random(8,32)
+   local nin = math.random(1,100)
+   local nout = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('WeightedEuclidean backward %d %d <- %d %d', bs, nin, bs, nout)
+   times[title] = tm
+
+   local input = torch.randn(bs, nin)
+   local gradOutput = torch.randn(bs, nout)
+   local sconv = nn.WeightedEuclidean(nin, nout)
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   local groundweight = sconv.gradWeight
+   local grounddiagCov = sconv.gradDiagCov
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local weightcuda = gconv.gradWeight
+   local diagCovcuda = gconv.gradDiagCov
+   
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local derror = diagCovcuda:float() - grounddiagCov
+   
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(derror:abs():max(), precision_backward, 'error on diagCov (backward) ')
+end
+
 function cunntest.Sigmoid_forward()
    local size = math.random(1,100)
 
@@ -3325,7 +3486,8 @@ function cunntest.CMul_backward_batch()
 end
 
 
-function nn.testcuda(tests, print_timing)
+function nn.testcuda(tests, print_timing, n_loop)
+   nloop = n_loop or nloop
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
    math.randomseed(os.time())
