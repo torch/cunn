@@ -5,7 +5,7 @@
 /*
  * Description:
  *    this function maxpools an input 4D tensor along dimensions 2 and 3
- *    4D input, 4D output, 4D argmax x and y 
+ *    4D input, 4D output, 4D argmax x and y
  */
 __global__ void maxpool(float *input, float *output, float *indices_x, float *indices_y,
                         int input_n, int input_h, int input_w,
@@ -56,7 +56,7 @@ __global__ void maxpool(float *input, float *output, float *indices_x, float *in
             max = val;
             argmax_x = kx;
             argmax_y = ky;
-          } 
+          }
         }
         ptr_input += input_w; // next input line
       }
@@ -280,6 +280,9 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
   float *gradInput_data;
   float *gradOutput_data;
 
+  input = THCudaTensor_newContiguous(state, input);
+  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
+
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
@@ -357,6 +360,10 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     printf("error in SpatialMaxsampling.updateGradInput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
+  // clean
+  THCudaTensor_free(state, input);
+  THCudaTensor_free(state, gradOutput);
+
   return 1;
 }
 
