@@ -48,7 +48,7 @@ __global__ void subsample(float *input, float *output,
         ptr_input += input_w; // next input line
       }
       // Update output
-      *ptr_output = sum;
+      *ptr_output = sum/float(kW*kH);
     }
   }
 }
@@ -173,7 +173,7 @@ __global__ void subgradinput(float *gradInput, float *gradOutput,
       int kx, ky;
       for(ky = 0; ky < kH; ky++) {
         for(kx = 0; kx < kW; kx++)
-          ptr_gradInput[kx] += z;
+          ptr_gradInput[kx] += z / float(kW*kH);
         ptr_gradInput += input_w;
       }
     }
@@ -222,7 +222,7 @@ __global__ void subgradinputAtomic(float *gradInput, float *gradOutput,
       int kx, ky;
       for(ky = 0; ky < kH; ky++) {
         for(kx = 0; kx < kW; kx++) {
-          atomicAdd(&(ptr_gradInput[kx]), z);
+          atomicAdd(&(ptr_gradInput[kx]), z / float(kW*kH));
         }
         ptr_gradInput += input_w;
       }
