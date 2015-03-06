@@ -262,8 +262,15 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     dim3 threads(32,8);
 
     // run updateGradInput kernel
-    subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
-                                        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    if (kH == dH && kW == dW) {
+      subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+                                          nInputPlane, nInputRows, nInputCols,
+                                          kH, kW, dH, dW);
+    } else {
+      subgradinputAtomic <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+                                                nInputPlane, nInputRows, nInputCols,
+                                                kH, kW, dH, dW);
+    }
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
