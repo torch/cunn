@@ -10,6 +10,7 @@ static const int NTHREADS = 32;
 __global__ void cunn_ClassNLLCriterion_updateOutput_kernel1(float *output,
                                                             float *input,
                                                             float *target,
+                                                            float *weights,
                                                             int ntarget) {
   assert(threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0);
 
@@ -19,14 +20,19 @@ __global__ void cunn_ClassNLLCriterion_updateOutput_kernel1(float *output,
   register int i, t;
   for (i = 0; i < ntarget; i++) {
     t = target[i] - 1;
-    if (t >= 0)
-      *output = -input[t];
+    if (t >= 0) {
+      if (weights)
+        *output = -input[t]*weights[t];
+      else
+        *output = -input[t];
+    }
   }
 }
 
 __global__ void cunn_ClassNLLCriterion_updateOutput_kernel(float *output,
                                                            float *input,
                                                            float *target,
+                                                           float *weights,
                                                            int nframe,
                                                            int ndim,
                                                            int sizeAverage,
@@ -39,8 +45,12 @@ __global__ void cunn_ClassNLLCriterion_updateOutput_kernel(float *output,
   for (i = threadIdx.x; i < nframe; i += NTHREADS) {
     for (j = 0; j < ntarget; ++j) {
       t = (int)target[i * ntarget + j] - 1;
-      if (t >= 0)
-        shInputs[threadIdx.x] += input[i * ndim + t];
+      if (t >= 0) {
+        if (weights)
+          shInputs[threadIdx.x] += input[i * ndim + t] * weights[t];
+        else
+          shInputs[threadIdx.x] += input[i * ndim + t];
+      }
     }
   }
   __syncthreads();
@@ -59,6 +69,7 @@ __global__ void cunn_ClassNLLCriterion_updateOutput_kernel(float *output,
 
 __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel(float *gradInput,
                                                               float *target,
+                                                              float *weights,
                                                               int nframe,
                                                               int ndim,
                                                               float grad,
@@ -67,8 +78,12 @@ __global__ void cunn_ClassNLLCriterion_updateGradInput_kernel(float *gradInput,
   for (i = threadIdx.x; i < nframe; i += NTHREADS) {
     for (j = 0; j < ntarget; ++j) {
       t = (int)target[i * ntarget + j] - 1;
-      if (t >= 0)
-        gradInput[i * ndim + t] = grad;
+      if (t >= 0) {
+        if (weights)
+          gradInput[i * ndim + t] = grad * weights[t];
+        else
+          gradInput[i * ndim + t] = grad;
+      }
     }
   }
 }
@@ -88,6 +103,14 @@ static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
   if (target->nDimension > 1)
     ntarget = target->size[1];
 
+  float *weight_data = NULL;
+  THCudaTensor *weights = NULL;
+  if (lua_type(L,4)) {
+    weights = (THCudaTensor *)luaT_checkudata(L, 4, "torch.CudaTensor");
+    weights = THCudaTensor_newContiguous(state, weights);
+    weight_data = THCudaTensor_data(state, weights);
+  }
+
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(
       L, 1, "outputTensor", "torch.CudaTensor");
   output = THCudaTensor_newContiguous(state, output);
@@ -95,7 +118,7 @@ static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
 
   if (input->nDimension == 1) {
     cunn_ClassNLLCriterion_updateOutput_kernel1 << <1, 1>>>
-        (output_data, input_data, target_data, ntarget);
+        (output_data, input_data, target_data, weight_data, ntarget);
   } else if (input->nDimension == 2) {
     dim3 blocks(1);
     dim3 threads(NTHREADS);
@@ -104,6 +127,7 @@ static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
         (output_data,
          input_data,
          target_data,
+         weight_data,
          input->size[0],
          input->size[1],
          sizeAverage,
@@ -118,6 +142,8 @@ static int cunn_ClassNLLCriterion_updateOutput(lua_State *L) {
   THCudaTensor_free(state, output);
   THCudaTensor_free(state, target);
   THCudaTensor_free(state, input);
+  if (weights)
+    THCudaTensor_free(state, weights);
 
   return 1;
 }
@@ -137,6 +163,14 @@ static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
   if (target->nDimension > 1)
     ntarget = target->size[1];
 
+  float *weight_data = NULL;
+  THCudaTensor *weights = NULL;
+  if (lua_type(L,4)) {
+    weights = (THCudaTensor *)luaT_checkudata(L, 4, "torch.CudaTensor");
+    weights = THCudaTensor_newContiguous(state, weights);
+    weight_data = THCudaTensor_data(state, weights);
+  }
+
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(
       L, 1, "gradInput", "torch.CudaTensor");
   gradInput = THCudaTensor_newContiguous(state, gradInput);
@@ -148,6 +182,11 @@ static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
       THArgCheck(0, 2, "multi-target not implemented");
     float tid;
     cudaMemcpy(&tid, target_data, sizeof(float), cudaMemcpyDeviceToHost);
+    if (weight_data) {
+      float weight;
+      cudaMemcpy(&weight, weight_data, sizeof(float), cudaMemcpyDeviceToHost);
+      grad *= weight;
+    }
     cudaMemcpy(gradInput_data + (int)tid - 1,
                &grad,
                sizeof(float),
@@ -161,7 +200,7 @@ static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
     dim3 blocks(1);
     dim3 threads(NTHREADS);
     cunn_ClassNLLCriterion_updateGradInput_kernel <<<blocks, threads>>>
-        (gradInput_data, target_data, nframe, ndim, grad, ntarget);
+        (gradInput_data, target_data, weight_data, nframe, ndim, grad, ntarget);
   } else
     THArgCheck(0, 2, "vector or matrix expected");
 
@@ -172,6 +211,8 @@ static int cunn_ClassNLLCriterion_updateGradInput(lua_State *L) {
   THCudaTensor_free(state, gradInput);
   THCudaTensor_free(state, target);
   THCudaTensor_free(state, input);
+  if (weights)
+    THCudaTensor_free(state, weights);
 
   return 1;
 }
