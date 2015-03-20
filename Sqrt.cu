@@ -40,7 +40,7 @@ struct sqrtupdateGradInput_functor
 
   __host__ __device__ float operator()(const float& output, const float& gradOutput) const
   {
-    return 0.5 * gradOutput / output;
+    return (output == 0.0f) ? 0.0f : ((0.5f * gradOutput) / output);
   }
 };
 
