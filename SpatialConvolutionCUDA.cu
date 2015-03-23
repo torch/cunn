@@ -177,7 +177,7 @@ static int cunn_SpatialConvolutionCUDA_accGradParameters(lua_State *L)
     nOutputPlane, outputHeight, outputWidth,
     kH, kW,
     -floor((double)padding/2), dW,
-    0, scale, partialSum
+    1, scale, partialSum
   );
 
   return 0;
