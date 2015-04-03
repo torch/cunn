@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "THCApply.cuh"
 
 struct softPlusupdateOutput_functor
 {
@@ -7,10 +8,10 @@ struct softPlusupdateOutput_functor
 
   softPlusupdateOutput_functor(float threshold_, float beta_) : threshold(threshold_), beta(beta_) {}
 
-  __host__ __device__ float operator()(const float& input) const
+  __device__ void operator()(float* output, const float* input) const
   {
-    float betain = beta * input;
-    return ((betain) > threshold) ? input : (1/beta) * log1p(exp(betain));
+    float betain = beta * *input;
+    *output = ((betain) > threshold) ? *input : (1/beta) * log1p(exp(betain));
   }
 };
 
@@ -21,18 +22,9 @@ static int cunn_SoftPlus_updateOutput(lua_State *L)
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   float beta = luaT_getfieldchecknumber(L, 1, "beta");
   float threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-  long size = THCudaTensor_nElement(state, input);
-
-  input = THCudaTensor_newContiguous(state, input);
 
   THCudaTensor_resizeAs(state, output, input);
-
-  thrust::device_ptr<float> output_data(THCudaTensor_data(state, output));
-  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
-  thrust::transform(input_data, input_data+size, output_data,
-                    softPlusupdateOutput_functor(threshold, beta));
-
-  THCudaTensor_free(state, input);
+  THCudaTensor_pointwiseApply2(state, output, input, softPlusupdateOutput_functor(threshold, beta)); 
   return 1;
 }
 
@@ -43,11 +35,11 @@ struct softPlusupdateGradInput_functor
 
   softPlusupdateGradInput_functor(float threshold_, float beta_) : threshold(threshold_), beta(beta_) {}
 
-  __host__ __device__ float operator()(const float& output, const float& gradOutput) const
+  __device__ void operator()(float* gradInput, const float* output, const float* gradOutput) const
   {
-    float betaout = beta * output;
+    float betaout = beta * *output;
     float exp_bo = exp(betaout);
-    return ((betaout) > threshold) ? gradOutput : gradOutput * (exp_bo - 1) / exp_bo;
+    *gradInput = ((betaout) > threshold) ? *gradOutput : *gradOutput * (exp_bo - 1) / exp_bo;
   }
 };
 
@@ -60,18 +52,9 @@ static int cunn_SoftPlus_updateGradInput(lua_State *L)
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   float beta = luaT_getfieldchecknumber(L, 1, "beta");
   float threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-  long size = THCudaTensor_nElement(state, output);
 
-  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
   THCudaTensor_resizeAs(state, gradInput, output);
-
-  thrust::device_ptr<float> output_data(THCudaTensor_data(state, output));
-  thrust::device_ptr<float> gradOutput_data(THCudaTensor_data(state, gradOutput));
-  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
-  thrust::transform(output_data, output_data+size, gradOutput_data, gradInput_data,
-                    softPlusupdateGradInput_functor(threshold, beta));
-
-  THCudaTensor_free(state, gradOutput);
+  THCudaTensor_pointwiseApply3(state, gradInput, output, gradOutput, softPlusupdateGradInput_functor(threshold, beta));
   return 1;
 }
 
