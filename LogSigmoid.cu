@@ -2,10 +2,10 @@
 
 struct logSigmoid_updateOutput_functor
 {
-  __host__ __device__ float operator()(const float& input) const
+  __device__ void operator()(float* output, const float* input) const
   {
-    float z = exp(-input);
-    return -log(1. + z);
+    float z = exp(-*input);
+    *output = -log(1. + z);
   }
 };
 
@@ -14,26 +14,18 @@ static int cunn_LogSigmoid_updateOutput(lua_State *L)
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
-  long size = THCudaTensor_nElement(state, input);
-
-  input = THCudaTensor_newContiguous(state, input);
 
   THCudaTensor_resizeAs(state, output, input);
-
-  thrust::device_ptr<float> output_data(THCudaTensor_data(state, output));
-  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
-  thrust::transform(input_data, input_data+size, output_data, logSigmoid_updateOutput_functor());
-
-  THCudaTensor_free(state, input);
+  THCudaTensor_pointwiseApply2(state, output, input, logSigmoid_updateOutput_functor());
   return 1;
 }
 
 struct logSigmoid_updateGradInput_functor
 {
-  __host__ __device__ float operator()(const float& input, const float& gradOutput) const
+  __device__ void operator()(float* gradInput, const float* input, const float* gradOutput) const
   {
-    float z = exp(-input);
-    return gradOutput * z / (1. + z);
+    float z = exp(-*input);
+    *gradInput = *gradOutput * z / (1. + z);
   }
 };
 
@@ -43,19 +35,9 @@ static int cunn_LogSigmoid_updateGradInput(lua_State *L)
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-  long size = THCudaTensor_nElement(state, input);
-
-  input = THCudaTensor_newContiguous(state, input);
-  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
   THCudaTensor_resizeAs(state, gradInput, input);
-
-  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
-  thrust::device_ptr<float> gradOutput_data(THCudaTensor_data(state, gradOutput));
-  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
-  thrust::transform(input_data, input_data+size, gradOutput_data, gradInput_data, logSigmoid_updateGradInput_functor());
-
-  THCudaTensor_free(state, input);
+  THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, logSigmoid_updateGradInput_functor());
   THCudaTensor_free(state, gradOutput);
   return 1;
 }
