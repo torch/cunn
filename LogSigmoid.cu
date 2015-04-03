@@ -38,7 +38,6 @@ static int cunn_LogSigmoid_updateGradInput(lua_State *L)
 
   THCudaTensor_resizeAs(state, gradInput, input);
   THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, logSigmoid_updateGradInput_functor());
-  THCudaTensor_free(state, gradOutput);
   return 1;
 }
 
