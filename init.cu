@@ -20,11 +20,8 @@
 #include "TemporalConvolution.cu"
 #include "TemporalMaxPooling.cu"
 #include "SpatialConvolutionMM.cu"
-#include "SpatialConvolutionMM_BHWD.cu"
-#include "SpatialConvolutionCUDA.cu"
 #include "SpatialSubSampling.cu"
 #include "SpatialMaxPooling.cu"
-#include "SpatialMaxPoolingCUDA.cu"
 #include "SpatialAveragePooling.cu"
 #include "SpatialAdaptiveMaxPooling.cu"
 #include "Square.cu"
@@ -59,11 +56,8 @@ int luaopen_libcunn(lua_State *L)
   cunn_SoftMax_init(L);
   cunn_TemporalConvolution_init(L);
   cunn_TemporalMaxPooling_init(L);
-  cunn_SpatialConvolutionCUDA_init(L);
   cunn_SpatialConvolutionMM_init(L);
-  cunn_SpatialConvolutionMM_BHWD_init(L);
   cunn_SpatialMaxPooling_init(L);
-  cunn_SpatialMaxPoolingCUDA_init(L);
   cunn_SpatialAdaptiveMaxPooling_init(L);
   cunn_SpatialSubSampling_init(L);
   cunn_SpatialAveragePooling_init(L);
