@@ -23,7 +23,7 @@ static int cunn_AbsCriterion_updateOutput(lua_State *L)
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
-
+  THAssert(THCudaTensor_checkGPU(state, 2, input, target));
   float sum;
 
   long size = THCudaTensor_nElement(state, input);
@@ -68,6 +68,7 @@ static int cunn_AbsCriterion_updateGradInput(lua_State *L)
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 3, input, target, gradInput));
 
   long size = THCudaTensor_nElement(state, input);
   float norm = (sizeAverage ? 1./size : 1.);

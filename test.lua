@@ -510,10 +510,15 @@ cunntest.LogSigmoid_transposed = function()
       pointwise_transposed(nn.LogSigmoid(), 'LogSigmoid', 1e-6)
 end
 
-function cunntest.Threshold_forward()
+local function Threshold_forward(inplace)
+   inplace = inplace or false
    local size = math.random(1,100)
    local thres = torch.uniform(-1,1)
    local val = torch.uniform(-1,1)
+   -- if inplace, make sure val <= thres
+   if (inplace) then
+      val = thres - torch.uniform(0, 1)
+   end
 
    local tm = {}
    local title = string.format('Threshold forward %d -> %d', size, size)
@@ -530,6 +535,7 @@ function cunntest.Threshold_forward()
 
    input = input:cuda()
    local gconv = sconv:cuda()
+   gconv.inplace = inplace
    local rescuda = gconv:forward(input)
    a:reset()
    for i = 1,nloop do
@@ -542,7 +548,8 @@ function cunntest.Threshold_forward()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
-function cunntest.Threshold_backward()
+local function Threshold_backward(inplace)
+   inplace = inplace or false
    local size = math.random(1,100)
 
    local tm = {}
@@ -563,6 +570,7 @@ function cunntest.Threshold_backward()
    input = input:cuda()
    gradOutput = gradOutput:cuda()
    local gconv = sconv:clone():cuda()
+   gconv.inplace = inplace
    gconv:forward(input)
    local rescuda = gconv:backward(input, gradOutput)
    a:reset()
@@ -575,6 +583,22 @@ function cunntest.Threshold_backward()
    local error = rescuda:float() - groundgrad
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+cunntest.Threshold_forward = function()
+   Threshold_forward()
+end
+
+cunntest.Threshold_forward_inplace = function()
+   Threshold_forward(true)
+end
+
+cunntest.Threshold_backward = function()
+   Threshold_backward()
+end
+
+cunntest.Threshold_backward_inplace = function()
+   Threshold_backward(true)
 end
 
 cunntest.Threshold_transposed = function()
@@ -644,6 +668,34 @@ function cunntest.Sqrt_backward()
    local error = rescuda:float() - groundgrad
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+function cunntest.Sqrt_zero()
+   local size = math.random(1, 100)
+
+   -- Test zero inputs; we will avoid a div-by-zero by setting to zero
+   local module_gpu = nn.Sqrt():cuda()
+   local input_gpu = torch.CudaTensor(size, size):zero()
+   module_gpu:forward(input_gpu)
+
+   local gradOutput_gpu = torch.CudaTensor(size, size):fill(1)
+   local gradInput_gpu = module_gpu:backward(input_gpu, gradOutput_gpu)
+
+   mytester:assertTensorEq(gradInput_gpu:float(),
+                           torch.FloatTensor(size, size):zero(),
+                           0.000001, "error in sqrt backward singularity")
+
+   -- Verify CPU and GPU zero behavior equivalency
+   local module_cpu = nn.Sqrt()
+   local input_cpu = input_gpu:float()
+   module_cpu:forward(input_cpu)
+
+   local gradOutput_cpu = gradOutput_gpu:float()
+   local gradInput_cpu = module_cpu:backward(input_cpu, gradOutput_cpu)
+
+   mytester:assertTensorEq(gradInput_gpu:float(),
+                           gradInput_cpu:float(),
+                           0.000001, "Sqrt_zero CPU and GPU not equivalent")
 end
 
 cunntest.Sqrt_transposed = function()

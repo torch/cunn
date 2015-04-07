@@ -108,6 +108,7 @@ static int cunn_SoftMax_updateOutput(lua_State *L)
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 2, input, output));
 
   input = THCudaTensor_newContiguous(state, input);
   THCudaTensor_resizeAs(state, output, input);
@@ -116,17 +117,19 @@ static int cunn_SoftMax_updateOutput(lua_State *L)
   {
     dim3 blocks(1);
     dim3 threads(SOFTMAX_THREADS);
-    cunn_SoftMax_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, output),
-                                                         THCudaTensor_data(state, input),
-                                                         1, input->size[0]);
+    cunn_SoftMax_updateOutput_kernel<<<blocks,threads,
+      0, THCState_getCurrentStream(state)>>>(THCudaTensor_data(state, output),
+                                             THCudaTensor_data(state, input),
+                                             1, input->size[0]);
   }
   else if(input->nDimension == 2)
   {
     dim3 blocks(input->size[0]);
     dim3 threads(SOFTMAX_THREADS);
-    cunn_SoftMax_updateOutput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, output),
-                                                         THCudaTensor_data(state, input),
-                                                         input->size[0], input->size[1]);
+    cunn_SoftMax_updateOutput_kernel<<<blocks,threads,
+      0, THCState_getCurrentStream(state)>>>(THCudaTensor_data(state, output),
+                                             THCudaTensor_data(state, input),
+                                             input->size[0], input->size[1]);
   }
   else
     THError("vector or matrix expected");
@@ -157,6 +160,7 @@ static int cunn_SoftMax_updateGradInput(lua_State *L)
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 3, output, gradOutput, gradInput));
 
   output = THCudaTensor_newContiguous(state, output);
   gradOutput = THCudaTensor_newContiguous(state, gradOutput);
@@ -168,20 +172,22 @@ static int cunn_SoftMax_updateGradInput(lua_State *L)
     dim3 blocks(1);
     dim3 threads(SOFTMAX_THREADS);
 
-    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
-                                                            THCudaTensor_data(state, output),
-                                                            THCudaTensor_data(state, gradOutput),
-                                                            1, gradInput->size[0]);
+    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads,
+      0, THCState_getCurrentStream(state)>>>(THCudaTensor_data(state, gradInput),
+                                             THCudaTensor_data(state, output),
+                                             THCudaTensor_data(state, gradOutput),
+                                             1, gradInput->size[0]);
   }
   else if(gradInput->nDimension == 2)
   {
     dim3 blocks(gradInput->size[0]);
     dim3 threads(SOFTMAX_THREADS);
 
-    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads>>>(THCudaTensor_data(state, gradInput),
-                                                            THCudaTensor_data(state, output),
-                                                            THCudaTensor_data(state, gradOutput),
-                                                            gradInput->size[0], gradInput->size[1]);
+    cunn_SoftMax_updateGradInput_kernel<<<blocks,threads,
+      0, THCState_getCurrentStream(state)>>>(THCudaTensor_data(state, gradInput),
+                                             THCudaTensor_data(state, output),
+                                             THCudaTensor_data(state, gradOutput),
+                                             gradInput->size[0], gradInput->size[1]);
   }
   else
     THError("vector or matrix expected");

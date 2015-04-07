@@ -259,6 +259,7 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
   float *output_data;
   float *input_data;
 
+  THAssert(THCudaTensor_checkGPU(state, 4, input, output, weight, bias));
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch) tensor expected");
 
   if (input->nDimension == 3) {
@@ -283,8 +284,9 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
     dim3 threads(32,8);
 
     // run subsample kernel
-    subsample <<<blocks, threads>>> (input_data, output_data, weight_data, bias_data,
-                                     nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+      input_data, output_data, weight_data, bias_data,
+      nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
@@ -308,8 +310,9 @@ static int cunn_SpatialSubSampling_updateOutput(lua_State *L)
     dim3 threads(32,8);
 
     // run subsample kernel
-    subsample <<<blocks, threads>>> (input_data, output_data, weight_data, bias_data,
-                                     nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+      input_data, output_data, weight_data, bias_data,
+      nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
   }
 
   // clean
@@ -338,6 +341,7 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
   THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
+  THAssert(THCudaTensor_checkGPU(state, 4, input, gradOutput, weight, gradInput));
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
@@ -357,8 +361,9 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
     dim3 threads(32,8);
 
     // run updateGradInput kernel
-    subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, weight_data,
-                                        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+      gradInput_data, gradOutput_data, weight_data,
+      nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
@@ -380,12 +385,14 @@ static int cunn_SpatialSubSampling_updateGradInput(lua_State *L)
 
     // run updateGradInput kernel
     if (kH == dH && kW == dW) {
-      subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data, weight_data,
-                                          nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+      subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+        gradInput_data, gradOutput_data, weight_data,
+        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
     } else {
-      subgradinputAtomic <<<blocks, threads>>> (gradInput_data, gradOutput_data, weight_data,
-                                                nInputPlane, nInputRows, nInputCols,
-                                                kH, kW, dH, dW);
+      subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+        gradInput_data, gradOutput_data, weight_data,
+        nInputPlane, nInputRows, nInputCols,
+        kH, kW, dH, dW);
     }
   }
 
@@ -413,6 +420,8 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
   THCudaTensor *gradBias = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
 
+  THAssert(THCudaTensor_checkGPU(state, 4, input, gradOutput, gradWeight, gradBias));
+
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
@@ -430,8 +439,9 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
     dim3 threads(32,8);
 
     // run gradweight kernel
-    subgradweight <<<blocks, threads>>> (input_data, gradOutput_data, gradWeight_data, gradBias_data,
-                                         nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW, scale);
+    subgradweight <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+      input_data, gradOutput_data, gradWeight_data, gradBias_data,
+      nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW, scale);
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
@@ -452,10 +462,11 @@ static int cunn_SpatialSubSampling_accGradParameters(lua_State *L)
     // run gradweight kernel
     long sl;
     for (sl=0; sl<nbatch; sl++) {
-      subgradweight <<<blocks, threads>>> (input_data + sl*input->stride[0],
-                                           gradOutput_data + sl*gradOutput->stride[0],
-                                           gradWeight_data, gradBias_data,
-                                           nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW, scale);
+      subgradweight <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (
+        input_data + sl*input->stride[0],
+        gradOutput_data + sl*gradOutput->stride[0],
+        gradWeight_data, gradBias_data,
+        nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW, scale);
     }
   }
 

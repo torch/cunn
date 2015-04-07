@@ -1,15 +1,29 @@
+#include "THCApply.cuh"
 #include "utils.h"
 
-struct thresholdupdateOutput_functor
-{
-  const double threshold;
-  const double val;
+struct ThresholdUpdateOutput {
+  const float threshold_;
+  const float val_;
 
-  thresholdupdateOutput_functor(double threshold_, double val_) : threshold(threshold_), val(val_) {}
+  ThresholdUpdateOutput(float threshold, float val): threshold_(threshold),
+                                                     val_(val) {}
 
-  __host__ __device__ float operator()(const float& input) const
-  {
-    return (input > threshold) ? input : val;
+  __device__ __forceinline__ void operator()(float* out, float* in) {
+    float x = *in;
+    *out = (x > threshold_) ? x : val_;
+  }
+};
+
+// in-place variant
+struct ThresholdUpdateOutputIP {
+  const float threshold_;
+  const float val_;
+
+  ThresholdUpdateOutputIP(float threshold, float val): threshold_(threshold),
+                                                       val_(val) {}
+
+  __device__ __forceinline__ void operator()(float* x) {
+    *x = (*x > threshold_) ? *x : val_;
   }
 };
 
@@ -20,31 +34,45 @@ static int cunn_Threshold_updateOutput(lua_State *L)
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   double val = luaT_getfieldchecknumber(L, 1, "val");
   double threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-  long size = THCudaTensor_nElement(state, input);
+  bool   inPlace = luaT_getfieldcheckboolean(L, 1, "inplace");
 
-  input = THCudaTensor_newContiguous(state, input);
+  THAssert(THCudaTensor_checkGPU(state, 2, input, output));
 
-  THCudaTensor_resizeAs(state, output, input);
+  if (inPlace) {
+    THCudaTensor_pointwiseApply1(state, input,
+                                 ThresholdUpdateOutputIP(threshold, val));
+    THCudaTensor_set(state, output, input);
+  } else {
+    THCudaTensor_resizeAs(state, output, input);
+    THCudaTensor_pointwiseApply2(state, output, input,
+                                 ThresholdUpdateOutput(threshold, val));
+  }
 
-  thrust::device_ptr<float> output_data(THCudaTensor_data(state, output));
-  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
-  thrust::transform(input_data, input_data+size, output_data,
-                    thresholdupdateOutput_functor(threshold, val));
-
-  THCudaTensor_free(state, input);
+  THCudaCheck(cudaGetLastError());
   return 1;
 }
 
-struct thresholdupdateGradInput_functor
+struct ThresholdUpdateGradInput
 {
-  const double threshold;
-  const double val;
+  const float threshold_;
 
-  thresholdupdateGradInput_functor(double threshold_, double val_) : threshold(threshold_), val(val_) {}
+  ThresholdUpdateGradInput(float threshold) : threshold_(threshold) {}
 
-  __host__ __device__ float operator()(const float& input, const float& gradOutput) const
-  {
-    return (input > threshold) ? gradOutput : 0;
+  __device__ __forceinline__ void operator()(float* gradInput, float* input,
+                                             float* gradOutput) const {
+    *gradInput = (*input > threshold_) ? *gradOutput : 0;
+  }
+};
+
+struct ThresholdUpdateGradInputIP
+{
+  const float threshold_;
+
+  ThresholdUpdateGradInputIP(float threshold) : threshold_(threshold) {}
+
+  __device__ __forceinline__ void operator()(float* gradOutput,
+                                             float* input) const {
+    *gradOutput = (*input > threshold_) ? *gradOutput : 0;
   }
 };
 
@@ -57,20 +85,21 @@ static int cunn_Threshold_updateGradInput(lua_State *L)
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   double val = luaT_getfieldchecknumber(L, 1, "val");
   double threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-  long size = THCudaTensor_nElement(state, output);
+  bool   inPlace   = luaT_getfieldcheckboolean(L, 1, "inplace");
 
-  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
-  input = THCudaTensor_newContiguous(state, input);
-  THCudaTensor_resizeAs(state, gradInput, output);
+  THAssert(THCudaTensor_checkGPU(state, 4, input, output, gradInput, gradOutput));
 
-  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
-  thrust::device_ptr<float> gradOutput_data(THCudaTensor_data(state, gradOutput));
-  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
-  thrust::transform(input_data, input_data+size, gradOutput_data, gradInput_data,
-                    thresholdupdateGradInput_functor(threshold, val));
+  if (inPlace) {
+    THCudaTensor_pointwiseApply2(state, gradOutput, input,
+                                 ThresholdUpdateGradInputIP(threshold));
+    THCudaTensor_set(state, gradInput, gradOutput);
+  } else {
+    THCudaTensor_resizeAs(state, gradInput, output);
+    THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput,
+                                 ThresholdUpdateGradInput(threshold));
+  }
 
-  THCudaTensor_free(state, input);
-  THCudaTensor_free(state, gradOutput);
+  THCudaCheck(cudaGetLastError());
   return 1;
 }
 
@@ -86,4 +115,3 @@ static void cunn_Threshold_init(lua_State *L)
   luaT_registeratname(L, cunn_Threshold__, "nn");
   lua_pop(L,1);
 }
-

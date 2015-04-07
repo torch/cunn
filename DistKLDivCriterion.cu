@@ -21,6 +21,8 @@ static int cunn_DistKLDivCriterion_updateOutput(lua_State *L)
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 2, input, target));
+
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   luaL_argcheck(L, THCudaTensor_nElement(state, input) == THCudaTensor_nElement(state, target), 2,
                 "input and target need to have the same number of elements");
@@ -69,6 +71,8 @@ static int cunn_DistKLDivCriterion_updateGradInput(lua_State *L)
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 3, input, target, gradInput));
+
   luaL_argcheck(L, THCudaTensor_nElement(state, input) == THCudaTensor_nElement(state, target), 2,
                 "input and target need to have the same number of elements");
 

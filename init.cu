@@ -9,6 +9,7 @@
 #include <thrust/device_ptr.h>
 
 #include "utils.c"
+
 #include "ClassNLLCriterion.cu"
 #include "HardTanh.cu"
 #include "L1Cost.cu"
@@ -44,7 +45,6 @@ LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 int luaopen_libcunn(lua_State *L)
 {
   lua_newtable(L);
-
   cunn_ClassNLLCriterion_init(L);
   cunn_Tanh_init(L);
   cunn_Sigmoid_init(L);

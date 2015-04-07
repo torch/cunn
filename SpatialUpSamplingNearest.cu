@@ -67,6 +67,8 @@ static int cunn_SpatialUpSamplingNearest_updateOutput(lua_State *L)
   THCudaTensor_zero(state, output);
   int scale_factor = luaT_getfieldcheckint(L, 1, "scale_factor");
 
+  THAssert(THCudaTensor_checkGPU(state, 2, input, output));
+
   input = THCudaTensor_newContiguous(state, input);
   // This is for allocating output Tensor
   long no_elements = 1;
@@ -106,7 +108,7 @@ static int cunn_SpatialUpSamplingNearest_updateOutput(lua_State *L)
   dim3 threads(nthreads);
 
   // kernel:
-  upscale<<<blocks, threads>>> (input_data, output_data, no_elements, scale_factor, d1, d2, d3);
+  upscale<<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data, no_elements, scale_factor, d1, d2, d3);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
@@ -147,6 +149,8 @@ static int cunn_SpatialUpSamplingNearest_updateGradInput(lua_State *L)
   THCudaTensor *gradInput  = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   int scale_factor = luaT_getfieldcheckint(L, 1, "scale_factor");
 
+  THAssert(THCudaTensor_checkGPU(state, 2, gradOutput, gradInput));
+
   THCudaTensor_zero(state, gradInput);
 
   float *gradInput_data = THCudaTensor_data(state, gradInput);
@@ -185,7 +189,7 @@ static int cunn_SpatialUpSamplingNearest_updateGradInput(lua_State *L)
   dim3 threads(nthreads);
 
   // kernel:
-  downscale<<<blocks, threads>>> (gradInput_data, gradOutput_data, no_elements,
+  downscale<<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data, no_elements,
     scale_factor, d1, d2, d3);
 
   // check for errors
