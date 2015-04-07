@@ -22,9 +22,9 @@ static int cunn_SoftPlus_updateOutput(lua_State *L)
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   float beta = luaT_getfieldchecknumber(L, 1, "beta");
   float threshold = luaT_getfieldchecknumber(L, 1, "threshold");
-
+  THAssert(THCudaTensor_checkGPU(state, 2, input, output));
   THCudaTensor_resizeAs(state, output, input);
-  THCudaTensor_pointwiseApply2(state, output, input, softPlusupdateOutput_functor(threshold, beta)); 
+  THCudaTensor_pointwiseApply2(state, output, input, softPlusupdateOutput_functor(threshold, beta));
   return 1;
 }
 
@@ -50,6 +50,7 @@ static int cunn_SoftPlus_updateGradInput(lua_State *L)
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 4, input, output, gradOutput, gradInput));
   float beta = luaT_getfieldchecknumber(L, 1, "beta");
   float threshold = luaT_getfieldchecknumber(L, 1, "threshold");
 
@@ -70,4 +71,3 @@ void cunn_SoftPlus_init(lua_State *L)
   luaT_registeratname(L, cunn_SoftPlus__, "nn");
   lua_pop(L,1);
 }
-

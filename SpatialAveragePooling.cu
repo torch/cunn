@@ -63,6 +63,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   int dH = luaT_getfieldcheckint(L, 1, "dH");
 
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 2, input, output));
 
   float *output_data;
   float *input_data;
@@ -91,7 +92,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
     dim3 threads(32,8);
 
     // run subsample kernel
-    subsample <<<blocks, threads>>> (input_data, output_data,
+    subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
                                      nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
   } else {
     long nInputCols = input->size[3];
@@ -116,7 +117,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
     dim3 threads(32,8);
 
     // run subsample kernel
-    subsample <<<blocks, threads>>> (input_data, output_data,
+    subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
                                      nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
   }
 
@@ -242,6 +243,7 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
   int dH = luaT_getfieldcheckint(L, 1, "dH");
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+  THAssert(THCudaTensor_checkGPU(state, 3, input, gradInput, gradOutput));
 
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
@@ -263,11 +265,11 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
 
     // run updateGradInput kernel
     if (kH == dH && kW == dW) {
-      subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+      subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
                                           nInputPlane, nInputRows, nInputCols,
                                           kH, kW, dH, dW);
     } else {
-      subgradinputAtomic <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+      subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
                                                 nInputPlane, nInputRows, nInputCols,
                                                 kH, kW, dH, dW);
     }
@@ -292,11 +294,11 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
 
     // run updateGradInput kernel
     if (kH == dH && kW == dW) {
-      subgradinput <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+      subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
                                           nInputPlane, nInputRows, nInputCols,
                                           kH, kW, dH, dW);
     } else {
-      subgradinputAtomic <<<blocks, threads>>> (gradInput_data, gradOutput_data,
+      subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
                                                 nInputPlane, nInputRows, nInputCols,
                                                 kH, kW, dH, dW);
     }

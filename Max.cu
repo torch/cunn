@@ -58,6 +58,7 @@ static int cunn_Max_updateOutput(lua_State *L)
   THCudaTensor *indices = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
+  THAssert(THCudaTensor_checkGPU(state, 3, input, indices, output));
   luaL_argcheck(L, dimension >= 0 && dimension < input->nDimension, 2, "dimension out of range");
   luaL_argcheck(L, dimension == input->nDimension-1, 2, "only supported dimension is innermost (CUDA kernel only)");
 
@@ -86,7 +87,8 @@ static int cunn_Max_updateOutput(lua_State *L)
   dim3 threads(nthreads);
 
   // kernel:
-  max_output <<<blocks, threads>>> (input_data, output_data, indices_data, nrows, ncols);
+  max_output <<<blocks, threads,
+    0, THCState_getCurrentStream(state)>>> (input_data, output_data, indices_data, nrows, ncols);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
@@ -111,6 +113,7 @@ static int cunn_Max_updateGradInput(lua_State *L)
   int dimension  = luaT_getfieldcheckint(L, 1, "dimension")-1;
   THCudaTensor *gradInput  = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
+  THAssert(THCudaTensor_checkGPU(state, 4, input, indices, gradOutput, gradInput));
   THCudaTensor_resizeAs(state, gradInput, input);
   THCudaTensor_zero(state, gradInput);
 
@@ -128,7 +131,8 @@ static int cunn_Max_updateGradInput(lua_State *L)
   dim3 threads(nthreads);
 
   // kernel:
-  max_gradInput <<<blocks, threads>>> (gradInput_data, gradOutput_data, indices_data, nrows, ncols);
+  max_gradInput <<<blocks, threads,
+    0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data, indices_data, nrows, ncols);
 
   // check for errors
   cudaError_t err = cudaGetLastError();

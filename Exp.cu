@@ -13,7 +13,7 @@ static int cunn_Exp_updateOutput(lua_State *L)
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
-
+  THAssert(THCudaTensor_checkGPU(state, 2, input, output));
   THCudaTensor_resizeAs(state, output, input);
   THCudaTensor_pointwiseApply2(state, output, input, expupdateOutput_functor());
   return 1;
@@ -33,7 +33,7 @@ static int cunn_Exp_updateGradInput(lua_State *L)
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-
+  THAssert(THCudaTensor_checkGPU(state, 3, output, gradOutput, gradInput));
   THCudaTensor_resizeAs(state, gradInput, output);
   THCudaTensor_pointwiseApply3(state, gradInput, output, gradOutput, expupdateGradInput_functor());
   return 1;

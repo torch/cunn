@@ -96,6 +96,7 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
   float *output_data;
   float *indices_data;
 
+  THAssert(THCudaTensor_checkGPU(state, 3, input, output, indices));
   luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
 
   if (input->nDimension == 3)
@@ -142,7 +143,7 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
   }
 
   dim3 threads(nthreads);
-  cunn_TemporalMaxPooling_updateOutputKernel <<< blocks, threads >>>(
+  cunn_TemporalMaxPooling_updateOutputKernel <<< blocks, threads, 0, THCState_getCurrentStream(state) >>>(
       input_data, output_data, indices_data, input_w, input_n, output_w, kW, dW);
 
   THCudaTensor_free(state, input);
@@ -173,6 +174,7 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
   float *gradOutput_data;
   float *indices_data;
 
+  THAssert(THCudaTensor_checkGPU(state, 4, input, gradOutput, gradInput, indices));
   luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
 
   THCudaTensor_resizeAs(state, gradInput, input);
@@ -212,10 +214,10 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
 
   dim3 threads(nthreads);
   if (kW <= dW) {
-    cunn_TemporalMaxPooling_updateGradInputKernel <<< blocks, threads >>>(
+    cunn_TemporalMaxPooling_updateGradInputKernel <<< blocks, threads, 0, THCState_getCurrentStream(state) >>>(
         gradInput_data, gradOutput_data, indices_data, input_w, input_n, output_w, kW, dW);
   } else {
-    cunn_TemporalMaxPooling_updateGradInputKernelAtomic <<< blocks, threads >>>(
+    cunn_TemporalMaxPooling_updateGradInputKernelAtomic <<< blocks, threads, 0, THCState_getCurrentStream(state) >>>(
         gradInput_data, gradOutput_data, indices_data, input_w, input_n, output_w, kW, dW);
   }
 

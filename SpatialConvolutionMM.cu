@@ -42,7 +42,7 @@ __global__ void im2col_kernel(const int n, const float* data_im,
   }
 }
 
-void im2col(const float* data_im, const int channels,
+void im2col(cudaStream_t stream, const float* data_im, const int channels,
     const int height, const int width, const int ksize_h, const int ksize_w, const int pad_h,
     const int pad_w, const int stride_h, const int stride_w, float* data_col) {
   // We are going to launch channels * height_col * width_col kernels, each
@@ -51,7 +51,7 @@ void im2col(const float* data_im, const int channels,
   int width_col = (width + 2 * pad_w - ksize_w) / stride_w + 1;
   int num_kernels = channels * height_col * width_col;
   // Launch
-  im2col_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS>>> (
+  im2col_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS, 0, stream>>> (
       num_kernels, data_im, height, width, ksize_h, ksize_w,
       pad_h, pad_w, stride_h, stride_w,
       height_col, width_col, data_col
@@ -94,7 +94,7 @@ __global__ void col2im_kernel(const int n, const float* data_col,
   }
 }
 
-void col2im(const float* data_col, const int channels,
+void col2im(cudaStream_t stream, const float* data_col, const int channels,
     const int height, const int width, const int patch_h, const int patch_w, const int pad_h,
     const int pad_w, const int stride_h, const int stride_w, float* data_im) {
   int height_col = (height + 2 * pad_h - patch_h) / stride_h + 1;
@@ -102,7 +102,7 @@ void col2im(const float* data_col, const int channels,
   int num_kernels = channels * height * width;
   // To avoid involving atomic operations, we will launch one kernel per
   // bottom dimension, and then in the kernel add up the top dimensions.
-  col2im_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS>>> (
+  col2im_kernel <<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS, 0, stream>>> (
       num_kernels, data_col, height, width, channels,
       patch_h, patch_w, pad_h, pad_w, stride_h, stride_w,
       height_col, width_col, data_im
@@ -129,15 +129,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
-  const int device = THCudaTensor_getDevice(state, weight);
-  luaL_argcheck(L, THCudaTensor_getDevice(state, bias) == device, 1,
-                "weight and bias need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(state, output) == device ||
-                THCudaTensor_getDevice(state, output) == -1, 1,
-                "weight and output need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 2,
-                "weight and input need to be on the same device");
-
+  THAssert(THCudaTensor_checkGPU(state, 6, input, output, weight,
+                                 bias, columns, ones));
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
   int batch = 1;
@@ -205,9 +198,10 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 
     // Extract columns:
     im2col(
-        THCudaTensor_data(state, input_n),
-        nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
-        THCudaTensor_data(state, columns)
+      THCState_getCurrentStream(state),
+      THCudaTensor_data(state, input_n),
+      nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
+      THCudaTensor_data(state, columns)
     );
 
     // M,N,K are dims of matrix A and B
@@ -262,17 +256,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
-  const int device = THCudaTensor_getDevice(state, weight);
-  luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 2,
-                "weight and input need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(state, gradInput) == device
-                || THCudaTensor_getDevice(state, gradInput) == -1, 2,
-                "weight and gradInput need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(state, gradOutput) == device
-                || THCudaTensor_getDevice(state, gradOutput) == -1, 2,
-                "weight and gradOutput need to be on the same device");
-
-
+  THAssert(THCudaTensor_checkGPU(state, 5, input, gradOutput, weight,
+                                 gradColumns, gradInput));
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
   int batch = 1;
@@ -329,9 +314,10 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
 
     // Unpack columns back into input:
     col2im(
-        THCudaTensor_data(state, gradColumns),
-        nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
-        THCudaTensor_data(state, gradInput_n)
+      THCState_getCurrentStream(state),
+      THCudaTensor_data(state, gradColumns),
+      nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
+      THCudaTensor_data(state, gradInput_n)
     );
   }
 
@@ -372,14 +358,8 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
 
-  const int device = THCudaTensor_getDevice(state, gradWeight);
-  luaL_argcheck(L, THCudaTensor_getDevice(state, gradBias) == device, 1,
-                "gradWeight and gradBias need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(state, input) == device, 1,
-                "gradWeight and input need to be on the same device");
-  luaL_argcheck(L, THCudaTensor_getDevice(state, gradOutput) == device, 1,
-                "gradWeight and gradOutput need to be on the same device");
-
+  THAssert(THCudaTensor_checkGPU(state, 6, input, gradOutput, gradWeight,
+                                 gradBias, columns, ones));
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
 
   int batch = 1;
@@ -420,9 +400,10 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
 
     // Extract columns:
     im2col(
-        THCudaTensor_data(state, input_n),
-        nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
-        THCudaTensor_data(state, columns)
+      THCState_getCurrentStream(state),
+      THCudaTensor_data(state, input_n),
+      nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
+      THCudaTensor_data(state, columns)
     );
 
     // M,N,K are dims of matrix A and B

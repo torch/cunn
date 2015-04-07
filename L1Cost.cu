@@ -17,7 +17,7 @@ static int cunn_L1Cost_updateOutput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-
+  THAssert(THCudaTensor_checkGPU(state, 1, input));
   float sum;
   long size = THCudaTensor_nElement(state, input);
   input = THCudaTensor_newContiguous(state, input);
@@ -53,7 +53,7 @@ static int cunn_L1Cost_updateGradInput(lua_State *L)
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-
+  THAssert(THCudaTensor_checkGPU(state, 2, input, gradInput));
   long size = THCudaTensor_nElement(state, input);
 
   input = THCudaTensor_newContiguous(state, input);
