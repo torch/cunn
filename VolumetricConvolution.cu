@@ -523,3 +523,5 @@ static void cunn_VolumetricConvolution_init(lua_State *L)
   luaT_registeratname(L, cunn_VolumetricConvolution__, "nn");
   lua_pop(L,1);
 }
+
+#undef CUDA_KERNEL_LOOP
