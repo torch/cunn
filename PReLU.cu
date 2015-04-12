@@ -2,7 +2,7 @@
 #include "utils.h"
 
 
-static int cunn_Threshold_updateOutput(lua_State *L)
+static int cunn_PReLU_updateOutput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   // Input:
@@ -14,7 +14,7 @@ static int cunn_Threshold_updateOutput(lua_State *L)
   return 1;
 }
 
-static int cunn_Threshold_updateGradInput(lua_State *L)
+static int cunn_PReLU_updateGradInput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   // Input:

@@ -39,6 +39,7 @@
 #include "SpatialUpSamplingNearest.cu"
 #include "VolumetricConvolution.cu"
 #include "LogSigmoid.cu"
+#include "PReLU.cu"
 
 LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 
@@ -74,6 +75,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);
   cunn_LogSigmoid_init(L);
+  cunn_PReLU_init(L);
 
   return 1;
 }
