@@ -23,17 +23,11 @@ static int cunn_PReLU_updateOutput(lua_State *L)
   THCudaTensor *output = (THCudaTensor*) luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   long nOutputPlane = luaT_getfieldchecknumber(L, 1, "nOutputPlane");
 
+  assert(nOutputPlane == 0 && "PReLU cuda version only supports shared parameter case\n");
   THCudaTensor_resizeAs(state, output, input);
 
-  if (nOutputPlane == 0)
-  {
-    // handle shared parameter case
-    float w = THCudaTensor_get1d(state, weight, 0);
-    THCudaTensor_pointwiseApply2(state, output, input, PReLUUpdateOutput(w));
-  } else {
-    printf("PReLU cuda version only supports shared parameter case\n");
-    THError("aborting");
-  }
+  float w = THCudaTensor_get1d(state, weight, 0);
+  THCudaTensor_pointwiseApply2(state, output, input, PReLUUpdateOutput(w));
 
   THCudaCheck(cudaGetLastError());
   return 1;
@@ -69,31 +63,22 @@ static int cunn_PReLU_updateGradInput(lua_State *L)
   THCudaTensor *gradInput = (THCudaTensor*) luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   long nOutputPlane = luaT_getfieldchecknumber(L, 1, "nOutputPlane");
 
+  assert(nOutputPlane == 0 &&"PReLU cuda version only supports shared parameter case\n");
   THCudaTensor_resizeAs(state, gradInput, input);
-  if (nOutputPlane == 0)
-  {
-    // handle shared parameter case
-    float w = THCudaTensor_get1d(state, weight, 0);
-    THCudaTensor_pointwiseApply3(state, gradInput, gradOutput, input, PReLUUpdateGradInput(w));
-  } else {
-    printf("PReLU cuda version only supports shared parameter case\n");
-    THError("aborting");
-  }
+
+  float w = THCudaTensor_get1d(state, weight, 0);
+  THCudaTensor_pointwiseApply3(state, gradInput, gradOutput, input, PReLUUpdateGradInput(w));
 
   THCudaCheck(cudaGetLastError());
   return 1;
 }
 
 struct PReLUAccGradParameters {
-  float sum;
-
-  PReLUAccGradParameters(): sum(0) {}
-
   __device__ __forceinline__ void operator()(float* input_data,
                                              float* gradOutput_data) {
     if ((*input_data) <= 0)
     {
-      sum += (*input_data) * (*gradOutput_data);
+      *input_data = (*input_data) * (*gradOutput_data);
     }
   }
 };
@@ -108,17 +93,16 @@ static int cunn_PReLU_accGradParameters(lua_State *L)
   THCudaTensor *gradWeight = (THCudaTensor*) luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
   long nOutputPlane = luaT_getfieldchecknumber(L, 1, "nOutputPlane");
   float scale = luaL_optnumber(L, 4, 1);
+  int inPlace = luaT_getfieldcheckboolean(L, 1, "inplace");
 
-  if (nOutputPlane == 0)
-  {
-    // handle shared parameter case
-    PReLUAccGradParameters functor;
-    THCudaTensor_pointwiseApply2(state, input, gradOutput, functor);
-    THCudaTensor_set1d(state, gradWeight, 0, functor.sum);
-  } else {
-    printf("PReLU cuda version only supports shared parameter case\n");
-    THError("aborting");
-  }
+  assert(nOutputPlane == 0 && "PReLU cuda version only supports shared parameter case\n");
+  assert(inPlace && "PReLU cuda version only supports inplace\n");
+
+  // Create temp storage
+  PReLUAccGradParameters functor;
+  THCudaTensor_pointwiseApply2(state, input, gradOutput, functor);
+  float sum = THCudaTensor_sumall(state, input);
+  THCudaTensor_set1d(state, gradWeight, 0, sum);
 
   THCudaCheck(cudaGetLastError());
   return 1;
