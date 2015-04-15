@@ -1,7 +1,5 @@
 #include "utils.h"
 
-#define CUDA_MAX_THREADS 1024   // this is safe, in reality 256 is our limit
-
 /*
  * Description:
  *    this function maxpools an input 4D tensor along dimensions 2 and 3
@@ -259,7 +257,7 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
   // check for errors
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
-    printf("error in SpatialMaxsampling.updateOutput: %s\n", cudaGetErrorString(err));
+    printf("error in SpatialMaxPooling.updateOutput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
   return 1;
@@ -366,7 +364,7 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
   // check for errors
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) {
-    printf("error in SpatialMaxsampling.updateGradInput: %s\n", cudaGetErrorString(err));
+    printf("error in SpatialMaxPooling.updateGradInput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
   // clean
@@ -388,5 +386,3 @@ static void cunn_SpatialMaxPooling_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialMaxPooling__, "nn");
   lua_pop(L,1);
 }
-
-#undef CUDA_MAX_THREADS
