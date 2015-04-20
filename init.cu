@@ -35,7 +35,6 @@
 #include "AbsCriterion.cu"
 #include "Abs.cu"
 #include "SoftPlus.cu"
-#include "Exp.cu"
 #include "SpatialUpSamplingNearest.cu"
 #include "VolumetricConvolution.cu"
 #include "LogSigmoid.cu"
@@ -70,7 +69,6 @@ int luaopen_libcunn(lua_State *L)
   cunn_DistKLDivCriterion_init(L);
   cunn_Abs_init(L);
   cunn_SoftPlus_init(L);
-  cunn_Exp_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);
   cunn_LogSigmoid_init(L);
