@@ -1,6 +1,23 @@
 #include "THCApply.cuh"
+#include "THCReduce.cuh"
 #include "utils.h"
 
+// This is bad, because the following is defined in SpatialConvolution.cu ...
+/*
+// Use 1024 threads per block, which requires cuda sm_2x or above
+const int CUDA_NUM_THREADS = 1024;
+
+// CUDA: number of blocks for threads.
+inline int GET_BLOCKS(const int N) {
+  return (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS;
+}
+
+// CUDA: grid stride looping
+#define CUDA_KERNEL_LOOP(i, n)                        \
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
+      i < (n);                                       \
+      i += blockDim.x * gridDim.x)
+*/
 
 struct PReLUUpdateOutput {
   float* weight_;
@@ -13,6 +30,17 @@ struct PReLUUpdateOutput {
   }
 };
 
+__global__ void preluForward(float *output, const float *input, const float *weight,
+    int n, int nOutputPlane, int dim)
+{
+  CUDA_KERNEL_LOOP(i, n)
+  {
+    int j = (i / dim) % nOutputPlane;
+    output[i] = input[i] > 0 ? input[i] : input[i] * weight[j];
+  }
+}
+
+
 static int cunn_PReLU_updateOutput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
@@ -23,13 +51,26 @@ static int cunn_PReLU_updateOutput(lua_State *L)
   THCudaTensor *output = (THCudaTensor*) luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   long nOutputPlane = luaT_getfieldchecknumber(L, 1, "nOutputPlane");
 
-  assert(nOutputPlane == 0 && "PReLU cuda version only supports shared parameter case\n");
   THCudaTensor_resizeAs(state, output, input);
 
   float* w = THCudaTensor_data(state, weight);
-  THCudaTensor_pointwiseApply2(state, output, input, PReLUUpdateOutput(w));
 
-  THCudaCheck(cudaGetLastError());
+  if(nOutputPlane == 0)
+    THCudaTensor_pointwiseApply2(state, output, input, PReLUUpdateOutput(w));
+  else
+  {
+    input = THCudaTensor_newContiguous(state, input);
+
+    int n = THCudaTensor_nElement(state, input);
+    int dim = n / nOutputPlane / input->size[0];
+    preluForward<<<GET_BLOCKS(n), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>> (
+	THCudaTensor_data(state, output),
+	THCudaTensor_data(state, input),
+	w,
+	n, nOutputPlane, dim);
+    THCudaTensor_free(state, input);
+  }
+
   return 1;
 }
 
@@ -38,19 +79,26 @@ struct PReLUUpdateGradInput {
 
   PReLUUpdateGradInput(float* weight): weight_(weight) {}
 
-  __device__ __forceinline__ void operator()(float* gradInput_data,
-                                             float* gradOutput_data,
-                                             float* input_data) {
-    if ((*input_data) > 0)
-    {
-      *gradInput_data = *gradOutput_data;
-    }
-    else
-    {
-      *gradInput_data = weight_[0] * (*gradOutput_data);
-    }
+  __device__ __forceinline__ void operator()(float* gradInput,
+                                             float* gradOutput,
+                                             float* input) {
+    *gradInput = *input > 0 ? *gradOutput : *gradOutput * *weight_;
   }
 };
+
+__global__ void preluBackward(
+    float *gradInput,
+    const float *input,
+    const float *weight,
+    const float *gradOutput,
+    int n, int nOutputPlane, int dim)
+{
+  CUDA_KERNEL_LOOP(i, n)
+  {
+    int j = (i / dim) % nOutputPlane;
+    gradInput[i] = input[i] > 0 ? gradOutput[i] : gradOutput[i] * weight[j];
+  }
+}
 
 static int cunn_PReLU_updateGradInput(lua_State *L)
 {
@@ -63,22 +111,41 @@ static int cunn_PReLU_updateGradInput(lua_State *L)
   THCudaTensor *gradInput = (THCudaTensor*) luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   long nOutputPlane = luaT_getfieldchecknumber(L, 1, "nOutputPlane");
 
-  assert(nOutputPlane == 0 &&"PReLU cuda version only supports shared parameter case\n");
   THCudaTensor_resizeAs(state, gradInput, input);
 
   float* w = THCudaTensor_data(state, weight);
-  THCudaTensor_pointwiseApply3(state, gradInput, gradOutput, input, PReLUUpdateGradInput(w));
+  if(nOutputPlane == 0)
+    THCudaTensor_pointwiseApply3(state, gradInput, gradOutput, input, PReLUUpdateGradInput(w));
+  else
+  {
+    input = THCudaTensor_newContiguous(state, input);
+    gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
-  THCudaCheck(cudaGetLastError());
+    int n = THCudaTensor_nElement(state, input);
+    int dim = n / nOutputPlane / input->size[0];
+    preluBackward<<<GET_BLOCKS(n), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>> (
+	THCudaTensor_data(state, gradInput),
+	THCudaTensor_data(state, input),
+	w,
+	THCudaTensor_data(state, gradOutput),
+	n, nOutputPlane, dim);
+
+    THCudaTensor_free(state, input);
+    THCudaTensor_free(state, gradOutput);
+  }
   return 1;
 }
 
 struct PReLUAccGradParameters {
-  __device__ __forceinline__ void operator()(float* input_data,
-                                             float* gradOutput_data) {
-    if ((*input_data) <= 0)
+  float scale;
+  PReLUAccGradParameters(float scale) : scale(scale) {}
+
+  __device__ __forceinline__ void operator()(float* gradInput,
+      					     float* input,
+                                             float* gradOutput) {
+    if ((*input) <= 0)
     {
-      *input_data = (*input_data) * (*gradOutput_data);
+      *gradInput = (*input) * (*gradOutput) * scale;
     }
   }
 };
@@ -96,20 +163,24 @@ static int cunn_PReLU_accGradParameters(lua_State *L)
   long nOutputPlane = luaT_getfieldchecknumber(L, 1, "nOutputPlane");
   float scale = luaL_optnumber(L, 4, 1);
 
-  assert(nOutputPlane == 0 && "PReLU cuda version only supports shared parameter case\n");
-
   // use grad input for temporary storage, then call updateGradInput again
-  PReLUAccGradParameters functor;
-  THCudaTensor_pointwiseApply2(state, gradInput, gradOutput, functor);
-  // introduces a sync point ...
-  float sum = THCudaTensor_sumall(state, gradInput);
-  THCudaTensor_set1d(state, gradWeight, 0, sum);
+  THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, PReLUAccGradParameters(scale));
+
+  if(nOutputPlane == 0)
+  {
+    // introduces a sync point
+    float sum = THCudaTensor_sumall(state, gradInput);
+    THCudaTensor_set1d(state, gradWeight, 0, sum);
+  }
+  else
+  {
+    int input_ndim = THCudaTensor_nDimension(state, input);
+    int reduce_dim = (input_ndim - 1) % 2;
+    THCudaTensor_reduceDim(state, gradOutput, gradInput, thrust::identity<float>(), thrust::plus<float>(), 0, reduce_dim);
+  }
 
   // restore gradInput
-  float* w = THCudaTensor_data(state, weight);
-  THCudaTensor_pointwiseApply3(state, gradInput, gradOutput, input, PReLUUpdateGradInput(w));
-
-  THCudaCheck(cudaGetLastError());
+  cunn_PReLU_updateGradInput(L);
   return 1;
 }
 
