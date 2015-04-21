@@ -3345,15 +3345,17 @@ function cunntest.CMul_backward_batch()
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
 end
 
-function cunntest.PReLU_forward(inplace)
-    local size = math.random(1,100)
+function cunntest.PReLU_forward()
+    local nOutputPlane = 8
+    local w = math.random(1,100)
+    local h = math.random(1,100)
 
     local tm = {}
-    local title = string.format('PReLU forward %d -> %d', size, size)
+    local title = string.format('PReLU forward %d x %d', w, h)
     times[title] = tm
 
-    local input = torch.randn(size)
-    local sconv = nn.PReLU()
+    local input = torch.randn(nOutputPlane,h,w)
+    local sconv = nn.PReLU(nOutputPlane)
     local groundtruth = sconv:forward(input)
     local a = torch.Timer()
     for i = 1,nloop do
@@ -3363,7 +3365,6 @@ function cunntest.PReLU_forward(inplace)
 
     input = input:cuda()
     local gconv = sconv:cuda()
-    gconv.inplace = inplace
     local rescuda = gconv:forward(input)
     a:reset()
     for i = 1,nloop do
@@ -3377,15 +3378,17 @@ function cunntest.PReLU_forward(inplace)
 end
 
 function cunntest.PReLU_backward()
-    local size = math.random(1,100)
+    local nOutputPlane = 8
+    local w = math.random(1,100)
+    local h = math.random(1,100)
 
     local tm = {}
-    local title = string.format('PReLU backward %d -> %d', size, size)
+    local title = string.format('PReLU backward %d x %d', w, h)
     times[title] = tm
 
-    local input = torch.randn(size)
-    local gradOutput = torch.randn(size)
-    local sconv = nn.PReLU()
+    local input = torch.randn(nOutputPlane, h, w)
+    local gradOutput = torch.randn(#input)
+    local sconv = nn.PReLU(nOutputPlane)
     sconv:forward(input)
     local groundgrad = sconv:backward(input, gradOutput)
     local a = torch.Timer()
