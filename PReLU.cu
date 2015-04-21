@@ -59,10 +59,15 @@ static int cunn_PReLU_updateOutput(lua_State *L)
     THCudaTensor_pointwiseApply2(state, output, input, PReLUUpdateOutput(w));
   else
   {
+    int ndim = THCudaTensor_nDimension(state, input);
     input = THCudaTensor_newContiguous(state, input);
 
     int n = THCudaTensor_nElement(state, input);
-    int dim = n / nOutputPlane / input->size[0];
+    int dim = n / nOutputPlane;
+    if(ndim == 3)
+      dim /= (input->size[1] * input->size[2]);
+    else if(ndim == 4)
+      dim /= (input->size[2] * input->size[3]);
     preluForward<<<GET_BLOCKS(n), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>> (
 	THCudaTensor_data(state, output),
 	THCudaTensor_data(state, input),
@@ -118,11 +123,16 @@ static int cunn_PReLU_updateGradInput(lua_State *L)
     THCudaTensor_pointwiseApply3(state, gradInput, gradOutput, input, PReLUUpdateGradInput(w));
   else
   {
+    int ndim = THCudaTensor_nDimension(state, input);
     input = THCudaTensor_newContiguous(state, input);
     gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
     int n = THCudaTensor_nElement(state, input);
-    int dim = n / nOutputPlane / input->size[0];
+    int dim = n / nOutputPlane;
+    if(ndim == 3)
+      dim /= (input->size[1] * input->size[2]);
+    else if(ndim == 4)
+      dim /= (input->size[2] * input->size[3]);
     preluBackward<<<GET_BLOCKS(n), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>> (
 	THCudaTensor_data(state, gradInput),
 	THCudaTensor_data(state, input),
@@ -136,6 +146,14 @@ static int cunn_PReLU_updateGradInput(lua_State *L)
   return 1;
 }
 
+struct PReLUAccGradParametersShared {
+  __device__ __forceinline__ void operator()(float* gradInput,
+      					     float* input,
+                                             float* gradOutput) {
+    *gradInput = (*input) * (*gradOutput) * (*input <= 0);
+  }
+};
+
 struct PReLUAccGradParameters {
   float scale;
   PReLUAccGradParameters(float scale) : scale(scale) {}
@@ -143,12 +161,18 @@ struct PReLUAccGradParameters {
   __device__ __forceinline__ void operator()(float* gradInput,
       					     float* input,
                                              float* gradOutput) {
-    if ((*input) <= 0)
-    {
-      *gradInput = (*input) * (*gradOutput) * scale;
-    } else {
-      *gradInput = 0;
-    }
+    *gradInput = (*input) * (*gradOutput) * scale * (*input <= 0);
+  }
+};
+
+struct PReLUAccGradParameters1to1 {
+  float scale;
+  PReLUAccGradParameters1to1(float scale) : scale(scale) {}
+
+  __device__ __forceinline__ void operator()(float* gradWeight,
+      					     float* input,
+                                             float* gradOutput) {
+    *gradWeight += (*input) * (*gradOutput) * scale * (*input <= 0);
   }
 };
 
@@ -166,24 +190,55 @@ static int cunn_PReLU_accGradParameters(lua_State *L)
   float scale = luaL_optnumber(L, 4, 1);
 
   // use grad input for temporary storage, then call updateGradInput again
-  THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, PReLUAccGradParameters(scale));
 
   if(nOutputPlane == 0)
   {
+    THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, PReLUAccGradParametersShared());
     // introduces a sync point
     float sum = THCudaTensor_sumall(state, gradInput);
     float weight = THCudaTensor_get1d(state, gradWeight, 0);
-    THCudaTensor_set1d(state, gradWeight, 0, sum + weight);
+    THCudaTensor_set1d(state, gradWeight, 0, weight + sum * scale);
+
+    // restore gradInput
+    cunn_PReLU_updateGradInput(L);
   }
   else
   {
-    int input_ndim = THCudaTensor_nDimension(state, input);
-    int reduce_dim = (input_ndim - 1) % 2;
-    THCudaTensor_reduceDim(state, gradOutput, gradInput, thrust::identity<float>(), thrust::plus<float>(), 0, reduce_dim);
+    int ndim = THCudaTensor_nDimension(state, input);
+
+    if(ndim == 1)
+      THCudaTensor_pointwiseApply3(state, gradWeight, input, gradOutput, PReLUAccGradParameters1to1(scale));
+    else
+    {
+      THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, PReLUAccGradParameters(scale));
+
+      if(ndim == 2)
+      {
+	THCudaTensor_reduceDim(state, gradWeight, gradInput, thrust::identity<float>(), thrust::plus<float>(), 0, 0);
+      }
+      else if(ndim == 3)
+      {
+	THCudaTensor *buffer = THCudaTensor_newContiguous(state, gradInput);
+	THCudaTensor_resize2d(state, buffer, nOutputPlane, input->size[1] * input->size[2]);
+	THCudaTensor_reduceDim(state, gradWeight, buffer, thrust::identity<float>(), thrust::plus<float>(), 0, 1);
+	THCudaTensor_free(state, buffer);
+      }
+      else if(ndim == 4)
+      {
+	THCudaTensor *buffer = THCudaTensor_newContiguous(state, gradInput);
+	THCudaTensor *sumbuf = THCudaTensor_Tensor2d(state, input->size[0], nOutputPlane);
+	THCudaTensor_resize3d(state, buffer, input->size[0], nOutputPlane, input->size[2] * input->size[3]);
+	THCudaTensor_reduceDim(state, sumbuf, buffer, thrust::identity<float>(), thrust::plus<float>(), 0, 2);
+	THCudaTensor_reduceDim(state, gradWeight, sumbuf, thrust::identity<float>(), thrust::plus<float>(), 0, 0);
+	THCudaTensor_free(state, buffer);
+	THCudaTensor_free(state, sumbuf);
+      }
+
+      // restore gradInput
+      cunn_PReLU_updateGradInput(L);
+    }
   }
 
-  // restore gradInput
-  cunn_PReLU_updateGradInput(L);
   return 1;
 }
 
