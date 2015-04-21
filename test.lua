@@ -3389,6 +3389,8 @@ function cunntest.PReLU_backward()
     local input = torch.randn(nOutputPlane, h, w)
     local gradOutput = torch.randn(#input)
     local sconv = nn.PReLU(nOutputPlane)
+    local gconv = sconv:clone():cuda()
+
     sconv:forward(input)
     local groundgrad = sconv:backward(input, gradOutput)
     local a = torch.Timer()
@@ -3399,7 +3401,6 @@ function cunntest.PReLU_backward()
 
     input = input:cuda()
     gradOutput = gradOutput:cuda()
-    local gconv = sconv:clone():cuda()
     gconv:forward(input)
     local rescuda = gconv:backward(input, gradOutput)
     a:reset()
@@ -3410,8 +3411,10 @@ function cunntest.PReLU_backward()
     tm.gpu = a:time().real
 
     local error = rescuda:float() - groundgrad
+    local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
 
-    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward - gradInput) ')
+    mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on state (backward - gradWeight) ')
 end
 
 function nn.testcuda(tests, print_timing, n_loop)

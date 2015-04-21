@@ -146,6 +146,8 @@ struct PReLUAccGradParameters {
     if ((*input) <= 0)
     {
       *gradInput = (*input) * (*gradOutput) * scale;
+    } else {
+      *gradInput = 0;
     }
   }
 };
@@ -170,7 +172,8 @@ static int cunn_PReLU_accGradParameters(lua_State *L)
   {
     // introduces a sync point
     float sum = THCudaTensor_sumall(state, gradInput);
-    THCudaTensor_set1d(state, gradWeight, 0, sum);
+    float weight = THCudaTensor_get1d(state, gradWeight, 0);
+    THCudaTensor_set1d(state, gradWeight, 0, sum + weight);
   }
   else
   {
