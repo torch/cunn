@@ -3374,13 +3374,13 @@ function cunntest.PReLU_forward()
     tm.gpu = a:time().real
 
     local error = rescuda:float() - groundtruth
-    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+    mytester:assertlt(error:abs():max(), precision_forward, 'error on state')
 end
 
 function cunntest.PReLU_backward()
     local nOutputPlane = 8
-    local w = math.random(1,100)
-    local h = math.random(1,100)
+    local w = math.random(1,10)
+    local h = math.random(1,10)
 
     local tm = {}
     local title = string.format('PReLU backward %d x %d', w, h)
@@ -3410,11 +3410,11 @@ function cunntest.PReLU_backward()
     cutorch.synchronize()
     tm.gpu = a:time().real
 
-    local error = rescuda:float() - groundgrad
+    local err = rescuda:float() - groundgrad
     local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
 
-    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward - gradInput) ')
-    mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on state (backward - gradWeight) ')
+    mytester:assertlt(err:abs():max(), precision_backward, 'error on state')
+    mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
 function nn.testcuda(tests, print_timing, n_loop)
