@@ -2,7 +2,31 @@
 # Additional Modules #
 
 The following nn modules are also made available by the cunn package:
- * [DataParallelTable](#nn.DataParallelTable) : A module to parallelize FPROP and BPROP across multiple-GPUs.
+ * [TransferGPU](#nn.TransferGPU) : A module to copy activations/gradients between GPUs for model-parallel codes.
+ * [DataParallelTable](#nn.DataParallelTable) : A module to data-parallelize FPROP and BPROP across multiple GPUs.
+
+<a name="nn.TransferGPU"/>
+## TransferGPU ##
+
+This module copies activations and gradients between GPUs, to allow model parallelization over multiple GPUs.
+
+```lua
+-- CONSTRUCT MODEL:
+
+cutorch.setDevice(0)
+local net = nn.Sequential()
+for i = 1,3 do
+  net:add(nn.Linear(1000,1000):cudaOn(i))
+  net:add(nn.SoftMax():cudaOn(i))
+  net:add(nn.TransferGPU(i, i+1))
+end
+
+-- TRAIN MODEL:
+local input = torch.CudaTensorOn(1, 1000)
+local output = net:forward(input)
+...
+local gradInput = net:backward(input, gradOutput)
+```
 
 <a name="nn.DataParallelTable"/>
 ## DataParallelTable ##
@@ -16,8 +40,7 @@ Note that some of the code in this module borrows heavily from fbcunn (particula
 conv_net = makeConvNet()  -- i.e. create nn.Sequential() and fill it
 net = nn.DataParallelTable(1)  -- Split along first (batch) dimension
 for i = 1, 2 do
-  cutorch.setDevice(i)
-  net:add(conv_net:clone():cuda(), i)  -- Use the ith GPU
+  net:add(conv_net:clone():cudaOn(i), i)  -- Use the ith GPU
 end
 cutorch.setDevice(1)  -- This is the 'primary' GPU
 parameters, gradParameters = net:getParameters()

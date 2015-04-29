@@ -57,7 +57,7 @@ local function pointwise_transposed(proto_module, name, max_error)
    local output = proto_module:forward(input)
    local outputCUDA = cuda_module:forward(inputCUDA)
 
-   local error = outputCUDA:float() - output
+   local error = outputCUDA:float() - output:float()
    mytester:assertlt(error:abs():max(), max_error, 'error on state (forward) ')
 
    local gradOutput = torch.Tensor(11, 19):uniform(-1, 1)
@@ -69,7 +69,7 @@ local function pointwise_transposed(proto_module, name, max_error)
    local gradInput = proto_module:backward(input, gradOutput)
    local gradInputCUDA  = cuda_module:backward(inputCUDA, gradOutputCUDA)
 
-   local error = gradInputCUDA:float() - gradInput
+   local error = gradInputCUDA:float() - gradInput:float()
    mytester:assertlt(error:abs():max(), max_error,  'error on state (backward) ')
 end
 
@@ -139,7 +139,7 @@ function cunntest.Tanh_backward()
 end
 
 cunntest.Tanh_transposed = function()
-      pointwise_transposed(nn.Tanh(), 'Tanh', 1.5e-7)
+      pointwise_transposed(nn.Tanh(), 'Tanh', 3e-7)
 end
 
 function cunntest.Abs_forward()
@@ -3352,11 +3352,53 @@ function cunntest.PReLU_backward()
     mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
-function nn.testcuda(tests, print_timing, n_loop)
+function cunntest.cudaOn()
+   local device_count = cutorch.getDeviceCount()
+   if device_count >= 2 then
+      cutorch.setDevice(0)
+      net = nn.Sequential()
+      for i = 1,device_count-1 do
+         net:add(nn.Linear(100,100):cudaOn(i))
+         net:add(nn.SoftMax():cudaOn(i))
+         net:add(nn.TransferGPU(i, i+1)) -- a new little shim in cunn
+      end
+
+      local input = torch.CudaTensorOn(1, 100)
+      local output = net:forward(input)
+      mytester:assert(output:getDevice() == device_count)
+
+      local gradOutput = output/100
+      local gradInput = net:backward(input, gradOutput)
+      mytester:assert(gradInput:getDevice() == 1)
+      -- mytester:assert(0)
+   end
+end
+
+function setUp()
+   cutorch.setDevice(1)
+end
+
+for k,v in pairs(cunntest) do
+   cunntest[k] = function()
+      setUp()
+      v()
+   end
+end
+
+function initSeed(seed)
+   seed = seed or os.time()
+   -- ensure that you can reproduce a failing test
+   print('seed: ', seed)
+   math.randomseed(seed)
+   torch.manualSeed(seed)
+   cutorch.manualSeedAll(seed)
+end
+
+function nn.testcuda(tests, print_timing, n_loop, seed)
    nloop = n_loop or nloop
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
-   math.randomseed(os.time())
+   initSeed(seed)
    mytester = torch.Tester()
    mytester:add(cunntest)
    mytester:run(tests)
