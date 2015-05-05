@@ -470,3 +470,5 @@ static void cunn_SpatialConvolutionMM_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialConvolutionMM__, "nn");
   lua_pop(L,1);
 }
+
+#undef CUDA_KERNEL_LOOP

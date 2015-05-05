@@ -3280,6 +3280,77 @@ function cunntest.CMul_backward_batch()
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
 end
 
+function cunntest.PReLU_forward()
+    local nOutputPlane = 8
+    local w = math.random(1,100)
+    local h = math.random(1,100)
+
+    local tm = {}
+    local title = string.format('PReLU forward %d x %d', w, h)
+    times[title] = tm
+
+    local input = torch.randn(nOutputPlane,h,w)
+    local sconv = nn.PReLU(nOutputPlane)
+    local groundtruth = sconv:forward(input)
+    local a = torch.Timer()
+    for i = 1,nloop do
+        groundtruth = sconv:forward(input)
+    end
+    tm.cpu = a:time().real
+
+    input = input:cuda()
+    local gconv = sconv:cuda()
+    local rescuda = gconv:forward(input)
+    a:reset()
+    for i = 1,nloop do
+        rescuda = gconv:forward(input)
+    end
+    cutorch.synchronize()
+    tm.gpu = a:time().real
+
+    local error = rescuda:float() - groundtruth
+    mytester:assertlt(error:abs():max(), precision_forward, 'error on state')
+end
+
+function cunntest.PReLU_backward()
+    local nOutputPlane = 8
+    local w = math.random(1,10)
+    local h = math.random(1,10)
+
+    local tm = {}
+    local title = string.format('PReLU backward %d x %d', w, h)
+    times[title] = tm
+
+    local input = torch.randn(nOutputPlane, h, w)
+    local gradOutput = torch.randn(#input)
+    local sconv = nn.PReLU(nOutputPlane)
+    local gconv = sconv:clone():cuda()
+
+    sconv:forward(input)
+    local groundgrad = sconv:backward(input, gradOutput)
+    local a = torch.Timer()
+    for i = 1,nloop do
+        groundgrad = sconv:backward(input, gradOutput)
+    end
+    tm.cpu = a:time().real
+
+    input = input:cuda()
+    gradOutput = gradOutput:cuda()
+    gconv:forward(input)
+    local rescuda = gconv:backward(input, gradOutput)
+    a:reset()
+    for i = 1,nloop do
+        rescuda = gconv:backward(input, gradOutput)
+    end
+    cutorch.synchronize()
+    tm.gpu = a:time().real
+
+    local err = rescuda:float() - groundgrad
+    local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
+
+    mytester:assertlt(err:abs():max(), precision_backward, 'error on state')
+    mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
+end
 
 function nn.testcuda(tests, print_timing, n_loop)
    nloop = n_loop or nloop
