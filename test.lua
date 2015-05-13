@@ -57,7 +57,7 @@ local function pointwise_transposed(proto_module, name, max_error)
    local output = proto_module:forward(input)
    local outputCUDA = cuda_module:forward(inputCUDA)
 
-   local error = outputCUDA:float() - output:float()
+   local error = outputCUDA:float() - output
    mytester:assertlt(error:abs():max(), max_error, 'error on state (forward) ')
 
    local gradOutput = torch.Tensor(11, 19):uniform(-1, 1)
@@ -69,7 +69,7 @@ local function pointwise_transposed(proto_module, name, max_error)
    local gradInput = proto_module:backward(input, gradOutput)
    local gradInputCUDA  = cuda_module:backward(inputCUDA, gradOutputCUDA)
 
-   local error = gradInputCUDA:float() - gradInput:float()
+   local error = gradInputCUDA:float() - gradInput
    mytester:assertlt(error:abs():max(), max_error,  'error on state (backward) ')
 end
 
@@ -139,7 +139,7 @@ function cunntest.Tanh_backward()
 end
 
 cunntest.Tanh_transposed = function()
-      pointwise_transposed(nn.Tanh(), 'Tanh', 3e-7)
+      pointwise_transposed(nn.Tanh(), 'Tanh', 1.5e-7)
 end
 
 function cunntest.Abs_forward()
@@ -3350,28 +3350,6 @@ function cunntest.PReLU_backward()
 
     mytester:assertlt(err:abs():max(), precision_backward, 'error on state')
     mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
-end
-
-function cunntest.cudaOn()
-   local device_count = cutorch.getDeviceCount()
-   if device_count >= 2 then
-      cutorch.setDevice(0)
-      net = nn.Sequential()
-      for i = 1,device_count-1 do
-         net:add(nn.Linear(100,100):cudaOn(i))
-         net:add(nn.SoftMax():cudaOn(i))
-         net:add(nn.TransferGPU(i, i+1)) -- a new little shim in cunn
-      end
-
-      local input = torch.CudaTensorOn(1, 100)
-      local output = net:forward(input)
-      mytester:assert(output:getDevice() == device_count)
-
-      local gradOutput = output/100
-      local gradInput = net:backward(input, gradOutput)
-      mytester:assert(gradInput:getDevice() == 1)
-      -- mytester:assert(0)
-   end
 end
 
 function setUp()
