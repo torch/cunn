@@ -3352,7 +3352,7 @@ function cunntest.PReLU_backward()
     mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
-function setUp()
+local function setUp()
    cutorch.setDevice(1)
 end
 
