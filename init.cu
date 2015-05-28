@@ -37,6 +37,8 @@
 #include "SoftPlus.cu"
 #include "SpatialUpSamplingNearest.cu"
 #include "VolumetricConvolution.cu"
+#include "VolumetricMaxPooling.cu"
+#include "VolumetricAveragePooling.cu"
 #include "LogSigmoid.cu"
 #include "PReLU.cu"
 
@@ -72,6 +74,8 @@ int luaopen_libcunn(lua_State *L)
   cunn_SoftPlus_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);
+  cunn_VolumetricMaxPooling_init(L);
+  cunn_VolumetricAveragePooling_init(L);
   cunn_LogSigmoid_init(L);
   cunn_PReLU_init(L);
 
