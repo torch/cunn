@@ -172,7 +172,7 @@ static int cunn_MultiMarginCriterion_updateGradInput(lua_State *L)
   int p = luaT_getfieldchecknumber(L, 1, "p");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
-  if(gradInput->nDimension == 1)
+  if(input->nDimension == 1)
   {
     THAssert(THCudaTensor_checkGPU(state, 2, input, gradInput));
     input = THCudaTensor_newContiguous(state, input);
@@ -201,7 +201,7 @@ static int cunn_MultiMarginCriterion_updateGradInput(lua_State *L)
 
     THCudaTensor_free(state, target);
   }
-  else if(gradInput->nDimension == 2)
+  else if(input->nDimension == 2)
   {
     THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
     THAssert(THCudaTensor_checkGPU(state, 3, input, gradInput, target));
