@@ -3352,6 +3352,100 @@ function cunntest.PReLU_backward()
     mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
+function cunntest.LookupTable_forward()
+   local nVocab = 10000
+   local nDim = 100
+   local nInput = 1000
+
+   local tm = {}
+   local title = string.format('LookupTable forward %d x %d', nVocab, nDim)
+   times[title] = tm
+
+   local input = torch.LongTensor(nInput):random(nVocab)
+   local sconv = nn.LookupTable(nVocab, nDim)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+       groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:cuda()
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+       rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state')
+end
+
+function cunntest.LookupTable_backward()
+   local nVocab = 10000
+   local nDim = 97
+
+   for _,nInput in ipairs{10,101,1000,10007} do
+      for _,scaleGradByFreq in ipairs{false,true} do
+         local input = torch.LongTensor(nInput):random(nVocab)
+         local gradOutput = torch.randn(nInput, nDim)
+         local sconv = nn.LookupTable(nVocab, nDim)
+         local gconv = sconv:clone():cuda()
+         if scaleGradByFreq then
+            sconv = sconv:scaleGradByFreq()
+            gconv = gconv:scaleGradByFreq()
+         end
+
+         sconv:forward(input)
+         sconv:backward(input, gradOutput)
+
+         input = input:cuda()
+         gradOutput = gradOutput:cuda()
+         gconv:forward(input)
+         gconv:backward(input, gradOutput)
+
+         local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
+         mytester:assertlt(weightGradError:abs():max(), precision_backward,
+            'error on weight for size ' .. tostring(nInput) .. ' scaleGradByFreq: ' .. tostring(scaleGradByFreq))
+      end
+   end
+
+   local nInput = 1000
+   local tm = {}
+   local title = string.format('LookupTable backward %d x %d', nVocab, nDim, nInput)
+   times[title] = tm
+
+   local input = torch.LongTensor(nInput):random(nVocab)
+   local gradOutput = torch.randn(nInput, nDim)
+   local sconv = nn.LookupTable(nVocab, nDim)
+   local gconv = sconv:clone():cuda()
+
+   sconv:forward(input)
+   sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+       sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   gconv:forward(input)
+   gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+       gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
+   mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
+end
+
 local function setUp()
    cutorch.setDevice(1)
 end
