@@ -121,7 +121,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
-  int padding = luaT_getfieldcheckint(L, 1, "padding");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
 
   THCudaTensor *weight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *bias = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
@@ -145,8 +146,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
-  long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
+  long outputWidth  = (inputWidth + 2*padW - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
 
 
   // Batch size + input planes
@@ -200,7 +201,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     im2col(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, input_n),
-      nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
+      nInputPlane, inputHeight, inputWidth, kH, kW, padH, padW, dH, dW,
       THCudaTensor_data(state, columns)
     );
 
@@ -250,7 +251,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
-  int padding = luaT_getfieldcheckint(L, 1, "padding");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
 
   THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
@@ -270,8 +272,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
-  long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
+  long outputWidth  = (inputWidth + 2*padW - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -316,7 +318,7 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
     col2im(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, gradColumns),
-      nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
+      nInputPlane, inputHeight, inputWidth, kH, kW, padH, padW, dH, dW,
       THCudaTensor_data(state, gradInput_n)
     );
   }
@@ -350,7 +352,8 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
-  int padding = luaT_getfieldcheckint(L, 1, "padding");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
   float scale = luaL_optnumber(L, 4, 1);
 
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
@@ -372,8 +375,8 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth + 2*padding - kW) / dW + 1;
-  long outputHeight = (inputHeight + 2*padding - kH) / dH + 1;
+  long outputWidth  = (inputWidth + 2*padW - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -402,7 +405,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     im2col(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, input_n),
-      nInputPlane, inputHeight, inputWidth, kH, kW, padding, padding, dH, dW,
+      nInputPlane, inputHeight, inputWidth, kH, kW, padH, padW, dH, dW,
       THCudaTensor_data(state, columns)
     );
 
