@@ -1054,8 +1054,8 @@ function cunntest.SpatialConvolutionMM_forward_single()
    local sj = math.random(1,3)
    local outi = math.random(1,64)
    local outj = math.random(1,64)
-   local padW = math.random(0,8)
-   local padH = math.random(0,8)
+   local padW = math.random(0,1)
+   local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
@@ -1099,8 +1099,8 @@ function cunntest.SpatialConvolutionMM_forward_batch()
    local sj = math.random(1,3)
    local outi = math.random(1,64)
    local outj = math.random(1,64)
-   local padW = math.random(0,8)
-   local padH = math.random(0,8)
+   local padW = math.random(0,1)
+   local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
@@ -1143,8 +1143,8 @@ function cunntest.SpatialConvolutionMM_backward_single()
    local sj = math.random(1,3)
    local outi = math.random(1,64)
    local outj = math.random(1,64)
-   local padW = math.random(0,8)
-   local padH = math.random(0,8)
+   local padW = math.random(0,1)
+   local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
@@ -1205,8 +1205,8 @@ function cunntest.SpatialConvolutionMM_backward_batch()
    local sj = math.random(1,3)
    local outi = math.random(1,64)
    local outj = math.random(1,64)
-   local padW = math.random(0,8)
-   local padH = math.random(0,8)
+   local padW = math.random(0,1)
+   local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
