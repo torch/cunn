@@ -3394,42 +3394,45 @@ end
 
 function cunntest.LookupTable_backward()
    local nVocab = 10000
-   local nDim = 97
 
-   for _,nInput in ipairs{10,101,1000,10007} do
-      for _,scaleGradByFreq in ipairs{false,true} do
-         for _,batch in ipairs{false, true} do
-            local input, gradOutput
-            if batch then
-               input = torch.LongTensor(nInput, 5):random(nVocab)
-               gradOutput = torch.randn(nInput, 5, nDim)
-            else
-               input = torch.LongTensor(nInput):random(nVocab)
-               gradOutput = torch.randn(nInput, nDim)
+   for _,nDim in ipairs{97,255} do
+      for _,nInput in ipairs{10,101,1000,10007} do
+         for _,scaleGradByFreq in ipairs{false,true} do
+            for _,batch in ipairs{false, true} do
+               local input, gradOutput
+               if batch then
+                  input = torch.LongTensor(nInput, 5):random(nVocab)
+                  gradOutput = torch.randn(nInput, 5, nDim)
+               else
+                  input = torch.LongTensor(nInput):random(nVocab)
+                  gradOutput = torch.randn(nInput, nDim)
+               end
+
+               local sconv = nn.LookupTable(nVocab, nDim)
+               local gconv = sconv:clone():cuda()
+               if scaleGradByFreq then
+                  sconv = sconv:scaleGradByFreq()
+                  gconv = gconv:scaleGradByFreq()
+               end
+
+               sconv:forward(input)
+               sconv:backward(input, gradOutput)
+
+               input = input:cuda()
+               gradOutput = gradOutput:cuda()
+               gconv:forward(input)
+               gconv:backward(input, gradOutput)
+
+               local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
+               mytester:assertlt(weightGradError:abs():max(), precision_backward,
+                  'error on weight for size ' .. tostring(nInput) .. ' scaleGradByFreq: ' .. tostring(scaleGradByFreq)
+                  .. ' nDim ' .. tostring(nDim))
             end
-
-            local sconv = nn.LookupTable(nVocab, nDim)
-            local gconv = sconv:clone():cuda()
-            if scaleGradByFreq then
-               sconv = sconv:scaleGradByFreq()
-               gconv = gconv:scaleGradByFreq()
-            end
-
-            sconv:forward(input)
-            sconv:backward(input, gradOutput)
-
-            input = input:cuda()
-            gradOutput = gradOutput:cuda()
-            gconv:forward(input)
-            gconv:backward(input, gradOutput)
-
-            local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
-            mytester:assertlt(weightGradError:abs():max(), precision_backward,
-               'error on weight for size ' .. tostring(nInput) .. ' scaleGradByFreq: ' .. tostring(scaleGradByFreq))
          end
       end
    end
 
+   local nDim = 128
    local nInput = 1000
    local tm = {}
    local title = string.format('LookupTable backward %d x %d', nVocab, nDim, nInput)
