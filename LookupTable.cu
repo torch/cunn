@@ -92,14 +92,16 @@ __global__ void cunn_LookupTable_accGradParametersKernel(
   // 5     <warp 3>
   // 8     <warp 4>
 
+  // Number of values proceessed by each thread (grain size)
+  const int SZ = 4;
+
   if (idx < numel && (idx == 0 || input[idx] != input[idx - 1])) {
     do {
-      const int startFeature = threadIdx.x + blockIdx.y * blockDim.x;
+      const int startFeature = threadIdx.x + blockIdx.y * blockDim.x * SZ;
       const int weightRow = ((int) input[idx] - 1) * stride;
       const int gradOutputRow = ((int) indices[idx] - 1) * stride;
       const float scale = count ? defaultScale / count[idx] : defaultScale;
 
-      const int SZ = 4;
       float gradient[SZ];
       float weight[SZ];
 
