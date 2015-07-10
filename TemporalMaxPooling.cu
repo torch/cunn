@@ -135,11 +135,11 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
   }
 
   if (nthreads > TEMPORAL_MAX_POOLING_THREADS) {
-    nthreads = TEMPORAL_MAX_POOLING_THREADS;
     blocks.y = nthreads / TEMPORAL_MAX_POOLING_THREADS;
     if (nthreads % TEMPORAL_MAX_POOLING_THREADS > 0) {
       blocks.y += 1;
     }
+    nthreads = TEMPORAL_MAX_POOLING_THREADS;
   }
 
   dim3 threads(nthreads);
@@ -205,11 +205,11 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
   }
 
   if (nthreads > TEMPORAL_MAX_POOLING_THREADS) {
-    nthreads = TEMPORAL_MAX_POOLING_THREADS;
     blocks.y = nthreads / TEMPORAL_MAX_POOLING_THREADS;
     if (nthreads % TEMPORAL_MAX_POOLING_THREADS > 0) {
       blocks.y += 1;
     }
+    nthreads = TEMPORAL_MAX_POOLING_THREADS;
   }
 
   dim3 threads(nthreads);
