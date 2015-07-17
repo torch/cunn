@@ -1,18 +1,5 @@
 #include "utils.h"
-
-// CUDA: grid stride looping
-#define CUDA_KERNEL_LOOP(i, n)                        \
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
-      i < (n);                                       \
-      i += blockDim.x * gridDim.x)
-
-// Use 1024 threads per block, which requires cuda sm_2x or above
-const int CUDA_NUM_THREADS = 1024;
-
-// CUDA: number of blocks for threads.
-inline int GET_BLOCKS(const int N) {
-  return (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS;
-}
+#include "common.h"
 
 // Kernel for fast unfold+copy
 // (borrowed from Caffe: https://github.com/BVLC/caffe/blob/master/src/caffe/layers/conv_layer.cu)
@@ -470,11 +457,9 @@ static const struct luaL_Reg cunn_SpatialConvolutionMM__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_SpatialConvolutionMM_init(lua_State *L)
+void cunn_SpatialConvolutionMM_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_SpatialConvolutionMM__, "nn");
   lua_pop(L,1);
 }
-
-#undef CUDA_KERNEL_LOOP

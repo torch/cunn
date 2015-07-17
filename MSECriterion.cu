@@ -2,6 +2,7 @@
 
 #include <thrust/fill.h>
 #include <thrust/functional.h>
+#include <thrust/device_ptr.h>
 #include <thrust/reduce.h>
 #include <thrust/inner_product.h>
 
@@ -231,7 +232,7 @@ static const struct luaL_Reg cunn_MSECriterion__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_MSECriterion_init(lua_State *L)
+void cunn_MSECriterion_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_MSECriterion__, "nn");

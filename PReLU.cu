@@ -1,12 +1,9 @@
 #include "THCApply.cuh"
 #include "THCReduce.cuh"
 #include "utils.h"
+#include "common.h"
 
-// CUDA: grid stride looping
-#define CUDA_KERNEL_LOOP(i, n)                        \
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
-      i < (n);                                       \
-      i += blockDim.x * gridDim.x)
+#include <thrust/functional.h>
 
 struct PReLUUpdateOutput {
   float* weight_;
@@ -244,11 +241,9 @@ static const struct luaL_Reg cunn_PRelu__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_PReLU_init(lua_State *L)
+void cunn_PReLU_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_PRelu__, "nn");
   lua_pop(L,1);
 }
-
-#undef CUDA_KERNEL_LOOP

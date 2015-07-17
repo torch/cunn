@@ -8,38 +8,7 @@
 #include <thrust/functional.h>
 #include <thrust/device_ptr.h>
 
-#include "utils.c"
-
-#include "ClassNLLCriterion.cu"
-#include "HardTanh.cu"
-#include "L1Cost.cu"
-#include "Tanh.cu"
-#include "Max.cu"
-#include "Min.cu"
-#include "LogSoftMax.cu"
-#include "SoftMax.cu"
-#include "TemporalConvolution.cu"
-#include "TemporalMaxPooling.cu"
-#include "SpatialConvolutionMM.cu"
-#include "SpatialSubSampling.cu"
-#include "SpatialMaxPooling.cu"
-#include "SpatialAveragePooling.cu"
-#include "SpatialAdaptiveMaxPooling.cu"
-#include "Square.cu"
-#include "Sqrt.cu"
-#include "MultiMarginCriterion.cu"
-#include "MSECriterion.cu"
-#include "DistKLDivCriterion.cu"
-#include "Threshold.cu"
-#include "Sigmoid.cu"
-#include "AbsCriterion.cu"
-#include "Abs.cu"
-#include "SoftPlus.cu"
-#include "SpatialUpSamplingNearest.cu"
-#include "VolumetricConvolution.cu"
-#include "LogSigmoid.cu"
-#include "PReLU.cu"
-#include "LookupTable.cu"
+#include "utils.h"
 
 LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 

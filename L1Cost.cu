@@ -1,5 +1,6 @@
 #include "utils.h"
 
+#include <thrust/device_ptr.h>
 #include <thrust/reduce.h>
 #include <thrust/transform.h>
 
@@ -74,7 +75,7 @@ static const struct luaL_Reg cunn_L1Cost__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_L1Cost_init(lua_State *L)
+void cunn_L1Cost_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_L1Cost__, "nn");

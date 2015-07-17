@@ -150,7 +150,7 @@ static const struct luaL_Reg cunn_Max__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_Max_init(lua_State *L)
+void cunn_Max_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_Max__, "nn");
