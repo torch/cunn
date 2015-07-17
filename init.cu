@@ -25,6 +25,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_TemporalConvolution_init(L);
   cunn_TemporalMaxPooling_init(L);
   cunn_SpatialConvolutionMM_init(L);
+  cunn_SpatialDeconvolution_init(L);
   cunn_SpatialMaxPooling_init(L);
   cunn_SpatialAdaptiveMaxPooling_init(L);
   cunn_SpatialSubSampling_init(L);
