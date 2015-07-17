@@ -1,3 +1,4 @@
+#include "THCApply.cuh"
 #include "utils.h"
 
 struct sqrtupdateOutput_functor
@@ -52,7 +53,7 @@ static const struct luaL_Reg cunn_Sqrt__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_Sqrt_init(lua_State *L)
+void cunn_Sqrt_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_Sqrt__, "nn");

@@ -46,7 +46,7 @@ static const struct luaL_Reg cunn_Square__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_Square_init(lua_State *L)
+void cunn_Square_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_Square__, "nn");

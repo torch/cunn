@@ -306,7 +306,7 @@ static const struct luaL_Reg cunn_LogSoftMax__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_LogSoftMax_init(lua_State *L)
+void cunn_LogSoftMax_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_LogSoftMax__, "nn");

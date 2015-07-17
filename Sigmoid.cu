@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "THCApply.cuh"
 
 struct sigmoidupdateOutput_functor
 {
@@ -45,7 +46,7 @@ static const struct luaL_Reg cunn_Sigmoid__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_Sigmoid_init(lua_State *L)
+void cunn_Sigmoid_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_Sigmoid__, "nn");

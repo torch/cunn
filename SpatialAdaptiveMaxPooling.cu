@@ -1,3 +1,4 @@
+#include "utils.h"
 
 #define CUDA_MAX_THREADS 1024   // this is safe, in reality 256 is our limit
 
@@ -368,7 +369,7 @@ static const struct luaL_Reg cunn_SpatialAdaptiveMaxPooling__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_SpatialAdaptiveMaxPooling_init(lua_State *L)
+void cunn_SpatialAdaptiveMaxPooling_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_SpatialAdaptiveMaxPooling__, "nn");

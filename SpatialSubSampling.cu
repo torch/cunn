@@ -489,7 +489,7 @@ static const struct luaL_Reg cunn_SpatialSubSampling__ [] = {
   {NULL, NULL}
 };
 
-static void cunn_SpatialSubSampling_init(lua_State *L)
+void cunn_SpatialSubSampling_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
   luaT_registeratname(L, cunn_SpatialSubSampling__, "nn");
