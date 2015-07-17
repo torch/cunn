@@ -1,7 +1,8 @@
 #include "utils.h"
 #include "im2col.h"
 
-static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
+
+int cunn_SpatialFullConvolution_updateOutput(lua_State *L) {
   THCState *state = getCutorchState(L);
   // Input
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -11,16 +12,16 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   int dH = luaT_getfieldcheckint(L, 1, "dH");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
-  int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
+  int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int padW = luaT_getfieldcheckint(L, 1, "padW");
   int padH = luaT_getfieldcheckint(L, 1, "padH");
 
-  THCudaTensor *weight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
-  THCudaTensor *bias = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
+  THCudaTensor *weight  = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
+  THCudaTensor *bias    = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
   THCudaTensor *columns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
-  THCudaTensor *ones = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
-  THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
+  THCudaTensor *ones    = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "fgradInput", "torch.CudaTensor");
+  THCudaTensor *output  = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
 
   THAssert(THCudaTensor_checkGPU(state, 6, input, output, weight,
                                  bias, columns, ones));
@@ -38,12 +39,8 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth + 2*padW - kW) / dW + 1;
-  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
-
-  if (outputWidth < 1 || outputHeight < 1)
-    THError("Given input size: (%dx%dx%d). Calculated output size: (%dx%dx%d). Output size is too small",
-        nInputPlane,inputHeight,inputWidth,nOutputPlane,outputHeight,outputWidth);
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -52,7 +49,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   THCudaTensor_resize4d(state, output, batchSize, nOutputPlane, outputHeight, outputWidth);
 
   // Resize temporary columns
-  THCudaTensor_resize2d(state, columns, nInputPlane*kW*kH, outputHeight*outputWidth);
+  THCudaTensor_resize2d(state, columns, nOutputPlane*kW*kH, inputHeight*inputWidth);
 
   // Define a buffer of ones, for bias accumulation
   // Note: this buffer can be shared with other modules, it only ever gets increased,
@@ -73,7 +70,33 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
     THCudaTensor_select(state, input_n, input, 0, elt);
     THCudaTensor_select(state, output_n, output, 0, elt);
 
-    // Do Bias first:
+    // M,N,K are dims of matrix A and B
+    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+    long m = weight->size[1] * weight->size[2] * weight->size[3];
+    long n = columns->size[1];
+    long k = weight->size[0];
+
+    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+    THCudaBlas_gemm(
+        state,
+        'n', 't',
+        n, m, k,
+        1,
+        THCudaTensor_data(state, input_n), n,
+        THCudaTensor_data(state, weight), m,
+        0,
+        THCudaTensor_data(state, columns), n
+    );
+
+    // Unpack columns back into input:
+    col2im(
+      THCState_getCurrentStream(state),
+      THCudaTensor_data(state, columns),
+      nOutputPlane, outputHeight, outputWidth, kH, kW, padH, padW, dH, dW,
+      THCudaTensor_data(state, output_n)
+    );
+
+    // Do Bias after:
     // M,N,K are dims of matrix A and B
     // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
     long m_ = nOutputPlane;
@@ -88,35 +111,10 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
         1,
         THCudaTensor_data(state, ones), k_,
         THCudaTensor_data(state, bias), k_,
-        0,
+        1,
         THCudaTensor_data(state, output_n), n_
     );
 
-    // Extract columns:
-    im2col(
-      THCState_getCurrentStream(state),
-      THCudaTensor_data(state, input_n),
-      nInputPlane, inputHeight, inputWidth, kH, kW, padH, padW, dH, dW,
-      THCudaTensor_data(state, columns)
-    );
-
-    // M,N,K are dims of matrix A and B
-    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
-    long m = weight->size[0];
-    long n = columns->size[1];
-    long k = weight->size[1];
-
-    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
-    THCudaBlas_gemm(
-        state,
-        'n', 'n',
-        n, m, k,
-        1,
-        THCudaTensor_data(state, columns), n,
-        THCudaTensor_data(state, weight), k,
-        1,
-        THCudaTensor_data(state, output_n), n
-    );
   }
 
   // Free
@@ -133,7 +131,7 @@ static int cunn_SpatialConvolutionMM_updateOutput(lua_State *L) {
   return 1;
 }
 
-static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
+static int cunn_SpatialFullConvolution_updateGradInput(lua_State *L) {
   THCState *state = getCutorchState(L);
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -144,8 +142,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   int dH = luaT_getfieldcheckint(L, 1, "dH");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
-  int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
+  int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int padW = luaT_getfieldcheckint(L, 1, "padW");
   int padH = luaT_getfieldcheckint(L, 1, "padH");
 
@@ -167,8 +165,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth + 2*padW - kW) / dW + 1;
-  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -177,7 +175,7 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   THCudaTensor_resize4d(state, gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
 
   // Resize temporary columns
-  THCudaTensor_resize2d(state, gradColumns, nInputPlane*kW*kH, outputHeight*outputWidth);
+  THCudaTensor_resize2d(state, gradColumns, nOutputPlane*kW*kH, inputHeight*inputWidth);
 
   // Helpers
   THCudaTensor *gradInput_n = THCudaTensor_new(state);
@@ -189,32 +187,34 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
     THCudaTensor_select(state, gradInput_n, gradInput, 0, elt);
     THCudaTensor_select(state, gradOutput_n, gradOutput, 0, elt);
 
+    // Extract columns:
+    im2col(
+      THCState_getCurrentStream(state),
+      THCudaTensor_data(state, gradOutput_n),
+      nOutputPlane, outputHeight, outputWidth, kH, kW, padH, padW, dH, dW,
+      THCudaTensor_data(state, gradColumns)
+    );
+
+
     // M,N,K are dims of matrix A and B
     // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
-    long m = weight->size[1];
+    long m = weight->size[0];
     long n = gradColumns->size[1];
-    long k = weight->size[0];
+    long k = weight->size[1] * weight->size[2] * weight->size[3];
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
     THCudaBlas_gemm(
         state,
-        'n', 't',
+        'n', 'n',
         n, m, k,
-        1,
-        THCudaTensor_data(state, gradOutput_n), n,
-        THCudaTensor_data(state, weight), m,
+	1,
+        THCudaTensor_data(state, gradColumns), n,
+        THCudaTensor_data(state, weight), k,
         0,
-        THCudaTensor_data(state, gradColumns), n
-    );
-
-    // Unpack columns back into input:
-    col2im(
-      THCState_getCurrentStream(state),
-      THCudaTensor_data(state, gradColumns),
-      nInputPlane, inputHeight, inputWidth, kH, kW, padH, padW, dH, dW,
-      THCudaTensor_data(state, gradInput_n)
+        THCudaTensor_data(state, gradInput_n), n
     );
   }
+
 
   // Free
   THCudaTensor_free(state, gradInput_n);
@@ -231,7 +231,8 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   return 1;
 }
 
-static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
+
+static int cunn_SpatialFullConvolution_accGradParameters(lua_State *L) {
   THCState *state = getCutorchState(L);
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -267,8 +268,8 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth + 2*padW - kW) / dW + 1;
-  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -281,7 +282,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   }
 
   // Resize temporary columns
-  THCudaTensor_resize2d(state, columns, nInputPlane*kW*kH, outputHeight*outputWidth);
+  THCudaTensor_resize2d(state, columns, nOutputPlane*kW*kH, inputHeight*inputWidth);
 
   // Helpers
   THCudaTensor *input_n = THCudaTensor_new(state);
@@ -296,16 +297,16 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
     // Extract columns:
     im2col(
       THCState_getCurrentStream(state),
-      THCudaTensor_data(state, input_n),
-      nInputPlane, inputHeight, inputWidth, kH, kW, padH, padW, dH, dW,
+      THCudaTensor_data(state, gradOutput_n),
+      nOutputPlane, outputHeight, outputWidth, kH, kW, padH, padW, dH, dW,
       THCudaTensor_data(state, columns)
     );
 
     // M,N,K are dims of matrix A and B
     // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
-    long m = gradWeight->size[0];
-    long n = gradWeight->size[1];
-    long k = columns->size[1];
+    long n = columns->size[0];   // nOutputPlane * kh * kw
+    long m = input_n->size[0];   // nInputPlane
+    long k = columns->size[1];   // inputHeight * inputWidth
 
     // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
     THCudaBlas_gemm(
@@ -314,7 +315,7 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
         n, m, k,
         scale,
         THCudaTensor_data(state, columns), k,
-        THCudaTensor_data(state, gradOutput_n), k,
+        THCudaTensor_data(state, input_n), k,
         1,
         THCudaTensor_data(state, gradWeight), n
     );
@@ -352,16 +353,16 @@ static int cunn_SpatialConvolutionMM_accGradParameters(lua_State *L) {
   return 0;
 }
 
-static const struct luaL_Reg cunn_SpatialConvolutionMM__ [] = {
-  {"SpatialConvolutionMM_updateOutput", cunn_SpatialConvolutionMM_updateOutput},
-  {"SpatialConvolutionMM_updateGradInput", cunn_SpatialConvolutionMM_updateGradInput},
-  {"SpatialConvolutionMM_accGradParameters", cunn_SpatialConvolutionMM_accGradParameters},
+const struct luaL_Reg cunn_SpatialFullConvolution__ [] = {
+  {"SpatialFullConvolution_updateOutput", cunn_SpatialFullConvolution_updateOutput},
+  {"SpatialFullConvolution_updateGradInput", cunn_SpatialFullConvolution_updateGradInput},
+  {"SpatialFullConvolution_accGradParameters", cunn_SpatialFullConvolution_accGradParameters},
   {NULL, NULL}
 };
 
-void cunn_SpatialConvolutionMM_init(lua_State *L)
+void cunn_SpatialFullConvolution_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
-  luaT_registeratname(L, cunn_SpatialConvolutionMM__, "nn");
+  luaT_registeratname(L, cunn_SpatialFullConvolution__, "nn");
   lua_pop(L,1);
 }

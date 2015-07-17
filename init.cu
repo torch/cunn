@@ -27,6 +27,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_TemporalConvolution_init(L);
   cunn_TemporalMaxPooling_init(L);
   cunn_SpatialConvolutionMM_init(L);
+  cunn_SpatialFullConvolution_init(L);
   cunn_SpatialMaxPooling_init(L);
   cunn_SpatialFractionalMaxPooling_init(L);
   cunn_SpatialAdaptiveMaxPooling_init(L);
@@ -45,7 +46,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_SoftPlus_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);
-  cunn_VolumetricDeconvolution_init(L);
+  cunn_VolumetricFullConvolution_init(L);
   cunn_VolumetricMaxPooling_init(L);
   cunn_VolumetricAveragePooling_init(L);
   cunn_LogSigmoid_init(L);
