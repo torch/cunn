@@ -275,14 +275,12 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   THCudaTensor_resize2d(state, gradColumns, nInputPlane*kW*kH, outputHeight*outputWidth);
 
   // Helpers
-  THCudaTensor *input_n = THCudaTensor_new(state);
   THCudaTensor *gradInput_n = THCudaTensor_new(state);
   THCudaTensor *gradOutput_n = THCudaTensor_new(state);
 
   // For each elt in batch, do:
   for (int elt = 0; elt < batchSize; elt ++) {
     // Matrix mulitply per sample:
-    THCudaTensor_select(state, input_n, input, 0, elt);
     THCudaTensor_select(state, gradInput_n, gradInput, 0, elt);
     THCudaTensor_select(state, gradOutput_n, gradOutput, 0, elt);
 
@@ -314,7 +312,6 @@ static int cunn_SpatialConvolutionMM_updateGradInput(lua_State *L) {
   }
 
   // Free
-  THCudaTensor_free(state, input_n);
   THCudaTensor_free(state, gradInput_n);
   THCudaTensor_free(state, gradOutput_n);
 
