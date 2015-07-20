@@ -1,40 +1,5 @@
 #include "utils.h"
 
-/*
- * Description:
- *    this function finds the min along the innermost dimension
- *    Nd input, (N-1)d output, (N-1)d argmin
- */
-__global__ void min_output(float *input, float *output, float *indices,
-                           long nrows, long ncols)
-{
-  // output offset:
-  long o = threadIdx.x + blockDim.x * blockIdx.x;
-  if (o >= nrows) return;
-
-  // input offset:
-  long i = o * ncols;
-
-  // move pointers
-  input = input + i;
-
-  // compute min:
-  float min = input[0];
-  long argmin = 0;
-  long ii;
-  for (ii=1; ii<ncols; ii++) {
-      float val = input[ii];
-      if (val < min) {
-          min = val;
-          argmin = ii;
-      }
-  }
-
-  // store
-  output[o] = min;
-  indices[o] = argmin+1;
-}
-
 __global__ void min_gradInput(float *input, float *output, float *indices,
                               long nrows, long ncols)
 {
@@ -62,43 +27,7 @@ static int cunn_Min_updateOutput(lua_State *L)
   luaL_argcheck(L, dimension >= 0 && dimension < input->nDimension, 2, "dimension out of range");
   luaL_argcheck(L, dimension == input->nDimension-1, 2, "only supported dimension is innermost (CUDA kernel only)");
 
-  input = THCudaTensor_newContiguous(state, input);
-
-  THLongStorage *dim = THLongStorage_newWithSize(input->nDimension);
-  long i;
-  for(i = 0; i < input->nDimension; i++)
-    dim->data[i] = input->size[i];
-  dim->data[dimension] = 1;
-  THCudaTensor_resize(state, output, dim, NULL);
-  THCudaTensor_resize(state, indices, dim, NULL);
-  THLongStorage_free(dim);
-
-  float *input_data = THCudaTensor_data(state, input);
-  float *output_data = THCudaTensor_data(state, output);
-  float *indices_data = THCudaTensor_data(state, indices);
-
-  long nrows = THCudaTensor_nElement(state, output);
-  long ncols = input->size[dimension];
-
-  // cuda blocks & threads:
-  long nthreads = 256;
-  long nblocks = ceil((float)nrows / nthreads);
-  dim3 blocks(nblocks);
-  dim3 threads(nthreads);
-
-  // kernel:
-  min_output <<<blocks, threads,
-    0, THCState_getCurrentStream(state)>>> (input_data, output_data, indices_data, nrows, ncols);
-
-  // check for errors
-  cudaError_t err = cudaGetLastError();
-  if (err != cudaSuccess) {
-    printf("error in Min.updateOutput: %s\n", cudaGetErrorString(err));
-    THError("aborting");
-  }
-
-  // final cut:
-  THCudaTensor_free(state, input);
+  THCudaTensor_min(state, output, indices, input, dimension);
   THCudaTensor_select(state, output, NULL, dimension, 0);
 
   return 1;
