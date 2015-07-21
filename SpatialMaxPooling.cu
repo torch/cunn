@@ -1,11 +1,5 @@
 #include "utils.h"
-
-// CUDA: grid stride looping
-#define CUDA_KERNEL_LOOP(i, n)                        \
-  for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
-      i < (n);                                       \
-      i += blockDim.x * gridDim.x)
-
+#include "common.h"
 
 // kernels borrowed from Caffe
 template <typename Dtype>
@@ -243,5 +237,3 @@ void cunn_SpatialMaxPooling_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialMaxPooling__, "nn");
   lua_pop(L,1);
 }
-
-#undef CUDA_KERNEL_LOOP
