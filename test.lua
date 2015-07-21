@@ -1470,8 +1470,11 @@ function cunntest.SpatialMaxPooling_forward()
    local sj = math.random(1,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialMaxPooling.forward %dx%dx%d o %dx%d -> %dx%dx%d',
@@ -1479,7 +1482,8 @@ function cunntest.SpatialMaxPooling_forward()
    times[title] = tm
 
    local input = torch.randn(from,inj,ini)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj)
+   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
    for i = 1,nloop do
@@ -1488,7 +1492,8 @@ function cunntest.SpatialMaxPooling_forward()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
    local rescuda = gconv:forward(input)
    a:reset()
    for i = 1,nloop do
@@ -1513,8 +1518,11 @@ function cunntest.SpatialMaxPooling_forward_batch()
    local sj = math.random(2,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialMaxPooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
@@ -1522,7 +1530,8 @@ function cunntest.SpatialMaxPooling_forward_batch()
    times[title] = tm
 
    local input = torch.randn(bs,from,inj,ini)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj)
+   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
    for i = 1,nloop do
@@ -1531,7 +1540,8 @@ function cunntest.SpatialMaxPooling_forward_batch()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
    local rescuda = gconv:forward(input)
    a:reset()
    for i = 1,nloop do
@@ -1553,8 +1563,11 @@ function cunntest.SpatialMaxPooling_backward()
    local sj = math.random(1,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialMaxPooling.backward %dx%dx%d o %dx%d -> %dx%dx%d',
@@ -1563,7 +1576,8 @@ function cunntest.SpatialMaxPooling_backward()
 
    local input = torch.randn(from,inj,ini)
    local gradOutput = torch.randn(to,outj,outi)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj)
+   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
    sconv:forward(input)
    sconv:zeroGradParameters()
    local groundgrad = sconv:backward(input, gradOutput)
@@ -1576,7 +1590,8 @@ function cunntest.SpatialMaxPooling_backward()
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
    gconv:forward(input)
    gconv:zeroGradParameters()
    local rescuda = gconv:backward(input, gradOutput)
@@ -1604,8 +1619,11 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local sj = kj
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
@@ -1614,7 +1632,8 @@ function cunntest.SpatialMaxPooling_backward_batch()
 
    local input = torch.randn(bs,from,inj,ini)
    local gradOutput = torch.randn(bs,to,outj,outi)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj)
+   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
    sconv:forward(input)
    sconv:zeroGradParameters()
    local groundgrad = sconv:backward(input, gradOutput)
@@ -1627,7 +1646,8 @@ function cunntest.SpatialMaxPooling_backward_batch()
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
    gconv:forward(input)
    gconv:zeroGradParameters()
    local rescuda = gconv:backward(input, gradOutput)
