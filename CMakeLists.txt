@@ -31,6 +31,9 @@ IF(APPLE)
   SET_TARGET_PROPERTIES(cunn PROPERTIES
     LINK_FLAGS "-undefined dynamic_lookup")
 ENDIF()
+IF(LUALIB)
+  TARGET_LINK_LIBRARIES(cunn ${LUALIB})
+ENDIF()
 
 ### Torch packages supposes libraries prefix is "lib"
 SET_TARGET_PROPERTIES(cunn PROPERTIES
