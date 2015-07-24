@@ -18,8 +18,6 @@ int luaopen_libcunn(lua_State *L)
   cunn_ClassNLLCriterion_init(L);
   cunn_Tanh_init(L);
   cunn_Sigmoid_init(L);
-  cunn_Max_init(L);
-  cunn_Min_init(L);
   cunn_HardTanh_init(L);
   cunn_L1Cost_init(L);
   cunn_LogSoftMax_init(L);
