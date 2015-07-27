@@ -92,7 +92,7 @@ int cunn_SpatialDeconvolution_updateOutput(lua_State *L) {
     col2im(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, columns),
-      nInputPlane, outputHeight, outputWidth, kH, kW, padH, padW, dH, dW,
+      nOutputPlane, outputHeight, outputWidth, kH, kW, padH, padW, dH, dW,
       THCudaTensor_data(state, output_n)
     );
 
