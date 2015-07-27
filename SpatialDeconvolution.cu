@@ -131,10 +131,110 @@ int cunn_SpatialDeconvolution_updateOutput(lua_State *L) {
   return 1;
 }
 
+static int cunn_SpatialDeconvolution_updateGradInput(lua_State *L) {
+  THCState *state = getCutorchState(L);
+  // Inputs
+  THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
+  THCudaTensor *gradOutput = (THCudaTensor *)luaT_checkudata(L, 3, "torch.CudaTensor");
+
+  // Params
+  int dW = luaT_getfieldcheckint(L, 1, "dW");
+  int dH = luaT_getfieldcheckint(L, 1, "dH");
+  int kW = luaT_getfieldcheckint(L, 1, "kW");
+  int kH = luaT_getfieldcheckint(L, 1, "kH");
+  int nOutputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
+  int nInputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
+
+  THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
+  THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
+  THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
+
+  THAssert(THCudaTensor_checkGPU(state, 5, input, gradOutput, weight,
+                                 gradColumns, gradInput));
+  luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch mode) tensor is expected");
+
+  int batch = 1;
+  if (input->nDimension == 3) {
+    // Force batch
+    batch = 0;
+    THCudaTensor_resize4d(state, input, 1, input->size[0], input->size[1], input->size[2]);
+    THCudaTensor_resize4d(state, gradOutput, 1, gradOutput->size[0], gradOutput->size[1], gradOutput->size[2]);
+  }
+
+  long inputWidth   = input->size[3];
+  long inputHeight  = input->size[2];
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
+
+  // Batch size + input planes
+  long batchSize = input->size[0];
+
+  // Resize output
+  THCudaTensor_resize4d(state, gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
+
+  // Resize temporary columns
+  THCudaTensor_resize2d(state, gradColumns, nOutputPlane*kW*kH, inputHeight*inputWidth);
+
+  // Helpers
+  THCudaTensor *gradInput_n = THCudaTensor_new(state);
+  THCudaTensor *gradOutput_n = THCudaTensor_new(state);
+
+  // For each elt in batch, do:
+  for (int elt = 0; elt < batchSize; elt ++) {
+    // Matrix mulitply per sample:
+    THCudaTensor_select(state, gradInput_n, gradInput, 0, elt);
+    THCudaTensor_select(state, gradOutput_n, gradOutput, 0, elt);
+
+    // Extract columns:
+    im2col(
+      THCState_getCurrentStream(state),
+      THCudaTensor_data(state, gradOutput_n),
+      nOutputPlane, outputHeight, outputWidth, kH, kW, padH, padW, dH, dW,
+      THCudaTensor_data(state, gradColumns)
+    );
+
+
+    // M,N,K are dims of matrix A and B
+    // (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+    long m = weight->size[0];
+    long n = gradColumns->size[1];
+    long k = weight->size[1];
+
+    // Do GEMM (note: this is a bit confusing because gemm assumes column-major matrices)
+    THCudaBlas_gemm(
+        state,
+        'n', 'n',
+        n, m, k,
+	1,
+        THCudaTensor_data(state, gradColumns), n,
+        THCudaTensor_data(state, weight), k,
+        0,
+        THCudaTensor_data(state, gradInput_n), n
+    );
+  }
+
+
+  // Free
+  THCudaTensor_free(state, gradInput_n);
+  THCudaTensor_free(state, gradOutput_n);
+
+  // Resize output
+  if (batch == 0) {
+    THCudaTensor_resize3d(state, gradOutput, nOutputPlane, outputHeight, outputWidth);
+    THCudaTensor_resize3d(state, input, nInputPlane, inputHeight, inputWidth);
+    THCudaTensor_resize3d(state, gradInput, nInputPlane, inputHeight, inputWidth);
+  }
+
+  // Return gradInput
+  return 1;
+}
+
 
 const struct luaL_Reg cunn_SpatialDeconvolution__ [] = {
   {"SpatialDeconvolution_updateOutput", cunn_SpatialDeconvolution_updateOutput},
-  //{"SpatialDeconvolution_updateGradInput", cunn_SpatialDeconvolution_updateGradInput},
+  {"SpatialDeconvolution_updateGradInput", cunn_SpatialDeconvolution_updateGradInput},
   //{"SpatialDeconvolution_accGradParameters", cunn_SpatialDeconvolution_accGradParameters},
   {NULL, NULL}
 };
