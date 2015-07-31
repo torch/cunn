@@ -2941,7 +2941,7 @@ function cunntest.ClassNLLCriterionSingleTarget()
       mytester:assertlt(
           math.abs(fout-cout), precision_forward, 'error  on output')
       local gerr = cgin:float() - fgin
-      mytester:assertlt(gerr:abs():max(), precision_forward, 
+      mytester:assertlt(gerr:abs():max(), precision_forward,
         'error  on gradInput')
    end
 end
@@ -2956,16 +2956,16 @@ function cunntest.ClassNLLCriterionMultipleTarget()
         weights = torch.randn(size)
       end
       local mod = nn.ClassNLLCriterion(weights)
-   
+
       local tm = {}
       local title = string.format('ClassNLLCriterionMultiTarget %d ',size)
       times[title] = tm
-   
+
       local a = torch.Timer()
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
       tm.cpu = a:time().real
-   
+
       local cinput = input:cuda()
       local ctarget = target:cuda()
       local cmod = nn.ClassNLLCriterion(weights):cuda()
@@ -2974,12 +2974,12 @@ function cunntest.ClassNLLCriterionMultipleTarget()
       local cgin = cmod:backward(cinput,ctarget)
       cutorch.synchronize()
       tm.gpu = a:time().real
-   
+
       mytester:assertlt(
           math.abs(fout-cout), precision_forward, 'error on output')
-   
+
       local gerr = cgin:float() - fgin
-      mytester:assertlt(gerr:abs():max(), precision_forward, 
+      mytester:assertlt(gerr:abs():max(), precision_forward,
         'error  on gradInput')
    end
 end
@@ -3062,6 +3062,7 @@ function cunntest.VolumetricConvolution_forward_single()
 
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+   mytester:assert(groundtruth:isSize(rescuda:size()), 'size mismatch on state (forward)')
 end
 
 function cunntest.VolumetricConvolution_forward_batch()
@@ -3109,6 +3110,7 @@ function cunntest.VolumetricConvolution_forward_batch()
 
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+   mytester:assert(groundtruth:isSize(rescuda:size()), 'size mismatch on state (forward)')
 end
 
 function cunntest.VolumetricConvolution_backward_single()
@@ -3167,7 +3169,7 @@ function cunntest.VolumetricConvolution_backward_single()
    local error = rescuda:float() - groundgrad
    local werror = weightcuda:float() - groundweight
    local berror = biascuda:float() - groundbias
-
+   mytester:assert(groundgrad:isSize(rescuda:size()), 'size mismatch on state (forward)')
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
@@ -3230,7 +3232,7 @@ function cunntest.VolumetricConvolution_backward_batch()
    local error = rescuda:float() - groundgrad
    local werror = weightcuda:float() - groundweight
    local berror = biascuda:float() - groundbias
-
+   mytester:assert(groundgrad:isSize(rescuda:size()), 'size mismatch on state (forward)')
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')

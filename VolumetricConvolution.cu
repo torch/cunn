@@ -192,8 +192,8 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   long batchSize = input->size[0];
 
   // Resize output
-  THCudaTensor_resize5d(state, output, batchSize, nOutputPlane, outputDepth,
-                        outputHeight, outputWidth);
+  THCudaTensor_resize5d(state, output, batchSize, nOutputPlane,
+                        outputHeight, outputWidth, outputDepth);
 
   // Resize temporary columns
   THCudaTensor_resize2d(state, columns, nInputPlane*kD*kW*kH, outputDepth*outputHeight*outputWidth);
@@ -203,7 +203,7 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   // and always contains ones.
   if (ones->nDimension != 3 || ones->size[0]*ones->size[1]*ones->size[2] < outputDepth*outputHeight*outputWidth) {
     // Resize plane and fill with ones...
-    THCudaTensor_resize3d(state, ones, outputDepth, outputHeight, outputWidth);
+    THCudaTensor_resize3d(state, ones, outputHeight, outputWidth, outputDepth);
     THCudaTensor_fill(state, ones, 1);
   }
 
@@ -321,7 +321,7 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   long batchSize = input->size[0];
 
   // Resize output
-  THCudaTensor_resize5d(state, gradInput, batchSize, nInputPlane, inputDepth, inputHeight, inputWidth);
+  THCudaTensor_resize5d(state, gradInput, batchSize, nInputPlane, inputHeight, inputWidth, inputDepth);
 
   // Resize temporary columns
   THCudaTensor_resize2d(state, gradColumns, nInputPlane*kW*kH*kD, outputDepth*outputHeight*outputWidth);
@@ -429,7 +429,7 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   // Define a buffer of ones, for bias accumulation
   if (ones->nDimension != 3 || ones->size[0]*ones->size[1]*ones->size[2] < outputDepth*outputHeight*outputWidth) {
     // Resize plane and fill with ones...
-    THCudaTensor_resize3d(state, ones, outputDepth, outputHeight, outputWidth);
+    THCudaTensor_resize3d(state, ones, outputHeight, outputWidth, outputDepth);
     THCudaTensor_fill(state, ones, 1);
   }
 
