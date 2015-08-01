@@ -17,12 +17,13 @@ struct PReLUUpdateOutput {
 };
 
 __global__ void preluForward(float *output, const float *input, const float *weight,
-    int n, int nOutputPlane, int dim)
+    int n, int nElemsPerSample, int mapSize)
 {
   CUDA_KERNEL_LOOP(i, n)
   {
-    int j = (i / dim) % nOutputPlane;
-    output[i] = input[i] > 0 ? input[i] : input[i] * weight[j];
+    int positionInSample = i % nElemsPerSample;
+    int mapNumber = positionInSample / mapSize;
+    output[i] = input[i] > 0 ? input[i] : input[i] * weight[mapNumber];
   }
 }
 
@@ -49,16 +50,17 @@ static int cunn_PReLU_updateOutput(lua_State *L)
     input = THCudaTensor_newContiguous(state, input);
 
     int n = THCudaTensor_nElement(state, input);
-    int dim = n / nOutputPlane;
+    int mapSize = 1;
     if(ndim == 3)
-      dim /= (input->size[1] * input->size[2]);
+      mapSize = (input->size[1] * input->size[2]);
     else if(ndim == 4)
-      dim /= (input->size[2] * input->size[3]);
+      mapSize = (input->size[2] * input->size[3]);
+    int nElemsPerSample = nOutputPlane * mapSize;
     preluForward<<<GET_BLOCKS(n), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>> (
 	THCudaTensor_data(state, output),
 	THCudaTensor_data(state, input),
 	w,
-	n, nOutputPlane, dim);
+	n, nElemsPerSample, mapSize);
     THCudaTensor_free(state, input);
   }
 
@@ -82,12 +84,13 @@ __global__ void preluBackward(
     const float *input,
     const float *weight,
     const float *gradOutput,
-    int n, int nOutputPlane, int dim)
+    int n, int nElemsPerSample, int mapSize)
 {
   CUDA_KERNEL_LOOP(i, n)
   {
-    int j = (i / dim) % nOutputPlane;
-    gradInput[i] = input[i] > 0 ? gradOutput[i] : gradOutput[i] * weight[j];
+    int positionInSample = i % nElemsPerSample;
+    int mapNumber = positionInSample / mapSize;
+    gradInput[i] = input[i] > 0 ? gradOutput[i] : gradOutput[i] * weight[mapNumber];
   }
 }
 
@@ -114,17 +117,18 @@ static int cunn_PReLU_updateGradInput(lua_State *L)
     gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
     int n = THCudaTensor_nElement(state, input);
-    int dim = n / nOutputPlane;
+    int mapSize = 1;
     if(ndim == 3)
-      dim /= (input->size[1] * input->size[2]);
+      mapSize = (input->size[1] * input->size[2]);
     else if(ndim == 4)
-      dim /= (input->size[2] * input->size[3]);
+      mapSize = (input->size[2] * input->size[3]);
+    int nElemsPerSample = nOutputPlane * mapSize;
     preluBackward<<<GET_BLOCKS(n), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>> (
 	THCudaTensor_data(state, gradInput),
 	THCudaTensor_data(state, input),
 	w,
 	THCudaTensor_data(state, gradOutput),
-	n, nOutputPlane, dim);
+	n, nElemsPerSample, mapSize);
 
     THCudaTensor_free(state, input);
     THCudaTensor_free(state, gradOutput);
