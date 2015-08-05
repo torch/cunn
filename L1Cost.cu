@@ -29,8 +29,8 @@ static int cunn_L1Cost_updateOutput(lua_State *L)
   sum = thrust::reduce(
 #if CUDA_VERSION >= 7000
     thrust::cuda::par.on(THCState_getCurrentStream(state)),
-    input_data, input_data+size, (float) 0, l1cost_functor());
 #endif
+    input_data, input_data+size, (float) 0, l1cost_functor());
 
   THCudaTensor_free(state, input);
 
