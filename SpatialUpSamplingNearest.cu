@@ -2,12 +2,6 @@
 #include "THC.h"
 #include "utils.h"
 
-#include <thrust/transform.h>
-#include <thrust/reduce.h>
-#include <thrust/transform_reduce.h>
-#include <thrust/functional.h>
-
-
 /*
  * Description:
  */

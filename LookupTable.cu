@@ -2,6 +2,9 @@
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/iterator/constant_iterator.h>
+#if CUDA_VERSION >= 7000
+#include <thrust/system/cuda/execution_policy.h>
+#endif
 
 #ifndef DIVUP
 #define DIVUP(x, y) (((x) + (y) - 1) / (y))
@@ -193,6 +196,9 @@ static int cunn_LookupTable_accGradParameters(lua_State *L)
     // sorted: 2 5 5 5 7 7 8 9 9
     //  count: 1 1 2 3 1 2 1 1 2
     thrust::inclusive_scan_by_key(
+#if CUDA_VERSION >= 7000
+      thrust::cuda::par.on(THCState_getCurrentStream(state)),
+#endif
       sorted_ptr,
       sorted_ptr + numel,
       thrust::make_constant_iterator(1),
@@ -202,6 +208,9 @@ static int cunn_LookupTable_accGradParameters(lua_State *L)
     // sorted: 2 5 5 5 7 7 8 9 9
     //  count: 1 3 3 3 2 2 1 2 2
     thrust::inclusive_scan_by_key(
+#if CUDA_VERSION >= 7000
+      thrust::cuda::par.on(THCState_getCurrentStream(state)),
+#endif
       thrust::make_reverse_iterator(sorted_ptr + numel),
       thrust::make_reverse_iterator(sorted_ptr),
       thrust::make_reverse_iterator(count_ptr + numel),
