@@ -208,14 +208,14 @@ static int cunn_PReLU_accGradParameters(lua_State *L)
 
       if(ndim == 2)
       {
-	THCudaTensor_reduceDim(state, gradWeightBuf, gradInput, thrust::identity<float>(), thrust::plus<float>(), 0, 0);
+	THCudaTensor_sum(state, gradWeightBuf, gradInput, 0);
 	THCudaTensor_cadd(state, gradWeight, gradWeight, scale, gradWeightBuf);
       }
       else if(ndim == 3)
       {
 	THCudaTensor *buffer = THCudaTensor_newContiguous(state, gradInput);
 	THCudaTensor_resize2d(state, buffer, nOutputPlane, input->size[1] * input->size[2]);
-	THCudaTensor_reduceDim(state, gradWeightBuf, buffer, thrust::identity<float>(), thrust::plus<float>(), 0, 1);
+	THCudaTensor_sum(state, gradWeightBuf, buffer, 1);
 	THCudaTensor_cadd(state, gradWeight, gradWeight, scale, gradWeightBuf);
 	THCudaTensor_free(state, buffer);
       }
@@ -224,8 +224,8 @@ static int cunn_PReLU_accGradParameters(lua_State *L)
 	THCudaTensor *buffer = THCudaTensor_newContiguous(state, gradInput);
 	THCudaTensor_resize3d(state, buffer, input->size[0], nOutputPlane, input->size[2] * input->size[3]);
 	THCudaTensor_resize2d(state, sumbuf, input->size[0], nOutputPlane);
-	THCudaTensor_reduceDim(state, sumbuf, buffer, thrust::identity<float>(), thrust::plus<float>(), 0, 2);
-	THCudaTensor_reduceDim(state, gradWeightBuf, sumbuf, thrust::identity<float>(), thrust::plus<float>(), 0, 0);
+	THCudaTensor_sum(state, sumbuf, buffer, 2);
+	THCudaTensor_sum(state, gradWeightBuf, sumbuf, 0);
 	THCudaTensor_cadd(state, gradWeight, gradWeight, scale, gradWeightBuf);
 	THCudaTensor_free(state, buffer);
       }
