@@ -9,7 +9,9 @@
  */
 __global__ void adaptivemaxpool(float *input, float *output, float *indices_x, float *indices_y,
                         int input_n, int input_h, int input_w,
-                        int output_h, int output_w)
+                        int output_h, int output_w,
+                        int strideh, int stridew,
+                        int strided)
 {
   // iterators
   int xx, yy;
@@ -29,7 +31,7 @@ __global__ void adaptivemaxpool(float *input, float *output, float *indices_x, f
 
   // select input/output plane
   output = output + o*output_w*output_h;
-  input = input + i*input_w*input_h;
+  input = input + i*strided;
   indices_x = indices_x + o*output_w*output_h;
   indices_y = indices_y + o*output_w*output_h;
 
@@ -47,7 +49,7 @@ __global__ void adaptivemaxpool(float *input, float *output, float *indices_x, f
       int kW = x_end-x_start;
 
       // Compute the mean of the input image...
-      float *ptr_input = input + y_start*input_w + x_start;
+      float *ptr_input = input + y_start*strideh + x_start*stridew;
       float *ptr_output = output + yy*output_w + xx;
       float *ptr_ind_x = indices_x + yy*output_w + xx;
       float *ptr_ind_y = indices_y + yy*output_w + xx;
@@ -57,14 +59,14 @@ __global__ void adaptivemaxpool(float *input, float *output, float *indices_x, f
       int kx, ky;
       for(ky = 0; ky < kH; ky++) {
         for(kx = 0; kx < kW; kx++) {
-          float val = ptr_input[kx];
+          float val = ptr_input[kx*stridew];
           if (val > max) {
             max = val;
             argmax_x = kx;
             argmax_y = ky;
           }
         }
-        ptr_input += input_w; // next input line
+        ptr_input += strideh; // next input line
       }
       // Update output and argmax
       *ptr_output = max;
@@ -205,7 +207,10 @@ static int cunn_SpatialAdaptiveMaxPooling_updateOutput(lua_State *L)
     long nInputRows = input->size[1];
     long nInputPlane = input->size[0];
 
-    input = THCudaTensor_newContiguous(state, input);
+    long istride_d = input->stride[0];
+    long istride_h = input->stride[1];
+    long istride_w = input->stride[2];
+
     input_data = THCudaTensor_data(state, input);
 
     THCudaTensor_resize3d(state, output, nInputPlane, nOutputRows, nOutputCols);
@@ -223,12 +228,18 @@ static int cunn_SpatialAdaptiveMaxPooling_updateOutput(lua_State *L)
     // run maxpool kernel
     adaptivemaxpool <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
                                    indices_data+nInputPlane*nOutputCols*nOutputRows, indices_data,
-                                   nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols);
+                                   nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+                                   istride_h, istride_w, istride_d);
+
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
     long nInputPlane = input->size[1];
     long nbatch = input->size[0];
+
+    long istride_d = input->stride[1];
+    long istride_h = input->stride[2];
+    long istride_w = input->stride[3];
 
     input = THCudaTensor_newContiguous(state, input);
     input_data = THCudaTensor_data(state, input);
@@ -248,11 +259,11 @@ static int cunn_SpatialAdaptiveMaxPooling_updateOutput(lua_State *L)
     // run maxpool kernel
     adaptivemaxpool <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
                                    indices_data+nbatch*nInputPlane*nOutputCols*nOutputRows, indices_data,
-                                   nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols);
+                                   nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+                                   istride_h, istride_w, istride_d);
+    // clean
+    THCudaTensor_free(state, input);
   }
-
-  // clean
-  THCudaTensor_free(state, input);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
@@ -278,6 +289,8 @@ static int cunn_SpatialAdaptiveMaxPooling_updateGradInput(lua_State *L)
   float *indices_data;
   float *gradInput_data;
   float *gradOutput_data;
+
+  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
@@ -353,6 +366,9 @@ static int cunn_SpatialAdaptiveMaxPooling_updateGradInput(lua_State *L)
                                           nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols);
     }
   }
+
+  // clean
+  THCudaTensor_free(state,gradOutput);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
