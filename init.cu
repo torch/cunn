@@ -1,4 +1,5 @@
 #include "luaT.h"
+#include "TH.h"
 #include "THC.h"
 #include "THLogAdd.h" /* DEBUG: WTF */
 
@@ -40,6 +41,8 @@ int luaopen_libcunn(lua_State *L)
   cunn_SoftPlus_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);
+  cunn_VolumetricMaxPooling_init(L);
+  cunn_VolumetricAveragePooling_init(L);
   cunn_LogSigmoid_init(L);
   cunn_PReLU_init(L);
   cunn_LookupTable_init(L);
