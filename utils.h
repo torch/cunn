@@ -29,6 +29,7 @@ void cunn_Square_init(lua_State *L);
 void cunn_Sqrt_init(lua_State *L);
 void cunn_Threshold_init(lua_State *L);
 void cunn_MSECriterion_init(lua_State *L);
+void cunn_SmoothL1Criterion_init(lua_State *L);
 void cunn_AbsCriterion_init(lua_State *L);
 void cunn_DistKLDivCriterion_init(lua_State *L);
 void cunn_Abs_init(lua_State *L);
