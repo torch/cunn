@@ -12,7 +12,7 @@
    Returns the index of the most significant 1 bit in `val`.
 */
 
-__device__ __forceinline__ constexpr int getMSB(int val) {
+__device__ __forceinline__ int getMSB(int val) {
   return
     ((val >= 1024 && val < 2048) ? 10 :
      ((val >= 512) ? 9 :
@@ -31,7 +31,7 @@ __device__ __forceinline__ constexpr int getMSB(int val) {
      Computes floor(a / b)
      */
 template <typename T>
-__host__ __device__ __forceinline__ constexpr T floor(T a, T b) {
+__host__ __device__ __forceinline__ T floor(T a, T b) {
     return (a - b + 1) / b;
 }
 
@@ -462,7 +462,7 @@ static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
 
   THCudaCheck(cudaGetLastError());
 
-  return 0;
+  return 1;
 }
 
 
@@ -668,7 +668,7 @@ static int cunn_SpatialBatchNormalization_updateGradInput(lua_State *L) {
 
   THCudaCheck(cudaGetLastError());
 
-  return 0;
+  return 1;
 }
 
 
@@ -801,8 +801,8 @@ static int cunn_SpatialBatchNormalization_accGradParameters(lua_State *L) {
 
   // The SpatialBatchNormalization lua module is designed for
   // 4-D only: batch, plane, y, x
-  constexpr int BatchDims = 2;
-  constexpr int ImageDims = 2;
+  const int BatchDims = 2;
+  const int ImageDims = 2;
   typedef double ComputeT;
   // Collapse
   SpatialBatchNormalizationAccGradParameters
@@ -818,7 +818,7 @@ static int cunn_SpatialBatchNormalization_accGradParameters(lua_State *L) {
 
   THCudaCheck(cudaGetLastError());
 
-  return 0;
+  return 1;
 }
 
 
