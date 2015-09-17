@@ -3711,6 +3711,17 @@ function cunntest.PReLU_backward()
     mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
+function cunntest.getParameters()
+   -- smoke test for getParameters
+   local model = nn.Sequential()
+   model:add( nn.SpatialConvolution(1,10,3,3) )
+   model:add( nn.SpatialConvolution(10,20,3,3) )
+   model:cuda()
+   local weights, gradients = model:getParameters()
+   local copy = model:clone():float():cuda()
+   local weights, gradients = copy:getParameters()
+end
+
 function cunntest.LookupTable_forward()
    local nVocab = 10000
    local nDim = 100
