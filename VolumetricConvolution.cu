@@ -162,6 +162,9 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kT");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
+  int padD = luaT_getfieldcheckint(L, 1, "padW");
+  int padW = luaT_getfieldcheckint(L, 1, "padH");
+  int padH = luaT_getfieldcheckint(L, 1, "padT");
 
   THCudaTensor *weight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *bias = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
@@ -184,9 +187,9 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
   long inputDepth   = input->size[4];
-  long outputWidth  = (inputWidth  - kW) / dW + 1;
-  long outputHeight = (inputHeight - kH) / dH + 1;
-  long outputDepth  = (inputDepth - kD) / dD + 1;
+  long outputWidth  = (inputWidth + 2*padW  - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
+  long outputDepth  = (inputDepth + 2*padD - kD) / dD + 1;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -240,7 +243,7 @@ static int cunn_VolumetricConvolution_updateOutput(lua_State *L) {
     im3d2col(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, input_n),
-      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
+      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, padH, padW, padD, dH, dW, dD,
       THCudaTensor_data(state, columns)
     );
 
@@ -293,7 +296,10 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kT");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
-
+  int padD = luaT_getfieldcheckint(L, 1, "padW");
+  int padW = luaT_getfieldcheckint(L, 1, "padH");
+  int padH = luaT_getfieldcheckint(L, 1, "padT");
+  
   THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
@@ -313,9 +319,9 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
   long inputDepth   = input->size[4];
-  long outputWidth  = (inputWidth - kW) / dW + 1;
-  long outputHeight = (inputHeight - kH) / dH + 1;
-  long outputDepth  = (inputDepth - kD) / dD + 1;
+  long outputWidth  = (inputWidth + 2*padW  - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
+  long outputDepth  = (inputDepth + 2*padD - kD) / dD + 1;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -360,7 +366,7 @@ static int cunn_VolumetricConvolution_updateGradInput(lua_State *L) {
     col2im3d(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, gradColumns),
-      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
+      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, padH, padW, padD, dH, dW, dD,
       THCudaTensor_data(state, gradInput_n)
     );
   }
@@ -397,6 +403,9 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kT");
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
+  int padD = luaT_getfieldcheckint(L, 1, "padW");
+  int padW = luaT_getfieldcheckint(L, 1, "padH");
+  int padH = luaT_getfieldcheckint(L, 1, "padT");
   float scale = luaL_optnumber(L, 4, 1);
 
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
@@ -419,9 +428,9 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
   long inputDepth   = input->size[4];
-  long outputWidth  = (inputWidth - kW) / dW + 1;
-  long outputHeight = (inputHeight - kH) / dH + 1;
-  long outputDepth  = (inputDepth - kD) / dD + 1;
+  long outputWidth  = (inputWidth + 2*padW  - kW) / dW + 1;
+  long outputHeight = (inputHeight + 2*padH - kH) / dH + 1;
+  long outputDepth  = (inputDepth + 2*padD - kD) / dD + 1;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -450,7 +459,7 @@ static int cunn_VolumetricConvolution_accGradParameters(lua_State *L) {
     im3d2col(
       THCState_getCurrentStream(state),
       THCudaTensor_data(state, input_n),
-      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, 0, 0, 0, dH, dW, dD,
+      nInputPlane, inputHeight, inputWidth, inputDepth, kH, kW, kD, padH, padW, padD, dH, dW, dD,
       THCudaTensor_data(state, columns)
     );
 
