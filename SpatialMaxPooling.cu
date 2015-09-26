@@ -196,8 +196,6 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
     nOutputRows = floor(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
   }
 
-
-  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
   THCudaTensor_resizeAs(state, gradInput, input);
   
   int count = THCudaTensor_nElement(state, input);
@@ -209,8 +207,6 @@ static int cunn_SpatialMaxPooling_updateGradInput(lua_State *L)
       batchSize, nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
       kH, kW, dH, dW, padH, padW,
       THCudaTensor_data(state, gradInput));
-
-  THCudaTensor_free(state, gradOutput);
 
   // check for errors
   cudaError_t err = cudaGetLastError();
