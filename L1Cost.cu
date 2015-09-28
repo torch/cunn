@@ -3,6 +3,9 @@
 #include <thrust/device_ptr.h>
 #include <thrust/reduce.h>
 #include <thrust/transform.h>
+#if CUDA_VERSION >= 7000
+#include <thrust/system/cuda/execution_policy.h>
+#endif
 
 struct l1cost_functor
 {
@@ -23,7 +26,11 @@ static int cunn_L1Cost_updateOutput(lua_State *L)
   long size = THCudaTensor_nElement(state, input);
   input = THCudaTensor_newContiguous(state, input);
   thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
-  sum = thrust::reduce(input_data, input_data+size, (float) 0, l1cost_functor());
+  sum = thrust::reduce(
+#if CUDA_VERSION >= 7000
+    thrust::cuda::par.on(THCState_getCurrentStream(state)),
+#endif
+    input_data, input_data+size, (float) 0, l1cost_functor());
 
   THCudaTensor_free(state, input);
 
@@ -63,7 +70,11 @@ static int cunn_L1Cost_updateGradInput(lua_State *L)
   thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
   thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
 
-  thrust::transform(input_data, input_data+size, gradInput_data, l1cost_updateGradInput_functor());
+  thrust::transform(
+#if CUDA_VERSION >= 7000
+    thrust::cuda::par.on(THCState_getCurrentStream(state)),
+#endif
+    input_data, input_data+size, gradInput_data, l1cost_updateGradInput_functor());
 
   THCudaTensor_free(state, input);
   return 1;
