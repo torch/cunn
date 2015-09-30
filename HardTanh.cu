@@ -3,14 +3,20 @@
 
 struct hardtanhupdateOutput_functor
 {
+  const float max_val_;
+  const float min_val_;
+
+  hardtanhupdateOutput_functor(float min_val, float max_val): min_val_(min_val),
+                                                              max_val_(max_val) {}
+
   __device__ void operator()(float* output, const float* input) const
   {
-    if(*input < -1)
-      *output = -1;
-    else if(*input <= 1)
+    if(*input < min_val_)
+      *output = min_val_;
+    else if(*input <= max_val_)
       *output = *input;
     else
-      *output = 1;
+      *output = max_val_;
   }
 };
 
@@ -18,18 +24,27 @@ static int cunn_HardTanh_updateOutput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
+  float min_val = luaT_getfieldchecknumber(L, 1, "min_val");
+  float max_val = luaT_getfieldchecknumber(L, 1, "max_val");
   THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   THAssert(THCudaTensor_checkGPU(state, 2, input, output));
   THCudaTensor_resizeAs(state, output, input);
-  THCudaTensor_pointwiseApply2(state, output, input, hardtanhupdateOutput_functor());
+  THCudaTensor_pointwiseApply2(state, output, input,
+                               hardtanhupdateOutput_functor(min_val, max_val));
   return 1;
 }
 
 struct hardtanhupdateGradInput_functor
 {
+  const float max_val_;
+  const float min_val_;
+
+  hardtanhupdateGradInput_functor(float min_val, float max_val): min_val_(min_val),
+                                                                 max_val_(max_val) {}
+
   __device__ void operator()(float* gradInput, const float* input, const float* gradOutput) const
   {
-    if(*input < -1 || *input > 1)
+    if(*input < min_val_ || *input > max_val_)
       *gradInput = 0;
     else
       *gradInput = *gradOutput;
@@ -40,12 +55,15 @@ static int cunn_HardTanh_updateGradInput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
+  float min_val = luaT_getfieldchecknumber(L, 1, "min_val");
+  float max_val = luaT_getfieldchecknumber(L, 1, "max_val");
   THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
   THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   THAssert(THCudaTensor_checkGPU(state, 3, input, gradOutput, gradInput));
 
   THCudaTensor_resizeAs(state, gradInput, input);
-  THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput, hardtanhupdateGradInput_functor());
+  THCudaTensor_pointwiseApply3(state, gradInput, input, gradOutput,
+                               hardtanhupdateGradInput_functor(min_val, max_val));
   return 1;
 }
 
