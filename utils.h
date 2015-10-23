@@ -21,6 +21,7 @@ void cunn_TemporalConvolution_init(lua_State *L);
 void cunn_TemporalMaxPooling_init(lua_State *L);
 void cunn_SpatialConvolutionMM_init(lua_State *L);
 void cunn_SpatialMaxPooling_init(lua_State *L);
+void cunn_SpatialFractionalMaxPooling_init(lua_State *L);
 void cunn_SpatialAdaptiveMaxPooling_init(lua_State *L);
 void cunn_SpatialSubSampling_init(lua_State *L);
 void cunn_SpatialAveragePooling_init(lua_State *L);
