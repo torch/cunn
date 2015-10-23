@@ -36,6 +36,7 @@ void cunn_Abs_init(lua_State *L);
 void cunn_SoftPlus_init(lua_State *L);
 void cunn_SpatialUpSamplingNearest_init(lua_State *L);
 void cunn_VolumetricConvolution_init(lua_State *L);
+void cunn_VolumetricDeconvolution_init(lua_State *L);
 void cunn_VolumetricMaxPooling_init(lua_State *L);
 void cunn_VolumetricAveragePooling_init(lua_State *L);
 void cunn_LogSigmoid_init(lua_State *L);
