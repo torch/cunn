@@ -185,7 +185,7 @@ end
 local DataParallelTable, parent = torch.class('nn.DataParallelTable',
 'nn.Container')
 
-function DataParallelTable:__init(dimension)
+function DataParallelTable:__init(dimension, flattenParams)
    parent.__init(self)
    if not dimension then
       error "must specify a dimension!"
@@ -198,7 +198,11 @@ function DataParallelTable:__init(dimension)
    self.gradOutputGpu = {} -- gradOutputs for each gpu
    self.outputGpu = {} -- outputs for each gpu
    self.gradInputGpu = {} -- gradInput for each gpu
+   self.flattenParams = flattenParams ~= nil and flattenParams or true
+   self.flattenedParamsGpu = {} --flattened parameters for each gpu
+   self.flattenedGradParamsGpu = {} --flattened parameters for each gpu
 end
+
 
 -- NOTE: The input should be on the FIRST added GPU device, and similarly the
 -- output will be on the FIRST GPU device.
@@ -220,7 +224,50 @@ function DataParallelTable:get(index)
    return self.modules[index]
 end
 
+
+function DataParallelTable:flattenParameters()
+  if #self.modules == 1 then return end
+  local prevGpuid = cutorch.getDevice()
+  local sizetmp,stridetmp
+  for i=1, #self.modules do
+   if i ~= baseGpuIndex then
+     local gpuid = self.gpuAssignments[i]
+     setDevice(gpuid)
+     self.flattenedParamsGpu[i],self.flattenedGradParamsGpu[i] = self.modules[i]:getParameters()
+     sizetmp = self.flattenedParamsGpu[i]:size()
+     stridetmp = self.flattenedParamsGpu[i]:stride()
+   end
+  end
+--make sure that parameters for baseGpu were flattened before
+  local params, gradParams = self.modules[baseGpuIndex]:parameters()
+  local paramStorage = params[1]:storage()
+  local gradParamStorage = gradParams[1]:storage()
+  local paramsOffset = params[1]:storageOffset()
+  local gradOffset = gradParams[1]:storageOffset()
+  local baseFlattened = true
+  for i=2, #params do
+    if params[i]:storage() ~= paramStorage then baseFlattened = false end
+    if gradParams[i]:storage() ~= gradParamStorage then baseFlattened = false end
+  end
+  if not baseFlattened then
+    self.flattenedParamsGpu = {}
+    self.flattenedGradParamsGpu = {}
+    self.flattenParams = false
+  else
+    setDevice(self.gpuAssignments[baseGpuIndex])
+    self.flattenedParamsGpu[baseGpuIndex]=params[1].new(paramStorage,paramsOffset,sizetmp,stridetmp)
+    self.flattenedGradParamsGpu[baseGpuIndex]=params[1].new(gradParamStorage,gradOffset,sizetmp,stridetmp)
+  end
+
+  setDevice(prevGpuid)
+end
+
 function DataParallelTable:updateOutput(input)
+
+   if self.flattenParams and not self.flattenedParamsGpu[baseGpuIndex] then
+     self:flattenParameters()
+   end
+
    local baseGpuid = self.gpuAssignments[baseGpuIndex]
    assert(queryGPUDeviceId(input) == baseGpuid, 'Input is not on gpu ' ..
    baseGpuid)
@@ -294,6 +341,7 @@ function DataParallelTable:updateGradInput(input, gradOutput)
       self.gradInputGpu[gpuid] = module:updateGradInput(self.inputGpu[gpuid],
       self.gradOutputGpu[gpuid])
    end
+   if self.gradInput then
 
    cutorch.synchronize()
 
@@ -307,7 +355,7 @@ function DataParallelTable:updateGradInput(input, gradOutput)
    end
 
    cutorch.synchronize()
-
+   end
    setDevice(prevGpuid)
 
    return self.gradInput
@@ -328,29 +376,52 @@ function DataParallelTable:accGradParameters(input, gradOutput, scale)
       scale)
    end
 
-   cutorch.synchronize()  -- We have to wait until accGradParameters has finished
+   setDevice(self.gpuAssignments[baseGpuIndex])
+
+--   cutorch.synchronize()  -- We have to wait until accGradParameters has finished - no we don't. If we are using default streams, implicit sync in memcpy is enough, if we are not, then cutorch.synchronize on the last device is not enough
 
    -- Accumulate the gradients onto one GPU (the first one)
    -- TODO: Parallelize this (ie a parallel merge)
-   local baseParams, baseGradParams = self.modules[baseGpuIndex]:parameters()
+   local baseParams, baseGradParams
+   if self.flattenParams then
+     baseGradParams = self.flattenedGradParamsGpu[baseGpuIndex]
+   else
+      _, baseGradParams = self.modules[baseGpuIndex]:parameters()
+   end
    for i, module in ipairs(self.modules) do
       if (i ~= baseGpuIndex) then
-         local params, gradParams = self.modules[i]:parameters()
+         local gradParams
+         if self.flattenParams then
+            gradParams = self.flattenedGradParamsGpu[i]
+         else
+            _, gradParams = self.modules[i]:parameters()
+         end
          deepTensorsAdd(baseGradParams, gradParams)  -- dst, src
          cutorch.synchronize()
       end
    end
+
 
    setDevice(prevGpuid)
 end
 
 function DataParallelTable:syncParameters()
    local prevGpuid = cutorch.getDevice()
-   local baseParams, baseGradParams = self.modules[baseGpuIndex]:parameters()
+   local baseParams
+   if self.flattenParams then
+        baseParams = self.flattenedParamsGpu[baseGpuIndex]
+   else
+        baseParams, _ = self.modules[baseGpuIndex]:parameters()
+   end
    -- TODO: Parallelize this (ie a parallel copy)
    for i, module in ipairs(self.modules) do
       if (i ~= baseGpuIndex) then
-         local params, gradParams = self.modules[i]:parameters()
+         local params
+         if self.flattenParams then
+           params = self.flattenedParamsGpu[i]
+         else
+	   params, _ = self.modules[i]:parameters()
+         end
          deepTensorsCopy(params, baseParams)  -- dst, src
       end
    end
