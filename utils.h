@@ -26,6 +26,7 @@ void cunn_SpatialAdaptiveMaxPooling_init(lua_State *L);
 void cunn_SpatialSubSampling_init(lua_State *L);
 void cunn_SpatialAveragePooling_init(lua_State *L);
 void cunn_MultiMarginCriterion_init(lua_State *L);
+void cunn_MultiLabelMarginCriterion_init(lua_State *L);
 void cunn_Square_init(lua_State *L);
 void cunn_Sqrt_init(lua_State *L);
 void cunn_Threshold_init(lua_State *L);

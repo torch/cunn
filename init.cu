@@ -32,6 +32,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_SpatialSubSampling_init(L);
   cunn_SpatialAveragePooling_init(L);
   cunn_MultiMarginCriterion_init(L);
+  cunn_MultiLabelMarginCriterion_init(L);
   cunn_Square_init(L);
   cunn_Sqrt_init(L);
   cunn_Threshold_init(L);
