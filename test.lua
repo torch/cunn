@@ -3958,6 +3958,102 @@ function cunntest.PReLU_backward()
     mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
+
+function cunntest.RReLU_forward()
+    local nOutputPlane = 8
+    local w = math.random(1,100)
+    local h = math.random(1,100)
+
+    for _,train in ipairs({true,false}) do
+       for _,inplace in ipairs({false,true}) do
+          local tm = {}
+          local title = string.format('RReLU forward %d x %d (inplace: %s, train: %s)', 
+             w, h, tostring(inplace), tostring(train))
+          times[title] = tm
+          
+          local input = torch.randn(nOutputPlane, h, w) - 0.5
+          local sconv = nn.RReLU(1/8, 1/3, inplace)
+          if not train then
+             sconv:evaluate()
+          end
+          local groundtruth = sconv:forward(input:clone())
+          local a = torch.Timer()
+          for i = 1,nloop do
+             groundtruth = sconv:forward(input:clone())
+          end
+          tm.cpu = a:time().real
+          
+          input = input:cuda()
+          local gconv = sconv:cuda()
+          local rescuda = gconv:forward(input:clone())
+          a:reset()
+          for i = 1,nloop do
+             rescuda = gconv:forward(input:clone())
+          end
+          cutorch.synchronize()
+          tm.gpu = a:time().real
+          
+          if not train then
+             local error = rescuda:float() - groundtruth
+             mytester:assertlt(error:abs():max(), precision_forward, 'error on state')
+          end
+       end
+    end
+end
+
+function cunntest.RReLU_backward()
+    local nOutputPlane = 8
+    local w = math.random(1,10)
+    local h = math.random(1,10)
+
+    for _,train in ipairs({true,false}) do
+       for _,inplace in ipairs({false,true}) do
+          local tm = {}
+          local title = string.format('RReLU backward %d x %d (inplace: %s, train: %s)', 
+            w, h, tostring(inplace), tostring(train))
+          times[title] = tm
+
+          local input = torch.randn(nOutputPlane, h, w)
+          local gradOutput = torch.randn(#input) - 0.5
+          local sconv = nn.RReLU(1/8, 1/3, inplace)
+          if not train then
+             sconv:evaluate()
+          end
+
+          sconv:forward(input:clone())
+          local groundgrad = sconv:backward(input, gradOutput:clone())
+          local a = torch.Timer()
+          for i = 1,nloop do
+             groundgrad = sconv:backward(input, gradOutput:clone())
+          end
+          tm.cpu = a:time().real
+
+          local gconv = sconv:clone():cuda()
+          input = input:cuda()
+          gradOutput = gradOutput:cuda()
+          gconv:forward(input:clone())
+          local rescuda = gconv:backward(input, gradOutput:clone())
+          a:reset()
+          for i = 1,nloop do
+             rescuda = gconv:backward(input, gradOutput:clone())
+          end
+          cutorch.synchronize()
+          tm.gpu = a:time().real
+
+          if not train then
+             local err = rescuda:float() - groundgrad
+             mytester:assertlt(err:abs():max(), precision_backward, 'error on state')
+          end
+          
+          input = -torch.rand(1000):cuda()
+          gconv:forward(input) -- fill internal noise tensor
+          local g = gconv:backward(input, torch.ones(1000):cuda())
+          local err = math.abs(g[input:le(0)]:mean()-(gconv.lower+gconv.upper)/2)
+          mytester:assertlt(err, 0.05, 'mean deviation of gradient for negative inputs')
+       end
+    end
+end
+
 function cunntest.VolumetricDeconvolution_pair_test()
 
     local kT = 2 * math.random(1,3) + 1  -- odd number
