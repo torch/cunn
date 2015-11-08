@@ -73,6 +73,73 @@ local function pointwise_transposed(proto_module, name, max_error)
    mytester:assertlt(error:abs():max(), max_error,  'error on state (backward) ')
 end
 
+function cunntest.MarginCriterion_forward()
+  local size = math.random(1,100)
+  local input = (torch.rand(size)-0.5) * 2 -- data spread from -1 to 1
+  local target = (torch.round(torch.rand(size))*2)-1 -- generate random labels -1, 1
+
+  local tm = {}
+  local title = string.format('MarginCriterion.forward, Size: %d', size)
+  times[title] = tm
+
+  local crit = nn.MarginCriterion()
+  local groundtruth= crit:forward(input, target)
+  local a = torch.Timer()
+  for i = 1,nloop do
+     groundtruth = crit:forward(input, target)
+  end
+  tm.cpu = a:time().real
+
+  input = input:cuda()
+  target = target:cuda()
+  local g_crit = nn.MarginCriterion():cuda()
+  local rescuda = g_crit:forward(input, target)
+  a:reset()
+  for i = 1,nloop do
+     rescuda = g_crit:forward(input, target)
+  end
+  cutorch.synchronize()
+  tm.gpu = a:time().real
+  local errorVal = rescuda - groundtruth
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.MarginCriterion_backward()
+   local size = math.random(1,100)
+
+   local tm = {}
+   local title = string.format('MarginCriterion.backward, Size %d', size)
+   times[title] = tm
+
+   local input = (torch.rand(size)-0.5) * 2 -- data spread from -1 to 1
+   local target = (torch.round(torch.rand(size))*2)-1 -- generate random labels -1, 1
+   
+   local crit = nn.MarginCriterion()
+   crit:forward(input, target)
+   local groundgrad = crit:backward(input, target)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundgrad = crit:backward(input, target)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   target = target:cuda()
+   local g_crit = nn.MarginCriterion():cuda()
+   g_crit:forward(input, target)
+   local rescuda = g_crit:backward(input, target)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = g_crit:backward(input, target)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
 function cunntest.Tanh_forward()
    local size = math.random(1,100)
 
