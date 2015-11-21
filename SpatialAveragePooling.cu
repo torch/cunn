@@ -9,14 +9,11 @@
  */
 __global__ void subsample(float *input, float *output,
                           int input_n, int input_h, int input_w,
+                          int output_h, int output_w,
                           int kH, int kW, int dH, int dW)
 {
   // iterators
   int xx, yy;
-
-  // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
 
   // compute offsets based on thread/block ID
   int o = blockIdx.x;
@@ -37,18 +34,22 @@ __global__ void subsample(float *input, float *output,
   // For all output pixels...
   for(yy = yy_start; yy < yy_end; yy+=yy_step) {
     for(xx = xx_start; xx < xx_end; xx+=xx_step) {
+      // Get effective pooling window size
+      int hend = min(kH, input_h - yy*dH);
+      int wend = min(kW, input_w - xx*dW);
+
       // Compute the mean of the input image...
       float *ptr_input = input + yy*dH*input_w + xx*dW;
       float *ptr_output = output + yy*output_w + xx;
       float sum = 0;
       int kx, ky;
-      for(ky = 0; ky < kH; ky++) {
-        for(kx = 0; kx < kW; kx++)
+      for(ky = 0; ky < hend; ky++) {
+        for(kx = 0; kx < wend; kx++)
           sum += ptr_input[kx];
         ptr_input += input_w; // next input line
       }
       // Update output
-      *ptr_output = sum/float(kW*kH);
+      *ptr_output = sum/float(wend*hend);
     }
   }
 }
@@ -61,6 +62,7 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
+  bool ceil_mode = luaT_getfieldcheckboolean(L, 1, "ceil_mode");
 
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
   THAssert(THCudaTensor_checkGPU(state, 2, input, output));
@@ -70,12 +72,22 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch) tensor expected");
 
+  long nOutputCols;
+  long nOutputRows;
+
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
-    long nOutputCols = (nInputCols - kW) / dW + 1;
-    long nOutputRows = (nInputRows - kH) / dH + 1;
     long nInputPlane = input->size[0];
+
+    if(ceil_mode) {
+      nOutputCols = ceil(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = ceil(float(nInputRows - kH) / float(dH)) + 1;
+    }
+    else {
+      nOutputCols = floor(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = floor(float(nInputRows - kH) / float(dH)) + 1;
+    }
 
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
@@ -93,14 +105,22 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 
     // run subsample kernel
     subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
-                                     nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+                                     nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+                                     kH, kW, dH, dW);
   } else {
     long nInputCols = input->size[3];
     long nInputRows = input->size[2];
-    long nbatch = input->size[0];
-    long nOutputCols = (nInputCols - kW) / dW + 1;
-    long nOutputRows = (nInputRows - kH) / dH + 1;
     long nInputPlane = input->size[1];
+    long nbatch = input->size[0];
+
+    if(ceil_mode) {
+      nOutputCols = ceil(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = ceil(float(nInputRows - kH) / float(dH)) + 1;
+    }
+    else {
+      nOutputCols = floor(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = floor(float(nInputRows - kH) / float(dH)) + 1;
+    }
 
     luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
 
@@ -118,7 +138,8 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 
     // run subsample kernel
     subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
-                                     nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+                                     nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+                                     kH, kW, dH, dW);
   }
 
   // clean
@@ -140,14 +161,11 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
  */
 __global__ void subgradinput(float *gradInput, float *gradOutput,
                              int input_n, int input_h, int input_w,
+                             int output_h, int output_w,
                              int kH, int kW, int dH, int dW)
 {
   // iterators
   int xx, yy;
-
-  // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
 
   // compute offsets based on thread/block ID
   int o = blockIdx.x;
@@ -168,13 +186,17 @@ __global__ void subgradinput(float *gradInput, float *gradOutput,
   // compute gradInput
   for(yy = yy_start; yy < yy_end; yy+=yy_step) {
     for(xx = xx_start; xx < xx_end; xx+=xx_step) {
+      // Get effective pooling window size
+      int hend = min(kH, input_h - yy*dH);
+      int wend = min(kW, input_w - xx*dW);
+
       float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
       float *ptr_gradOutput = gradOutput + yy*output_w + xx;
       float z = *ptr_gradOutput;
       int kx, ky;
-      for(ky = 0; ky < kH; ky++) {
-        for(kx = 0; kx < kW; kx++)
-          ptr_gradInput[kx] += z / float(kW*kH);
+      for(ky = 0; ky < hend; ky++) {
+        for(kx = 0; kx < wend; kx++)
+          ptr_gradInput[kx] += z / float(wend*hend);
         ptr_gradInput += input_w;
       }
     }
@@ -189,14 +211,11 @@ __global__ void subgradinput(float *gradInput, float *gradOutput,
  */
 __global__ void subgradinputAtomic(float *gradInput, float *gradOutput,
                                    int input_n, int input_h, int input_w,
+                                   int output_h, int output_w,
                                    int kH, int kW, int dH, int dW)
 {
   // iterators
   int xx, yy;
-
-  // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
 
   // compute offsets based on thread/block ID
   int o = blockIdx.x;
@@ -217,13 +236,17 @@ __global__ void subgradinputAtomic(float *gradInput, float *gradOutput,
   // compute gradInput
   for(yy = yy_start; yy < yy_end; yy+=yy_step) {
     for(xx = xx_start; xx < xx_end; xx+=xx_step) {
+      // Get effective pooling window size
+      int hend = min(kH, input_h - yy*dH);
+      int wend = min(kW, input_w - xx*dW);
+
       float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
       float *ptr_gradOutput = gradOutput + yy*output_w + xx;
       float z = *ptr_gradOutput;
       int kx, ky;
-      for(ky = 0; ky < kH; ky++) {
-        for(kx = 0; kx < kW; kx++) {
-          atomicAdd(&(ptr_gradInput[kx]), z / float(kW*kH));
+      for(ky = 0; ky < hend; ky++) {
+        for(kx = 0; kx < wend; kx++) {
+          atomicAdd(&(ptr_gradInput[kx]), z / float(wend*hend));
         }
         ptr_gradInput += input_w;
       }
@@ -241,14 +264,27 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
+  bool ceil_mode = luaT_getfieldcheckboolean(L, 1, "ceil_mode");
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   THAssert(THCudaTensor_checkGPU(state, 3, input, gradInput, gradOutput));
+
+  long nOutputCols;
+  long nOutputRows;
 
   if (input->nDimension == 3) {
     long nInputCols = input->size[2];
     long nInputRows = input->size[1];
     long nInputPlane = input->size[0];
+
+    if(ceil_mode) {
+      nOutputCols = ceil(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = ceil(float(nInputRows - kH) / float(dH)) + 1;
+    }
+    else {
+      nOutputCols = floor(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = floor(float(nInputRows - kH) / float(dH)) + 1;
+    }
 
     float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *gradInput_data;
@@ -266,11 +302,11 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     // run updateGradInput kernel
     if (kH == dH && kW == dW) {
       subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                          nInputPlane, nInputRows, nInputCols,
+                                          nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
                                           kH, kW, dH, dW);
     } else {
       subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                                nInputPlane, nInputRows, nInputCols,
+                                                nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
                                                 kH, kW, dH, dW);
     }
   } else {
@@ -278,6 +314,15 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     long nInputRows = input->size[2];
     long nInputPlane = input->size[1];
     long nbatch = input->size[0];
+
+    if(ceil_mode) {
+      nOutputCols = ceil(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = ceil(float(nInputRows - kH) / float(dH)) + 1;
+    }
+    else {
+      nOutputCols = floor(float(nInputCols - kW) / float(dW)) + 1;
+      nOutputRows = floor(float(nInputRows - kH) / float(dH)) + 1;
+    }
 
     float *gradOutput_data = THCudaTensor_data(state, gradOutput);
     float *gradInput_data;
@@ -295,11 +340,11 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     // run updateGradInput kernel
     if (kH == dH && kW == dW) {
       subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                          nInputPlane, nInputRows, nInputCols,
+                                          nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
                                           kH, kW, dH, dW);
     } else {
       subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                                nInputPlane, nInputRows, nInputCols,
+                                                nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
                                                 kH, kW, dH, dW);
     }
   }
