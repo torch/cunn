@@ -210,7 +210,7 @@ function DataParallelTable:add(module, gpuid)
    assert(gpuid <= cutorch.getDeviceCount() and gpuid >= 1)
    assert(#self.modules == #self.gpuAssignments)
 
-   self.modules[#self.modules + 1] = module
+   self.modules[#self.modules + 1] = module:cuda()
    self.gpuAssignments[#self.gpuAssignments + 1] = gpuid
 
    return self
@@ -482,7 +482,7 @@ function DataParallelTable:name()
 end
 
 function DataParallelTable:type(typeStr)
-   error("type() not supported for DataParallelTable.")
+   assert(typeStr == 'torch.CudaTensor', "DataParallelTable supports only torch.CudaTensor type.")
 end
 
 function DataParallelTable:_calculateSliceRange(tensor, id, total)
