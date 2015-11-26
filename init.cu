@@ -43,7 +43,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_Abs_init(L);
   cunn_SoftPlus_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
-  cunn_VolumetricConvolution_init(L);
+  cunn_VolumetricConvolutionMM_init(L);
   cunn_VolumetricDeconvolution_init(L);
   cunn_VolumetricMaxPooling_init(L);
   cunn_VolumetricAveragePooling_init(L);
