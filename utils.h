@@ -12,6 +12,7 @@ THCState* getCutorchState(lua_State* L);
 
 void cunn_ClassNLLCriterion_init(lua_State *L);
 void cunn_Tanh_init(lua_State *L);
+void cunn_ELU_init(lua_State *L);
 void cunn_Sigmoid_init(lua_State *L);
 void cunn_HardTanh_init(lua_State *L);
 void cunn_L1Cost_init(lua_State *L);
