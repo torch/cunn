@@ -1,141 +1,97 @@
 #include "utils.h"
 
-#define MARGIN_THREADS 128
+#include <thrust/fill.h>
+#include <thrust/functional.h>
+#include <thrust/device_ptr.h>
+#include <thrust/reduce.h>
+#include <thrust/inner_product.h>
 
-__global__ void cunn_MarginCriterion_updateOutput_kernel(float *output, float *input, float *target, int inputSize, int sizeaverage, float margin)
+struct margin_functor
 {
-  __shared__ float buffer[MARGIN_THREADS];
-  int k = blockIdx.x;
+  margin_functor(float margin) : margin(margin) {}
 
-  float *input_k = input + k;
-  float *output_k = output + k;
-  float *target_k = target + k;
-
-  int i_start = threadIdx.x;
-  int i_end = inputSize;
-  int i_step = blockDim.x;
-
-  buffer[threadIdx.x] = 0;
-  for(int i = i_start; i < i_end; i += i_step)
+  __host__ __device__ float operator()(const float& x, const float& y) const
   {
-    float z = margin - target_k[i] * input_k[i];
-    buffer[threadIdx.x] += z>0 ? z : 0;
-  }
-  __syncthreads();
-
-  // reduce
-  if (threadIdx.x == 0)
-  {
-    float sum = 0;
-    for (int i=0; i<blockDim.x; i++)
-      sum += buffer[i];
-
-    if(sizeaverage)
-      *output_k = sum/(float) inputSize;
-    else
-      *output_k = sum;
-  }
-}
-
-__global__ void cunn_MarginCriterion_updateGradInput_kernel(float *gradInput, float *input, float *target, int inputSize, int sizeaverage, float margin)
-{
-  int k = blockIdx.x;
-  float *input_k = input + k;
-  float *target_k = target + k;
-  float *gradInput_k = gradInput + k;
-  float g = (sizeaverage ? 1./((float)inputSize) : 1.); // for sizeAverage
-
-  int i_start = threadIdx.x;
-  int i_end = inputSize;
-  int i_step = blockDim.x;
-
-  for (int i=i_start; i<i_end; i+=i_step)
-  {
-    if(target_k[i] * input_k[i] < margin)
-    {
-      gradInput_k[i] = -g * target_k[i];
-    }
-    else
-      gradInput_k[i] = 0;
+    float z = margin - x * y;
+    return z >= 0 ? z : 0;
   }
 
-  __syncthreads();
-}
+  const float margin;
+};
+
 
 static int cunn_MarginCriterion_updateOutput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  int sizeaverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
+  THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
+  int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
   float margin = luaT_getfieldchecknumber(L, 1, "margin");
-
-  THAssert(input->nDimension == 1);
-
-
-  THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");   
   THAssert(THCudaTensor_checkGPU(state, 2, input, target));
+  float sum;
+
+  long size = THCudaTensor_nElement(state, input);
 
   input = THCudaTensor_newContiguous(state, input);
-  THCudaStorage *output = THCudaStorage_newWithSize(state, 1);
+  target = THCudaTensor_newContiguous(state, target);
 
-  dim3 blocks(1);
-  dim3 threads(MARGIN_THREADS);
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
+  thrust::device_ptr<float> target_data(THCudaTensor_data(state, target));
+  sum = thrust::inner_product(input_data, input_data+size, target_data, (float) 0, thrust::plus<float>(), margin_functor(margin));
 
-  cunn_MarginCriterion_updateOutput_kernel <<<blocks,threads,
-        0, THCState_getCurrentStream(state)>>>(output->data,
-                                               THCudaTensor_data(state, input),
-                                               THCudaTensor_data(state, target),
-                                               input->size[0],
-                                               sizeaverage, margin);
-  lua_pushnumber(L, THCudaStorage_get(state, output, 0));
-
-  THCudaStorage_free(state, output);
-
-  cudaError errcode = cudaGetLastError();
-  if(errcode != cudaSuccess)
-    THError(cudaGetErrorString(errcode));
-
-  lua_pushstring(L, "output");
-  lua_pushvalue(L, -2);
-  lua_rawset(L, 1);
+  if(sizeAverage)
+    sum /= size;
 
   THCudaTensor_free(state, input);
+  THCudaTensor_free(state, target);
+
+  lua_pushnumber(L, sum);
+  lua_setfield(L, 1, "output");
+
+  lua_pushnumber(L, sum);
   return 1;
 }
+
+
+struct margin_updateGradInput_functor
+{
+  const float margin, norm;
+
+  margin_updateGradInput_functor(float margin_, float norm_) : 
+    margin(margin_), norm(norm_) {}
+
+  __host__ __device__ float operator()(const float& x, const float& y) const
+    {
+      return (x * y) < margin ? -norm * y : 0;
+    }
+};
 
 static int cunn_MarginCriterion_updateGradInput(lua_State *L)
 {
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  int sizeaverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
-  float margin = luaT_getfieldchecknumber(L, 1, "margin");
-
-  THAssert(input->nDimension == 1);
-
-  THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   THCudaTensor *target = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
-  
+  float margin = luaT_getfieldchecknumber(L, 1, "margin");
+  int sizeAverage = luaT_getfieldcheckboolean(L, 1, "sizeAverage");
+  THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
   THAssert(THCudaTensor_checkGPU(state, 3, input, target, gradInput));
- 
+
+  long size = THCudaTensor_nElement(state, input);
+  float norm = (sizeAverage ? 1./size : 1.);
+
   input = THCudaTensor_newContiguous(state, input);
+  target = THCudaTensor_newContiguous(state, target);
+
   THCudaTensor_resizeAs(state, gradInput, input);
-  dim3 blocks(1);
-  dim3 threads(MARGIN_THREADS);
 
-  cunn_MarginCriterion_updateGradInput_kernel <<<blocks,threads,
-        0, THCState_getCurrentStream(state)>>>(THCudaTensor_data(state, gradInput),
-                                               THCudaTensor_data(state, input),
-                                               THCudaTensor_data(state, target),
-                                               gradInput->size[0],
-                                               sizeaverage, margin);
-                     
+  thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
+  thrust::device_ptr<float> target_data(THCudaTensor_data(state, target));
+  thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
 
-
-  cudaError errcode = cudaGetLastError();
-  if(errcode != cudaSuccess)
-    THError(cudaGetErrorString(errcode));
+  thrust::transform(input_data, input_data+size, target_data, gradInput_data, margin_updateGradInput_functor(margin, norm));
 
   THCudaTensor_free(state, input);
+  THCudaTensor_free(state, target);
   return 1;
 }
 
@@ -151,3 +107,4 @@ void cunn_MarginCriterion_init(lua_State *L)
   luaT_registeratname(L, cunn_MarginCriterion__, "nn");
   lua_pop(L,1);
 }
+
