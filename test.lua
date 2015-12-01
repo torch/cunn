@@ -180,6 +180,18 @@ function cunntest.Threshold_backward()
   pointwise_backward(nn.Threshold(nil, nil, true), 'Threshold_inplace', precision_backward)
 end
 
+function cunntest.LeakyReLU_forward()
+   pointwise_forward(nn.LeakyReLU(), 'LeakyReLU', precision_forward)
+end
+
+function cunntest.LeakyReLU_backward()
+   pointwise_backward(nn.LeakyReLU(), 'LeakyReLU', precision_backward)
+end
+
+function cunntest.LeakyReLU_transposed()
+   pointwise_transposed(nn.LeakyReLU(), 'LeakyReLU', 1.5e-7)
+end
+
 function cunntest.Sqrt_forward()
    pointwise_forward(nn.Sqrt(), 'Sqrt', precision_forward)
 end

@@ -52,6 +52,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_LogSigmoid_init(L);
   cunn_PReLU_init(L);
   cunn_RReLU_init(L);
+  cunn_LeakyReLU_init(L);
   cunn_LookupTable_init(L);
 
   return 1;

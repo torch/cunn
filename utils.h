@@ -46,6 +46,7 @@ void cunn_VolumetricAveragePooling_init(lua_State *L);
 void cunn_LogSigmoid_init(lua_State *L);
 void cunn_PReLU_init(lua_State *L);
 void cunn_RReLU_init(lua_State *L);
+void cunn_LeakyReLU_init(lua_State *L);
 void cunn_LookupTable_init(lua_State *L);
 
 #endif
