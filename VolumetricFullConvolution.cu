@@ -129,7 +129,7 @@ template void col2vol<double>(const double* data_col, const int channels, const 
     const int height, const int width, const int ksize, const int kdepth, const int pad,
     const int temporal_pad, const int stride, const int temporal_stride, double* data_im);
 
-static int cunn_VolumetricDeconvolution_updateOutput(lua_State *L) {
+static int cunn_VolumetricFullConvolution_updateOutput(lua_State *L) {
   THCState *state = getCutorchState(L);
 
   // Input
@@ -226,7 +226,7 @@ static int cunn_VolumetricDeconvolution_updateOutput(lua_State *L) {
   return 1;
 }
 
-static int cunn_VolumetricDeconvolution_updateGradInput(lua_State *L) {
+static int cunn_VolumetricFullConvolution_updateGradInput(lua_State *L) {
   THCState *state = getCutorchState(L);
 
   // Inputs
@@ -306,7 +306,7 @@ static int cunn_VolumetricDeconvolution_updateGradInput(lua_State *L) {
   return 1;
 }
 
-static int cunn_VolumetricDeconvolution_accGradParameters(lua_State *L) {
+static int cunn_VolumetricFullConvolution_accGradParameters(lua_State *L) {
   THCState *state = getCutorchState(L);
 
   // Inputs
@@ -408,16 +408,16 @@ static int cunn_VolumetricDeconvolution_accGradParameters(lua_State *L) {
   return 0;
 }
 
-static const struct luaL_Reg cunn_VolumetricDeconvolution__ [] = {
-  {"VolumetricDeconvolution_updateOutput", cunn_VolumetricDeconvolution_updateOutput},
-  {"VolumetricDeconvolution_updateGradInput", cunn_VolumetricDeconvolution_updateGradInput},
-  {"VolumetricDeconvolution_accGradParameters", cunn_VolumetricDeconvolution_accGradParameters},
+static const struct luaL_Reg cunn_VolumetricFullConvolution__ [] = {
+  {"VolumetricFullConvolution_updateOutput", cunn_VolumetricFullConvolution_updateOutput},
+  {"VolumetricFullConvolution_updateGradInput", cunn_VolumetricFullConvolution_updateGradInput},
+  {"VolumetricFullConvolution_accGradParameters", cunn_VolumetricFullConvolution_accGradParameters},
   {NULL, NULL}
 };
 
-void cunn_VolumetricDeconvolution_init(lua_State *L)
+void cunn_VolumetricFullConvolution_init(lua_State *L)
 {
   luaT_pushmetatable(L, "torch.CudaTensor");
-  luaT_registeratname(L, cunn_VolumetricDeconvolution__, "nn");
+  luaT_registeratname(L, cunn_VolumetricFullConvolution__, "nn");
   lua_pop(L,1);
 }
