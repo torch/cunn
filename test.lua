@@ -3695,7 +3695,7 @@ for k,v in pairs(cunntest) do
    end
 end
 
-function initSeed(seed)
+local function initSeed(seed)
    seed = seed or os.time()
    -- ensure that you can reproduce a failing test
    print('seed: ', seed)
