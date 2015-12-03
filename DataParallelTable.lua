@@ -185,7 +185,7 @@ end
 local DataParallelTable, parent = torch.class('nn.DataParallelTable',
 'nn.Container')
 
-function DataParallelTable:__init(dimension, flattenParams)
+function DataParallelTable:__init(dimension, flattenParams, usenccl)
    parent.__init(self)
    if not dimension then
       error "must specify a dimension!"
@@ -199,8 +199,15 @@ function DataParallelTable:__init(dimension, flattenParams)
    self.outputGpu = {} -- outputs for each gpu
    self.gradInputGpu = {} -- gradInput for each gpu
    self.flattenParams = flattenParams ~= nil and flattenParams or true
+   self.usenccl = (usenccl ~= nil and usenccl or true) and self.flattenParams
    self.flattenedParamsGpu = {} --flattened parameters for each gpu
    self.flattenedGradParamsGpu = {} --flattened parameters for each gpu
+   if self.usenccl then
+     if not pcall(function() require('nccl') end) then
+        print("warning: could not load nccl, falling back to default communication")
+        self.usenccl=false
+     end
+   end
 end
 
 
@@ -226,7 +233,7 @@ end
 
 
 function DataParallelTable:flattenParameters()
-  if #self.modules == 1 then return end
+  if #self.modules == 1 then self.flattenParams = false return end
   local prevGpuid = cutorch.getDevice()
   local sizetmp,stridetmp
   for i=1, #self.modules do
@@ -382,51 +389,56 @@ function DataParallelTable:accGradParameters(input, gradOutput, scale)
 
    -- Accumulate the gradients onto one GPU (the first one)
    -- TODO: Parallelize this (ie a parallel merge)
-   local baseParams, baseGradParams
-   if self.flattenParams then
-     baseGradParams = self.flattenedGradParamsGpu[baseGpuIndex]
+   if self.flattenParams and self.usenccl then                
+       nccl.reduce(self.flattenedGradParamsGpu, nil,true,baseGpuIndex)
    else
-      _, baseGradParams = self.modules[baseGpuIndex]:parameters()
-   end
-   for i, module in ipairs(self.modules) do
-      if (i ~= baseGpuIndex) then
-         local gradParams
-         if self.flattenParams then
-            gradParams = self.flattenedGradParamsGpu[i]
-         else
-            _, gradParams = self.modules[i]:parameters()
-         end
-         deepTensorsAdd(baseGradParams, gradParams)  -- dst, src
-         cutorch.synchronize()
+      local baseParams, baseGradParams
+      if self.flattenParams then
+	baseGradParams = self.flattenedGradParamsGpu[baseGpuIndex]
+      else
+	 _, baseGradParams = self.modules[baseGpuIndex]:parameters()
+      end
+      for i, module in ipairs(self.modules) do
+	 if (i ~= baseGpuIndex) then
+	    local gradParams
+	    if self.flattenParams then
+	       gradParams = self.flattenedGradParamsGpu[i]
+	    else
+	       _, gradParams = self.modules[i]:parameters()
+	    end
+	    deepTensorsAdd(baseGradParams, gradParams)  -- dst, src
+	    cutorch.synchronize()         
+	 end
       end
    end
-
-
    setDevice(prevGpuid)
 end
 
 function DataParallelTable:syncParameters()
    local prevGpuid = cutorch.getDevice()
-   local baseParams
-   if self.flattenParams then
-        baseParams = self.flattenedParamsGpu[baseGpuIndex]
+   if self.flattenParams and self.usenccl then
+      nccl.bcast(self.flattenedParamsGpu, true,baseGpuIndex)
    else
-        baseParams, _ = self.modules[baseGpuIndex]:parameters()
-   end
-   -- TODO: Parallelize this (ie a parallel copy)
-   for i, module in ipairs(self.modules) do
-      if (i ~= baseGpuIndex) then
-         local params
-         if self.flattenParams then
-           params = self.flattenedParamsGpu[i]
-         else
-	   params, _ = self.modules[i]:parameters()
-         end
-         deepTensorsCopy(params, baseParams)  -- dst, src
+      local baseParams
+      if self.flattenParams then
+	   baseParams = self.flattenedParamsGpu[baseGpuIndex]
+      else
+	   baseParams, _ = self.modules[baseGpuIndex]:parameters()
       end
+      -- TODO: Parallelize this (ie a parallel copy)
+      for i, module in ipairs(self.modules) do
+	 if (i ~= baseGpuIndex) then
+	    local params
+	    if self.flattenParams then
+	      params = self.flattenedParamsGpu[i]
+	    else
+	      params, _ = self.modules[i]:parameters()
+	    end
+	    deepTensorsCopy(params, baseParams)  -- dst, src
+	 end
+      end
+      cutorch.synchronize()
    end
-   cutorch.synchronize()
-
    setDevice(prevGpuid)
 end
 
