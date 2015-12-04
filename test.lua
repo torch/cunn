@@ -119,7 +119,7 @@ function cunntest.Tanh_backward()
 end
 
 function cunntest.Tanh_transposed()
-   pointwise_transposed(nn.Tanh(), 'Tanh', 1.5e-7)
+   pointwise_transposed(nn.Tanh(), 'Tanh', 1.8e-7)
 end
 
 function cunntest.HardTanh_forward()
@@ -2114,11 +2114,11 @@ function cunntest.mse()
       cutorch.synchronize()
       tm2.gpu = a:time().real
 
-      mytester:assertlt(math.abs(fout-cout), precision_forward, 'error  on output')
+      mytester:assertlt(math.abs(fout-cout), 0.02, 'error  on output')
       local gerr = cgin:float() - fgin
       mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
 
-      mytester:assertlt(math.abs(fout-cout2), precision_forward, 'error  on output - 2')
+      mytester:assertlt(math.abs(fout-cout2), 0.02, 'error  on output - 2')
       local gerr2 = cgin2:float() - fgin
       mytester:assertlt(gerr2:abs():max(), precision_forward, 'error  on gradInput -2')
    end
@@ -2149,7 +2149,7 @@ function cunntest.SmoothL1()
       cutorch.synchronize()
       tm.gpu = a:time().real
 
-      mytester:assertlt(math.abs(fout-cout), precision_forward, 'error  on output')
+      mytester:assertlt(math.abs(fout-cout), 0.01, 'error  on output')
       local gerr = cgin:float() - fgin
       mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
    end
