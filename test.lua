@@ -723,8 +723,8 @@ function cunntest.SpatialFullConvolution_forward_single()
    local padH = math.random(0,1)
    local outi = math.random((ki - si - 2 * padW) + 1, 64)
    local outj = math.random((kj - sj - 2 * padH) + 1, 64)
-   local ini = (outi + 2 * padW - ki) / si + 1
-   local inj = (outj + 2 * padH - kj) / sj + 1
+   local ini = math.ceil((outi + 2 * padW - ki) / si + 1)
+   local inj = math.ceil((outj + 2 * padH - kj) / sj + 1)
 
    local tm = {}
    local title =
@@ -770,8 +770,8 @@ function cunntest.SpatialFullConvolution_forward_batch()
    local padH = math.random(0,1)
    local outi = math.random((ki - si - 2 * padW) + 1, 64)
    local outj = math.random((kj - sj - 2 * padH) + 1, 64)
-   local ini = (outi + 2 * padW - ki) / si + 1
-   local inj = (outj + 2 * padH - kj) / sj + 1
+   local ini = math.ceil((outi + 2 * padW - ki) / si + 1)
+   local inj = math.ceil((outj + 2 * padH - kj) / sj + 1)
 
    local tm = {}
    local title = string.format('SpatialFullConvolution.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d] [p: %dx%d]',
@@ -814,8 +814,8 @@ function cunntest.SpatialFullConvolution_backward_single()
    local padH = math.random(0,1)
    local outi = math.random((ki - si - 2 * padW) + 1, 64)
    local outj = math.random((kj - sj - 2 * padH) + 1, 64)
-   local ini = (outi + 2 * padW - ki) / si + 1
-   local inj = (outj + 2 * padH - kj) / sj + 1
+   local ini = math.ceil((outi + 2 * padW - ki) / si + 1)
+   local inj = math.ceil((outj + 2 * padH - kj) / sj + 1)
 
    local tm = {}
    local title = string.format('SpatialFullConvolution.backward %dx%dx%d o %dx%d -> %dx%dx%d [s: %dx%d] [p: %dx%d]',
@@ -823,9 +823,9 @@ function cunntest.SpatialFullConvolution_backward_single()
    times[title] = tm
 
    local input = torch.randn(from,inj,ini)
-   local gradOutput = torch.randn(to,outj,outi)
    local sconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH)
-   sconv:forward(input)
+   local output = sconv:forward(input)
+   local gradOutput = output:clone():normal()
    sconv:zeroGradParameters()
    local groundgrad = sconv:backward(input, gradOutput)
    local a = torch.Timer()
@@ -876,8 +876,8 @@ function cunntest.SpatialFullConvolution_backward_batch()
    local padH = math.random(0,1)
    local outi = math.random((ki - si - 2 * padW) + 1, 64)
    local outj = math.random((kj - sj - 2 * padH) + 1, 64)
-   local ini = (outi + 2 * padW - ki) / si + 1
-   local inj = (outj + 2 * padH - kj) / sj + 1
+   local ini = math.ceil((outi + 2 * padW - ki) / si + 1)
+   local inj = math.ceil((outj + 2 * padH - kj) / sj + 1)
 
    local tm = {}
    local title = string.format('SpatialFullConvolution.backward %dx%dx%dx%d o %dx%d '
@@ -887,9 +887,9 @@ function cunntest.SpatialFullConvolution_backward_batch()
    times[title] = tm
 
    local input = torch.randn(bs,from,inj,ini)
-   local gradOutput = torch.randn(bs,to,outj,outi)
    local sconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH)
-   sconv:forward(input)
+   local output = sconv:forward(input)
+   local gradOutput = output:clone():normal()
    sconv:zeroGradParameters()
    local groundgrad = sconv:backward(input, gradOutput)
    local a = torch.Timer()
