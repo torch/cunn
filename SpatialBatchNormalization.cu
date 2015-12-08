@@ -1,4 +1,5 @@
 // Copyright 2004-present Facebook. All Rights Reserved.
+// Only compile for arch 3.5 and higher because __shfl_xor
 #include "utils.h"
 
 #include <THC/THC.h>
@@ -359,6 +360,7 @@ void SpatialBatchNormalizationUpdateOutput(
 
 
 static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
+#if __CUDA_ARCH__ >= 300
   THCState *state = getCutorchState(L);
   THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
 
@@ -461,6 +463,7 @@ static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
   }
 
   THCudaCheck(cudaGetLastError());
+#endif
 
   return 1;
 }
@@ -624,6 +627,8 @@ void SpatialBatchNormalizationUpdateGradInput(
 
 
 static int cunn_SpatialBatchNormalization_updateGradInput(lua_State *L) {
+#if __CUDA_ARCH__ >= 300
+
   THCState *state = getCutorchState(L);
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -667,6 +672,7 @@ static int cunn_SpatialBatchNormalization_updateGradInput(lua_State *L) {
   }
 
   THCudaCheck(cudaGetLastError());
+#endif
 
   return 1;
 }
@@ -789,6 +795,7 @@ void SpatialBatchNormalizationAccGradParameters(
 
 
 static int cunn_SpatialBatchNormalization_accGradParameters(lua_State *L) {
+#if __CUDA_ARCH__ >= 300
   THCState *state = getCutorchState(L);
   // Inputs
   THCudaTensor *input = (THCudaTensor *)luaT_checkudata(L, 2, "torch.CudaTensor");
@@ -817,6 +824,7 @@ static int cunn_SpatialBatchNormalization_accGradParameters(lua_State *L) {
     );
 
   THCudaCheck(cudaGetLastError());
+#endif
 
   return 1;
 }
@@ -836,4 +844,3 @@ void cunn_SpatialBatchNormalization_init(lua_State *L)
   luaT_registeratname(L, cunn_SpatialBatchNormalization__, "nn");
   lua_pop(L,1);
 }
-
