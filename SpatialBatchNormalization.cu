@@ -43,7 +43,7 @@ __device__ inline bool inBounds(int y, int x, const THCDeviceTensor<float, 4>& t
           (unsigned)(x) < (unsigned)(t.getSize(3)));
 }
 
-template<typename T, int NumThreads, bool affine, typename ComputeT = float>
+template<typename T, int NumThreads, bool affine, typename ComputeT>
 __global__ void SpatialBatchNormalizationUpdateOutputInferenceUnrolled_kernel(
     const THCDeviceTensor<T, 4> input,
     THCDeviceTensor<T, 4> output,
@@ -52,29 +52,29 @@ __global__ void SpatialBatchNormalizationUpdateOutputInferenceUnrolled_kernel(
     const THCDeviceTensor<T, 1> weight,
     const THCDeviceTensor<T, 1> bias) {
 
-  static_assert(std::is_same<ComputeT, double>::value , "type");
+  //static_assert(std::is_same<ComputeT, double>::value , "type");
 
-  auto x = threadIdx.x;
-  auto y = threadIdx.y;
-  auto plane = blockIdx.x;
-  auto batch = blockIdx.y;
+  int x = threadIdx.x;
+  int y = threadIdx.y;
+  int plane = blockIdx.x;
+  int batch = blockIdx.y;
 
   // stddev is actually 1 / stddev
-  auto stddev = runningStddev[plane].ldg();
-  auto mean = runningMean[plane].ldg();
-  auto inp = input[batch][plane][y][x].ldg();
+  T stddev = runningStddev[plane].ldg();
+  T mean = runningMean[plane].ldg();
+  T inp = input[batch][plane][y][x].ldg();
   if (affine) {
     // multiply with gamma and add beta
     // TODO: everyone pulling this, optimize by reusing better
-    auto beta =  bias[plane].ldg();
-    auto gamma = weight[plane].ldg();
+    T beta =  bias[plane].ldg();
+    T gamma = weight[plane].ldg();
     output[batch][plane][y][x] = gamma * (inp - mean) * (stddev) + beta;
   } else {
     output[batch][plane][y][x] = (inp - mean) * (stddev);
   }
 }
 
-template<typename T, int NumThreads, bool affine, typename ComputeT = float>
+template<typename T, int NumThreads, bool affine, typename ComputeT>
 __global__ void SpatialBatchNormalizationUpdateOutputInference_kernel(
     const THCDeviceTensor<T, 4> input,
     THCDeviceTensor<T, 4> output,
@@ -83,23 +83,23 @@ __global__ void SpatialBatchNormalizationUpdateOutputInference_kernel(
     const THCDeviceTensor<T, 1> weight,
     const THCDeviceTensor<T, 1> bias) {
 
-  static_assert(std::is_same<ComputeT, double>::value , "type");
+  //static_assert(std::is_same<ComputeT, double>::value , "type");
 
-  auto x = threadIdx.x;
-  auto plane = blockIdx.x;
-  auto batch = blockIdx.y;
+  int x = threadIdx.x;
+  int plane = blockIdx.x;
+  int batch = blockIdx.y;
 
   // stddev is actually 1 / stddev
-  auto stddev = runningStddev[plane].ldg();
-  auto mean = runningMean[plane].ldg();
+  T stddev = runningStddev[plane].ldg();
+  T mean = runningMean[plane].ldg();
   T beta, gamma;
   if (affine) {
     beta =  bias[plane].ldg();
     gamma = weight[plane].ldg();
   }
 
-  for (auto y = threadIdx.y; y < output.getSize(2); y += blockDim.y) {
-    auto inp = input[batch][plane][y][x].ldg();
+  for (int y = threadIdx.y; y < output.getSize(2); y += blockDim.y) {
+    T inp = input[batch][plane][y][x].ldg();
     if (affine) {
       // multiply with gamma and add beta
       // TODO: everyone pulling this, optimize by reusing better
@@ -112,7 +112,7 @@ __global__ void SpatialBatchNormalizationUpdateOutputInference_kernel(
 }
 
 
-template<typename T, int NumThreads, bool affine, typename ComputeT = float>
+template<typename T, int NumThreads, bool affine, typename ComputeT>
 __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
     const THCDeviceTensor<T, 4> input,
     THCDeviceTensor<T, 4> output,
@@ -126,17 +126,17 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
     T epsilon,
     T momentum) {
 
-  static_assert(std::is_same<ComputeT, double>::value , "type");
+  //static_assert(std::is_same<ComputeT, double>::value , "type");
 
   // Assert powers of 2 for proper intra-warp shuffle reduction
   assert(blockDim.x == NumThreads);
   assert(blockDim.y == NumThreads);
-  static_assert((NumThreads & (NumThreads - 1)) == 0,
-                "NumThreads must be a power of 2 for proper warp shuffling");
-  auto plane = blockIdx.x;
-  auto numBatches = input.getSize(0);
+  //static_assert((NumThreads & (NumThreads - 1)) == 0,
+  //              "NumThreads must be a power of 2 for proper warp shuffling");
+  int plane = blockIdx.x;
+  int numBatches = input.getSize(0);
 
-  auto norm = (T)0;
+  T norm = (T)0;
   if (threadIdx.y == 0) {
     norm = input.getSize(0) * input.getSize(2) * input.getSize(3);
     norm = (T)1 / norm;
@@ -144,18 +144,18 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
 
   // 1. Compute the mean across (batch, y, x), save it and update the
   // runningMean with momentum
-  auto batchMeanGlobal = (T)0;
+  T batchMeanGlobal = (T)0;
   for (int y = threadIdx.y; y < input.getSize(2); y += NumThreads) {
-    auto batchMeanLocal = (T)0;
-    for (auto batch = 0; batch < numBatches; ++batch) {
+    T batchMeanLocal = (T)0;
+    for (int batch = 0; batch < numBatches; ++batch) {
       for (int x = threadIdx.x; x < input.getSize(3); x += NumThreads) {
-        auto inp = (inBounds(y, x, input)) ?
+        int inp = (inBounds(y, x, input)) ?
           input[batch][plane][y][x].ldg() : 0.0f;
         batchMeanLocal += inp;
       }
     }
     // Reduce within warp
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       batchMeanLocal += __shfl_xor(batchMeanLocal, 1 << i, NumThreads);
     }
     // thread 0 has it
@@ -171,9 +171,9 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
   __syncthreads();
   // 'transpose', and reduce within warp again
   if (threadIdx.y == 0) {
-    auto batchMeanLocal = shared[threadIdx.x];
+    T batchMeanLocal = shared[threadIdx.x];
     // Reduce within warp again
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       batchMeanLocal += __shfl_xor(batchMeanLocal, 1 << i, NumThreads);
     }
     // We did an allreduce with xors, this should reduce contention on
@@ -198,12 +198,12 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
   //      update the runningStddev with momentum
   //      save a copy
   // All threads have the batchMean now, compute the stddev
-  auto batchStddevGlobal = (T)0;
+  T batchStddevGlobal = (T)0;
   for (int y = threadIdx.y; y < input.getSize(2); y += NumThreads) {
-    auto batchStddevLocal = (T)0;
-    for (auto batch = 0; batch < numBatches; ++batch) {
+    T batchStddevLocal = (T)0;
+    for (int batch = 0; batch < numBatches; ++batch) {
       for (int x = threadIdx.x; x < input.getSize(3); x += NumThreads) {
-        auto inp = 0.0f;
+        T inp = 0.0f;
         if (inBounds(y, x, input)) {
           inp = input[batch][plane][y][x].ldg();
           batchStddevLocal +=
@@ -213,7 +213,7 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
       }
     }
     // Reduce within warp
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       batchStddevLocal += __shfl_xor(batchStddevLocal, 1 << i, NumThreads);
     }
     // thread 0 has it
@@ -230,9 +230,9 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
   __syncthreads();
   // 'transpose', and reduce within warp again
   if (threadIdx.y == 0) {
-    auto batchStddevLocal = shared[threadIdx.x];
+    int batchStddevLocal = shared[threadIdx.x];
     // Reduce within warp again
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       batchStddevLocal += __shfl_xor(batchStddevLocal, 1 << i, NumThreads);
     }
     // We did an allreduce with xors, this should reduce contention on
@@ -254,13 +254,13 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
   }
 
   // Write normalized and update the output
-  auto beta =  bias[plane];
-  auto gamma =  weight[plane];
+  T beta =  bias[plane];
+  T gamma =  weight[plane];
   for (int y = threadIdx.y; y < input.getSize(2); y += NumThreads) {
     for (int x = threadIdx.x; x < input.getSize(3); x += NumThreads) {
       if(inBounds(y, x, output)) {
-        for (auto batch = 0; batch < numBatches; ++batch) {
-          auto inp = input[batch][plane][y][x].ldg();
+        for (int batch = 0; batch < numBatches; ++batch) {
+          T inp = input[batch][plane][y][x].ldg();
           normalized[batch][plane][y][x] =
             (inp - batchMeanGlobal) * (batchStddevGlobal);
           if (affine) {
@@ -279,7 +279,7 @@ __global__ void SpatialBatchNormalizationUpdateOutput_kernel(
 }
 
 
-template<typename T, int BatchDims, int ImageDims, bool train, bool affine, typename ComputeT = float>
+template<typename T, int BatchDims, int ImageDims, bool train, bool affine, typename ComputeT>
 void SpatialBatchNormalizationUpdateOutput(
     THCState *state,
     const THCDeviceTensor<T, BatchDims + ImageDims> input,
@@ -295,7 +295,7 @@ void SpatialBatchNormalizationUpdateOutput(
     T momentum,
     cudaStream_t s)
 {
-  static_assert(BatchDims == 2, "BatchDims == 2 only atm");
+  //static_assert(BatchDims == 2, "BatchDims == 2 only atm");
 
   cudaDeviceProp *prop = THCState_getCurrentDeviceProperties(state);
   int maxThreadsPerBlock = prop->maxThreadsPerBlock;     
@@ -470,7 +470,7 @@ static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
 
 
 
-template<typename T, int NumThreads, bool affine, typename ComputeT = float>
+template<typename T, int NumThreads, bool affine, typename ComputeT>
 __global__ void SpatialBatchNormalizationUpdateGradInput_kernel(
     THCDeviceTensor<T, 4> gradInput,
     const THCDeviceTensor<T, 4> gradOutput,
@@ -478,40 +478,40 @@ __global__ void SpatialBatchNormalizationUpdateGradInput_kernel(
     THCDeviceTensor<T, 1> std,
     const THCDeviceTensor<T, 1> weight) {
 
-  static_assert(std::is_same<ComputeT, double>::value , "type");
+  //static_assert(std::is_same<ComputeT, double>::value , "type");
 
   // Assert powers of 2 for proper intra-warp shuffle reduction
   assert(blockDim.x == NumThreads);
   assert(blockDim.y == NumThreads);
-  static_assert((NumThreads & (NumThreads - 1)) == 0,
-                "NumThreads must be a power of 2 for proper warp shuffling");
-  auto plane = blockIdx.x;
-  auto numBatches = gradInput.getSize(0);
+  //static_assert((NumThreads & (NumThreads - 1)) == 0,
+  //              "NumThreads must be a power of 2 for proper warp shuffling");
+  int plane = blockIdx.x;
+  int numBatches = gradInput.getSize(0);
 
-  auto norm = (T)0;
+  T norm = (T)0;
   if (threadIdx.y == 0) {
     norm = gradInput.getSize(0) * gradInput.getSize(2) * gradInput.getSize(3);
     norm = (T)1 / norm;
   }
 
   // 1. Compute means across (batch, y, x)
-  auto gradMeanGlobal = (T)0;
-  auto centeredGradMeanGlobal = (T)0;
+  T gradMeanGlobal = (T)0;
+  T centeredGradMeanGlobal = (T)0;
   for (int y = threadIdx.y; y < gradInput.getSize(2); y += NumThreads) {
-    auto gradMeanLocal = (T)0;
-    auto centeredGradMeanLocal = (T)0;
-    for (auto batch = 0; batch < numBatches; ++batch) {
+    T gradMeanLocal = (T)0;
+    T centeredGradMeanLocal = (T)0;
+    for (int batch = 0; batch < numBatches; ++batch) {
       for (int x = threadIdx.x; x < gradInput.getSize(3); x += NumThreads) {
-        auto g = (inBounds(y, x, gradOutput)) ?
+        int g = (inBounds(y, x, gradOutput)) ?
           gradOutput[batch][plane][y][x].ldg() : 0.0f;
-        auto c = (inBounds(y, x, centered)) ?
+        int c = (inBounds(y, x, centered)) ?
           centered[batch][plane][y][x].ldg()   : 0.0f;
         gradMeanLocal += g;
         centeredGradMeanLocal += c * g;
       }
     }
     // Reduce within warp
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       gradMeanLocal +=
         __shfl_xor(gradMeanLocal, 1 << i, NumThreads);
       centeredGradMeanLocal +=
@@ -532,10 +532,10 @@ __global__ void SpatialBatchNormalizationUpdateGradInput_kernel(
   __syncthreads();
   // 'transpose', and reduce within warp again
   if (threadIdx.y == 0) {
-    auto gradMeanLocal = shared[0][threadIdx.x];
-    auto centeredGradMeanLocal = shared[1][threadIdx.x];
+    T gradMeanLocal = shared[0][threadIdx.x];
+    T centeredGradMeanLocal = shared[1][threadIdx.x];
     // Reduce within warp again
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       gradMeanLocal +=
         __shfl_xor(gradMeanLocal, 1 << i, NumThreads);
       centeredGradMeanLocal +=
@@ -554,9 +554,9 @@ __global__ void SpatialBatchNormalizationUpdateGradInput_kernel(
   // Everyone picks it up, should be broadcast into the whole gradInput
   gradMeanGlobal = shared[0][threadIdx.x];
   centeredGradMeanGlobal = shared[1][threadIdx.x];
-  auto stdVal = std[plane];
+  T stdVal = std[plane];
   for (int y = threadIdx.y; y < gradInput.getSize(2); y += NumThreads) {
-    for (auto batch = 0; batch < numBatches; ++batch) {
+    for (int batch = 0; batch < numBatches; ++batch) {
       for (int x = threadIdx.x; x < gradInput.getSize(3); x += NumThreads) {
         if (affine) {
           gradInput[batch][plane][y][x] =
@@ -591,7 +591,7 @@ __global__ void SpatialBatchNormalizationUpdateGradInput_kernel(
 
 
 
-template<typename T, int BatchDims, int ImageDims, bool affine, typename ComputeT = float>
+template<typename T, int BatchDims, int ImageDims, bool affine, typename ComputeT>
 void SpatialBatchNormalizationUpdateGradInput(
     THCDeviceTensor<T, BatchDims + ImageDims> gradInput,
     const THCDeviceTensor<T, BatchDims + ImageDims> gradOutput,
@@ -600,7 +600,7 @@ void SpatialBatchNormalizationUpdateGradInput(
     const THCDeviceTensor<T, 1> weight,
     cudaStream_t s)
 {
-  static_assert(BatchDims == 2, "BatchDims == 2 only atm");
+  //static_assert(BatchDims == 2, "BatchDims == 2 only atm");
 
   dim3 blocks(gradInput.getSize(1));
   if (gradInput.getSize(3) >= 16 && gradInput.getSize(2) >= 16) {
@@ -680,7 +680,7 @@ static int cunn_SpatialBatchNormalization_updateGradInput(lua_State *L) {
 
 
 
-template<typename T, int NumThreads, typename ComputeT = float>
+template<typename T, int NumThreads, typename ComputeT>
 __global__  void SpatialBatchNormalizationAccGradParameters_kernel(
     const THCDeviceTensor<T, 4> gradOutput,
     const THCDeviceTensor<T, 4> normalized,
@@ -689,34 +689,34 @@ __global__  void SpatialBatchNormalizationAccGradParameters_kernel(
     T scale)
 {
 
-  static_assert(std::is_same<ComputeT, double>::value , "type");
+  //static_assert(std::is_same<ComputeT, double>::value , "type");
 
   // Assert powers of 2 for proper intra-warp shuffle reduction
   assert(blockDim.x == NumThreads);
   assert(blockDim.y == NumThreads);
-  static_assert((NumThreads & (NumThreads - 1)) == 0,
-                "NumThreads must be a power of 2 for proper warp shuffling");
-  auto plane = blockIdx.x;
-  auto numBatches = gradOutput.getSize(0);
+  //static_assert((NumThreads & (NumThreads - 1)) == 0,
+  //              "NumThreads must be a power of 2 for proper warp shuffling");
+  int plane = blockIdx.x;
+  int numBatches = gradOutput.getSize(0);
 
   // 1. Compute sums across (batch, y, x)
-  auto gradMeanGlobal = (T)0;
-  auto normalizedGradMeanGlobal = (T)0;
+  T gradMeanGlobal = (T)0;
+  T normalizedGradMeanGlobal = (T)0;
   for (int y = threadIdx.y; y < gradOutput.getSize(2); y += NumThreads) {
-    auto gradMeanLocal = (T)0;
-    auto normalizedGradMeanLocal = (T)0;
-    for (auto batch = 0; batch < numBatches; ++batch) {
+    T gradMeanLocal = (T)0;
+    T normalizedGradMeanLocal = (T)0;
+    for (int batch = 0; batch < numBatches; ++batch) {
       for (int x = threadIdx.x; x < gradOutput.getSize(3); x += NumThreads) {
-        auto g = (inBounds(y, x, gradOutput)) ?
+        int g = (inBounds(y, x, gradOutput)) ?
           gradOutput[batch][plane][y][x].ldg() : 0.0f;
-        auto n = (inBounds(y, x, normalized)) ?
+        int n = (inBounds(y, x, normalized)) ?
           normalized[batch][plane][y][x].ldg() : 0.0f;
         gradMeanLocal += g;
         normalizedGradMeanLocal += n * g;
       }
     }
     // Reduce within warp
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       gradMeanLocal +=
         __shfl_xor(gradMeanLocal, 1 << i, NumThreads);
       normalizedGradMeanLocal +=
@@ -737,10 +737,10 @@ __global__  void SpatialBatchNormalizationAccGradParameters_kernel(
   __syncthreads();
   // 'transpose', and reduce within warp again
   if (threadIdx.y == 0) {
-    auto gradMeanLocal = shared[0][threadIdx.x];
-    auto normalizedGradMeanLocal = shared[1][threadIdx.x];
+    T gradMeanLocal = shared[0][threadIdx.x];
+    T normalizedGradMeanLocal = shared[1][threadIdx.x];
     // Reduce within warp again
-    for (auto i = 0; i < getMSB(NumThreads); ++i) {
+    for (int i = 0; i < getMSB(NumThreads); ++i) {
       gradMeanLocal +=
         __shfl_xor(gradMeanLocal, 1 << i, NumThreads);
       normalizedGradMeanLocal +=
@@ -761,7 +761,7 @@ __global__  void SpatialBatchNormalizationAccGradParameters_kernel(
 
 
 
-template<typename T, int BatchDims, int ImageDims, typename ComputeT = float>
+template<typename T, int BatchDims, int ImageDims, typename ComputeT>
 void SpatialBatchNormalizationAccGradParameters(
     const THCDeviceTensor<T, BatchDims + ImageDims> gradOutput,
     const THCDeviceTensor<T, BatchDims + ImageDims> normalized,
@@ -770,7 +770,7 @@ void SpatialBatchNormalizationAccGradParameters(
     T scale,
     cudaStream_t s)
 {
-  static_assert(BatchDims == 2, "BatchDims == 2 only atm");
+  //static_assert(BatchDims == 2, "BatchDims == 2 only atm");
 
   dim3 blocks(gradOutput.getSize(1));
   if (gradOutput.getSize(3) >= 16 && gradOutput.getSize(2) >= 16) {
