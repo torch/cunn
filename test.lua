@@ -1484,6 +1484,25 @@ function cunntest.SpatialFractionalMaxPooling_backward()
     mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+function cunntest.SpatialAveragePooling_includepad()
+   local net = nn.SpatialAveragePooling(2, 2, 1, 1, 1, 1):cuda()
+   local net_no_include_pad = net:clone()
+   net_no_include_pad:setCountExcludePad()
+   local net_include_pad = net:clone()
+   net_include_pad:setCountIncludePad()
+
+   local input = torch.FloatTensor(1, 1, 1, 1):cuda()
+   input[1][1][1][1] = 3
+   local out_noinclude = net_no_include_pad:forward(input)
+   local out_include = net_include_pad:forward(input)
+   
+   local noinc_out = out_noinclude[1][1][1][1]
+   local inc_out = out_include[1][1][1][1]
+   mytester:assertne(noinc_out, inc_out)
+   mytester:asserteq(3, noinc_out)
+   mytester:asserteq(3/4, inc_out)
+end
+
 function cunntest.SpatialAveragePooling_forward()
    local from = math.random(1,64)
    local to = from
@@ -1493,8 +1512,12 @@ function cunntest.SpatialAveragePooling_forward()
    local sj = math.random(1,kj)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
+   local count_exclude_pad = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialAveragePooling.forward %dx%dx%d o %dx%d -> %dx%dx%d',
@@ -1502,7 +1525,9 @@ function cunntest.SpatialAveragePooling_forward()
    times[title] = tm
 
    local input = torch.randn(from,inj,ini)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj)
+   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
+   if count_exclude_pad then sconv:setCountExcludePad() end
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
    for i = 1,nloop do
@@ -1511,7 +1536,9 @@ function cunntest.SpatialAveragePooling_forward()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    local rescuda = gconv:forward(input)
    a:reset()
    for i = 1,nloop do
@@ -1534,8 +1561,12 @@ function cunntest.SpatialAveragePooling_forward_batch()
    local sj = math.random(1,kj)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
+   local count_exclude_pad = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialAveragePooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
@@ -1543,7 +1574,9 @@ function cunntest.SpatialAveragePooling_forward_batch()
    times[title] = tm
 
    local input = torch.randn(bs,from,inj,ini)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj)
+   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
+   if count_exclude_pad then sconv:setCountExcludePad() end
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
    for i = 1,nloop do
@@ -1552,7 +1585,9 @@ function cunntest.SpatialAveragePooling_forward_batch()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    local rescuda = gconv:forward(input)
    a:reset()
    for i = 1,nloop do
@@ -1574,8 +1609,12 @@ function cunntest.SpatialAveragePooling_backward()
    local sj = math.random(1,kj)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
+   local count_exclude_pad = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialMaxPooling.backward %dx%dx%d o %dx%d -> %dx%dx%d',
@@ -1584,7 +1623,9 @@ function cunntest.SpatialAveragePooling_backward()
 
    local input = torch.randn(from,inj,ini)
    local gradOutput = torch.randn(to,outj,outi)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj)
+   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
+   if count_exclude_pad then sconv:setCountExcludePad() end
    sconv:forward(input)
    sconv:zeroGradParameters()
    local groundgrad = sconv:backward(input, gradOutput)
@@ -1597,7 +1638,9 @@ function cunntest.SpatialAveragePooling_backward()
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    gconv:forward(input)
    gconv:zeroGradParameters()
    local rescuda = gconv:backward(input, gradOutput)
@@ -1624,8 +1667,12 @@ function cunntest.SpatialAveragePooling_backward_batch()
    local sj = math.random(1,kj)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local ini = (outi-1)*si+ki
-   local inj = (outj-1)*sj+kj
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ini = (outi-1)*si+ki - padi*2
+   local inj = (outj-1)*sj+kj - padj*2
+   local ceil_mode = math.random(0,1) == 1
+   local count_exclude_pad = math.random(0,1) == 1
 
    local tm = {}
    local title = string.format('SpatialAveragePooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
@@ -1634,7 +1681,9 @@ function cunntest.SpatialAveragePooling_backward_batch()
 
    local input = torch.randn(bs,from,inj,ini)
    local gradOutput = torch.randn(bs,to,outj,outi)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj)
+   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then sconv:ceil() end
+   if count_exclude_pad then sconv:setCountExcludePad() end
    sconv:forward(input)
    sconv:zeroGradParameters()
    local groundgrad = sconv:backward(input, gradOutput)
@@ -1647,7 +1696,9 @@ function cunntest.SpatialAveragePooling_backward_batch()
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj):cuda()
+   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then gconv:ceil() end
+   if count_exclude_pad then gconv:setCountExcludePad() end
    gconv:forward(input)
    gconv:zeroGradParameters()
    local rescuda = gconv:backward(input, gradOutput)

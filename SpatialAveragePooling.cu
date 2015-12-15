@@ -1,57 +1,41 @@
 #include "utils.h"
+#include "common.h"
 
-#define CUDA_MAX_THREADS 1024   // this is safe, in reality 256 is our limit
-
-/*
- * Description:
- *    this function avg-pools an input 3D tensor along dimensions 1 and 2
- *    3D input, 3D output
- */
-__global__ void subsample(float *input, float *output,
-                          int input_n, int input_h, int input_w,
-                          int kH, int kW, int dH, int dW)
-{
-  // iterators
-  int xx, yy;
-
-  // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
-
-  // compute offsets based on thread/block ID
-  int o = blockIdx.x;
-  int i = o;
-
-  int xx_start = threadIdx.x;
-  int xx_end = output_w;
-  int xx_step = blockDim.x;
-
-  int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
-  int yy_end = output_h;
-  int yy_step = blockDim.y*gridDim.y;
-
-  // select input/output plane
-  output = output + o*output_w*output_h;
-  input = input + i*input_w*input_h;
-
-  // For all output pixels...
-  for(yy = yy_start; yy < yy_end; yy+=yy_step) {
-    for(xx = xx_start; xx < xx_end; xx+=xx_step) {
-      // Compute the mean of the input image...
-      float *ptr_input = input + yy*dH*input_w + xx*dW;
-      float *ptr_output = output + yy*output_w + xx;
-      float sum = 0;
-      int kx, ky;
-      for(ky = 0; ky < kH; ky++) {
-        for(kx = 0; kx < kW; kx++)
-          sum += ptr_input[kx];
-        ptr_input += input_w; // next input line
+template <typename Dtype, bool COUNT_INCLUDE_PAD>
+__global__ void AvePoolForward(const int nthreads,
+    const Dtype* const bottom_data, const int num, const int channels,
+    const int height, const int width, const int pooled_height,
+    const int pooled_width, const int kernel_h, const int kernel_w,
+    const int stride_h, const int stride_w, const int pad_h, const int pad_w,
+    Dtype* const top_data) {
+  CUDA_KERNEL_LOOP(index, nthreads) {
+    const int pw = index % pooled_width;
+    const int ph = (index / pooled_width) % pooled_height;
+    const int c = (index / pooled_width / pooled_height) % channels;
+    const int n = index / pooled_width / pooled_height / channels;
+    int hstart = ph * stride_h - pad_h;
+    int wstart = pw * stride_w - pad_w;
+    int hend = min(hstart + kernel_h, height + pad_h);
+    int wend = min(wstart + kernel_w, width + pad_w);
+    const int pool_size = (hend - hstart) * (wend - wstart);
+    hstart = max(hstart, 0);
+    wstart = max(wstart, 0);
+    hend = min(hend, height);
+    wend = min(wend, width);
+    Dtype aveval = 0;
+    const Dtype* const bottom_slice = bottom_data + (n * channels + c) * height * width;
+    for (int h = hstart; h < hend; ++h) {
+      for (int w = wstart; w < wend; ++w) {
+        aveval += bottom_slice[h * width + w];
       }
-      // Update output
-      *ptr_output = sum/float(kW*kH);
     }
+    if(COUNT_INCLUDE_PAD)
+      top_data[index] = aveval / pool_size;
+    else
+      top_data[index] = aveval / ((hend - hstart) * (wend - wstart));
   }
 }
+
 
 static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
 {
@@ -61,67 +45,79 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
+  bool ceil_mode = luaT_getfieldcheckboolean(L, 1, "ceil_mode");
+  bool count_include_pad = luaT_getfieldcheckboolean(L, 1, "count_include_pad");
 
   THCudaTensor *output = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
+
   THAssert(THCudaTensor_checkGPU(state, 2, input, output));
-
-  float *output_data;
-  float *input_data;
-
   luaL_argcheck(L, input->nDimension == 3 || input->nDimension == 4, 2, "3D or 4D (batch) tensor expected");
 
+  long nInputCols, nInputRows, nInputPlane, batchSize;
+  long nOutputCols, nOutputRows;
+
   if (input->nDimension == 3) {
-    long nInputCols = input->size[2];
-    long nInputRows = input->size[1];
-    long nOutputCols = (nInputCols - kW) / dW + 1;
-    long nOutputRows = (nInputRows - kH) / dH + 1;
-    long nInputPlane = input->size[0];
-
-    luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
-
-    input = THCudaTensor_newContiguous(state, input);
-    input_data = THCudaTensor_data(state, input);
-
-    THCudaTensor_resize3d(state, output, nInputPlane, nOutputRows, nOutputCols);
-    output_data = THCudaTensor_data(state, output);
-
-    // cuda blocks & threads:
-    int yblocks = (int)(16L / nInputPlane);
-    yblocks = yblocks < 1 ? 1 : yblocks;
-    dim3 blocks(nInputPlane,yblocks);
-    dim3 threads(32,8);
-
-    // run subsample kernel
-    subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
-                                     nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
-  } else {
-    long nInputCols = input->size[3];
-    long nInputRows = input->size[2];
-    long nbatch = input->size[0];
-    long nOutputCols = (nInputCols - kW) / dW + 1;
-    long nOutputRows = (nInputRows - kH) / dH + 1;
-    long nInputPlane = input->size[1];
-
-    luaL_argcheck(L, nInputCols >= kW && nInputRows >= kH, 2, "input image smaller than kernel size");
-
-    input = THCudaTensor_newContiguous(state, input);
-    input_data = THCudaTensor_data(state, input);
-
-    THCudaTensor_resize4d(state, output, nbatch, nInputPlane, nOutputRows, nOutputCols);
-    output_data = THCudaTensor_data(state, output);
-
-    // cuda blocks & threads:
-    int yblocks = (int)(16L / nInputPlane);
-    yblocks = yblocks < 1 ? 1 : yblocks;
-    dim3 blocks(nInputPlane*nbatch,yblocks);
-    dim3 threads(32,8);
-
-    // run subsample kernel
-    subsample <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (input_data, output_data,
-                                     nInputPlane, nInputRows, nInputCols, kH, kW, dH, dW);
+    nInputCols = input->size[2];
+    nInputRows = input->size[1];
+    nInputPlane = input->size[0];
+    batchSize = 1;
+  }
+  else
+  {
+    nInputCols = input->size[3];
+    nInputRows = input->size[2];
+    nInputPlane = input->size[1];
+    batchSize = input->size[0];
   }
 
-  // clean
+  luaL_argcheck(L, nInputCols >= kW - 2*padW && nInputRows >= kH - 2*padH, 2, "input image smaller than kernel size");
+  luaL_argcheck(L, kW/2 >= padW && kH/2 >= padH, 2, "pad should be smaller than half of kernel size");
+
+  if(ceil_mode) {
+    nOutputCols = ceil(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
+    nOutputRows = ceil(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
+  }
+  else {
+    nOutputCols = floor(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
+    nOutputRows = floor(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
+  }
+  if (padW || padH)
+  {
+    // ensure that the last pooling starts inside the image
+    // needed to avoid problems in ceil mode
+    if ((nOutputRows - 1)*dH >= nInputRows + padH)
+      --nOutputRows;
+    if ((nOutputCols  - 1)*dW >= nInputCols  + padW)
+      --nOutputCols;
+  }
+
+  input = THCudaTensor_newContiguous(state, input);
+  float* input_data = THCudaTensor_data(state, input);
+
+  THCudaTensor_resize4d(state, output, batchSize, nInputPlane, nOutputRows, nOutputCols);
+  
+  float* output_data = THCudaTensor_data(state, output);
+
+  int count = THCudaTensor_nElement(state, output);
+
+  if(count_include_pad)
+    AvePoolForward<float, true>
+      <<<GET_BLOCKS(count), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state) >>>(
+        count, input_data,
+        batchSize, nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+        kH, kW, dH, dW, padH, padW, output_data);
+  else
+    AvePoolForward<float, false>
+      <<<GET_BLOCKS(count), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state) >>>(
+        count, input_data,
+        batchSize, nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+        kH, kW, dH, dW, padH, padW, output_data);
+
+  if(input->nDimension == 3)
+    THCudaTensor_resize3d(state, output, nInputPlane, nOutputRows, nOutputCols);
+
   THCudaTensor_free(state, input);
 
   // check for errors
@@ -133,104 +129,48 @@ static int cunn_SpatialAveragePooling_updateOutput(lua_State *L)
   return 1;
 }
 
-
-/*
- * Description:
- *    this function computes the gradInput from gradOutput
- */
-__global__ void subgradinput(float *gradInput, float *gradOutput,
-                             int input_n, int input_h, int input_w,
-                             int kH, int kW, int dH, int dW)
-{
-  // iterators
-  int xx, yy;
-
-  // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
-
-  // compute offsets based on thread/block ID
-  int o = blockIdx.x;
-  int i = o;
-
-  int xx_start = threadIdx.x;
-  int xx_end = output_w;
-  int xx_step = blockDim.x;
-
-  int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
-  int yy_end = output_h;
-  int yy_step = blockDim.y*gridDim.y;
-
-  // select input/output plane
-  gradOutput = gradOutput + o*output_w*output_h;
-  gradInput = gradInput + i*input_w*input_h;
-
-  // compute gradInput
-  for(yy = yy_start; yy < yy_end; yy+=yy_step) {
-    for(xx = xx_start; xx < xx_end; xx+=xx_step) {
-      float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
-      float *ptr_gradOutput = gradOutput + yy*output_w + xx;
-      float z = *ptr_gradOutput;
-      int kx, ky;
-      for(ky = 0; ky < kH; ky++) {
-        for(kx = 0; kx < kW; kx++)
-          ptr_gradInput[kx] += z / float(kW*kH);
-        ptr_gradInput += input_w;
+template <typename Dtype, bool COUNT_INCLUDE_PAD>
+__global__ void AvePoolBackward(const int nthreads, const Dtype* const top_diff,
+    const int num, const int channels, const int height,
+    const int width, const int pooled_height, const int pooled_width,
+    const int kernel_h, const int kernel_w, const int stride_h,
+    const int stride_w, const int pad_h, const int pad_w,
+    Dtype* const bottom_diff) {
+  CUDA_KERNEL_LOOP(index, nthreads) {
+    // find out the local index
+    // find out the local offset
+    const int w = index % width + pad_w;
+    const int h = (index / width) % height + pad_h;
+    const int c = (index / width / height) % channels;
+    const int n = index / width / height / channels;
+    const int phstart = (h < kernel_h) ? 0 : (h - kernel_h) / stride_h + 1;
+    const int phend = min(h / stride_h + 1, pooled_height);
+    const int pwstart = (w < kernel_w) ? 0 : (w - kernel_w) / stride_w + 1;
+    const int pwend = min(w / stride_w + 1, pooled_width);
+    Dtype gradient = 0;
+    const Dtype* const top_diff_slice =
+        top_diff + (n * channels + c) * pooled_height * pooled_width;
+    for (int ph = phstart; ph < phend; ++ph) {
+      for (int pw = pwstart; pw < pwend; ++pw) {
+        // figure out the pooling size
+        int hstart = ph * stride_h - pad_h;
+        int wstart = pw * stride_w - pad_w;
+        int hend = min(hstart + kernel_h, height + pad_h);
+        int wend = min(wstart + kernel_w, width + pad_w);
+        int pool_size = (hend - hstart) * (wend - wstart);
+        hstart = max(hstart, 0);
+        wstart = max(wstart, 0);
+        hend = min(hend, height);
+        wend = min(wend, width);
+        if(COUNT_INCLUDE_PAD)
+          gradient += top_diff_slice[ph * pooled_width + pw] / pool_size;
+        else
+          gradient += top_diff_slice[ph * pooled_width + pw] / ((hend - hstart) * (wend - wstart));
       }
     }
+    bottom_diff[index] = gradient;
   }
 }
-
-/*
- * Description:
- *    this function computes the gradInput from gradOutput
- *    but with an atomic accumulation. It is needed to be done so
- *    for cases of kH != dH and kW != dW
- */
-__global__ void subgradinputAtomic(float *gradInput, float *gradOutput,
-                                   int input_n, int input_h, int input_w,
-                                   int kH, int kW, int dH, int dW)
-{
-  // iterators
-  int xx, yy;
-
-  // output size
-  int output_w = (input_w - kW) / dW + 1;
-  int output_h = (input_h - kH) / dH + 1;
-
-  // compute offsets based on thread/block ID
-  int o = blockIdx.x;
-  int i = o;
-
-  int xx_start = threadIdx.x;
-  int xx_end = output_w;
-  int xx_step = blockDim.x;
-
-  int yy_start = blockDim.y*blockIdx.y + threadIdx.y;
-  int yy_end = output_h;
-  int yy_step = blockDim.y*gridDim.y;
-
-  // select input/output plane
-  gradOutput = gradOutput + o*output_w*output_h;
-  gradInput = gradInput + i*input_w*input_h;
-
-  // compute gradInput
-  for(yy = yy_start; yy < yy_end; yy+=yy_step) {
-    for(xx = xx_start; xx < xx_end; xx+=xx_step) {
-      float *ptr_gradInput = gradInput + yy*dH*input_w + xx*dW;
-      float *ptr_gradOutput = gradOutput + yy*output_w + xx;
-      float z = *ptr_gradOutput;
-      int kx, ky;
-      for(ky = 0; ky < kH; ky++) {
-        for(kx = 0; kx < kW; kx++) {
-          atomicAdd(&(ptr_gradInput[kx]), z / float(kW*kH));
-        }
-        ptr_gradInput += input_w;
-      }
-    }
-  }
-}
-
 
 static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
 {
@@ -241,68 +181,73 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
+  bool ceil_mode = luaT_getfieldcheckboolean(L, 1, "ceil_mode");
+  bool count_include_pad = luaT_getfieldcheckboolean(L, 1, "count_include_pad");
 
   THCudaTensor *gradInput = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-  THAssert(THCudaTensor_checkGPU(state, 3, input, gradInput, gradOutput));
+
+  THAssert(THCudaTensor_checkGPU(state, 3, input, gradOutput, gradInput));
+
+  input = THCudaTensor_newContiguous(state, input);
+  gradOutput = THCudaTensor_newContiguous(state, gradOutput);
+
+  long nInputCols, nInputRows, nInputPlane, batchSize;
+  long nOutputCols, nOutputRows;
 
   if (input->nDimension == 3) {
-    long nInputCols = input->size[2];
-    long nInputRows = input->size[1];
-    long nInputPlane = input->size[0];
-
-    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
-    float *gradInput_data;
-
-    THCudaTensor_resizeAs(state, gradInput, input);
-    THCudaTensor_zero(state, gradInput);
-    gradInput_data = THCudaTensor_data(state, gradInput);
-
-    // cuda blocks & threads:
-    int yblocks = (int)(16L / nInputPlane);
-    yblocks = yblocks < 1 ? 1 : yblocks;
-    dim3 blocks(nInputPlane,yblocks);
-    dim3 threads(32,8);
-
-    // run updateGradInput kernel
-    if (kH == dH && kW == dW) {
-      subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                          nInputPlane, nInputRows, nInputCols,
-                                          kH, kW, dH, dW);
-    } else {
-      subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                                nInputPlane, nInputRows, nInputCols,
-                                                kH, kW, dH, dW);
-    }
-  } else {
-    long nInputCols = input->size[3];
-    long nInputRows = input->size[2];
-    long nInputPlane = input->size[1];
-    long nbatch = input->size[0];
-
-    float *gradOutput_data = THCudaTensor_data(state, gradOutput);
-    float *gradInput_data;
-
-    THCudaTensor_resizeAs(state, gradInput, input);
-    THCudaTensor_zero(state, gradInput);
-    gradInput_data = THCudaTensor_data(state, gradInput);
-
-    // cuda blocks & threads:
-    int yblocks = (int)(16L / nInputPlane);
-    yblocks = yblocks < 1 ? 1 : yblocks;
-    dim3 blocks(nInputPlane*nbatch,yblocks);
-    dim3 threads(32,8);
-
-    // run updateGradInput kernel
-    if (kH == dH && kW == dW) {
-      subgradinput <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                          nInputPlane, nInputRows, nInputCols,
-                                          kH, kW, dH, dW);
-    } else {
-      subgradinputAtomic <<<blocks, threads, 0, THCState_getCurrentStream(state)>>> (gradInput_data, gradOutput_data,
-                                                nInputPlane, nInputRows, nInputCols,
-                                                kH, kW, dH, dW);
-    }
+    nInputCols = input->size[2];
+    nInputRows = input->size[1];
+    nInputPlane = input->size[0];
+    batchSize = 1;
   }
+  else
+  {
+    nInputCols = input->size[3];
+    nInputRows = input->size[2];
+    nInputPlane = input->size[1];
+    batchSize = input->size[0];
+  }
+
+  if(ceil_mode) {
+    nOutputCols = ceil(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
+    nOutputRows = ceil(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
+  }
+  else {
+    nOutputCols = floor(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
+    nOutputRows = floor(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
+  }
+  if (padW || padH)
+  {
+    // ensure that the last pooling starts inside the image
+    // needed to avoid problems in ceil mode
+    if ((nOutputRows - 1)*dH >= nInputRows + padH)
+      --nOutputRows;
+    if ((nOutputCols  - 1)*dW >= nInputCols  + padW)
+      --nOutputCols;
+  }
+
+  THCudaTensor_resizeAs(state, gradInput, input);
+  
+  int count = THCudaTensor_nElement(state, input);
+
+  if(count_include_pad)
+    AvePoolBackward<float, true>
+      <<< GET_BLOCKS(count), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state) >>> 
+        (count,
+        THCudaTensor_data(state, gradOutput),
+        batchSize, nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+        kH, kW, dH, dW, padH, padW,
+        THCudaTensor_data(state, gradInput));
+  else
+    AvePoolBackward<float, false>
+      <<< GET_BLOCKS(count), CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state) >>> 
+        (count,
+        THCudaTensor_data(state, gradOutput),
+        batchSize, nInputPlane, nInputRows, nInputCols, nOutputRows, nOutputCols,
+        kH, kW, dH, dW, padH, padW,
+        THCudaTensor_data(state, gradInput));
 
   // check for errors
   cudaError_t err = cudaGetLastError();
@@ -310,8 +255,13 @@ static int cunn_SpatialAveragePooling_updateGradInput(lua_State *L)
     printf("error in SpatialAveragePooling.updateGradInput: %s\n", cudaGetErrorString(err));
     THError("aborting");
   }
+  // clean
+  THCudaTensor_free(state, input);
+  THCudaTensor_free(state, gradOutput);
+
   return 1;
 }
+
 
 static const struct luaL_Reg cunn_SpatialAveragePooling__ [] = {
   {"SpatialAveragePooling_updateOutput", cunn_SpatialAveragePooling_updateOutput},
