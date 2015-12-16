@@ -38,6 +38,8 @@ IF(LUALIB)
   TARGET_LINK_LIBRARIES(cunn ${LUALIB})
 ENDIF()
 
+ADD_SUBDIRECTORY(lib)
+
 ### Torch packages supposes libraries prefix is "lib"
 SET_TARGET_PROPERTIES(cunn PROPERTIES
   PREFIX "lib"
