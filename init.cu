@@ -40,9 +40,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_Threshold_init(L);
   cunn_MSECriterion_init(L);
   cunn_SmoothL1Criterion_init(L);
-  cunn_AbsCriterion_init(L);
   cunn_DistKLDivCriterion_init(L);
-  cunn_Abs_init(L);
   cunn_SoftPlus_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);
