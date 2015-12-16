@@ -3,6 +3,11 @@ local THNN = require 'nn.THNN'
 
 local THCUNN = {}
 
+-- load libTHCUNN
+local cpath = package.cpath
+if ffi.os == 'OSX' then cpath = string.gsub(package.cpath, '%?%.so;', '?.dylib;') end
+THCUNN.C = ffi.load(package.searchpath('libTHCUNN', cpath))
+
 local THCState_ptr = ffi.typeof('THCState*')
 
 function THCUNN.getState()
@@ -36,22 +41,8 @@ TH_API void THNN_CudaAbsCriterion_updateGradInput(
           bool sizeAverage);
 ]]
 
-
 local preprocessed = string.gsub(THCUNN_h, 'TH_API ', '')
 ffi.cdef(preprocessed)
-
-local ok,result
-if ffi.os == "OSX" then
-  ok,result = pcall(ffi.load, 'libTHCUNN.dylib')
-else
-  ok,result = pcall(ffi.load, 'THCUNN')
-end
-if not ok then
-  print(result)
-  error("Ops, could not load 'THCUNN' GPU backend library.")
-else
-  THCUNN.C = result
-end
 
 local function extract_function_names(s)
   local t = {}
