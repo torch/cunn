@@ -4,9 +4,7 @@ local THNN = require 'nn.THNN'
 local THCUNN = {}
 
 -- load libTHCUNN
-local cpath = package.cpath
-if ffi.os == 'OSX' then cpath = string.gsub(package.cpath, '%?%.so;', '?.dylib;') end
-THCUNN.C = ffi.load(package.searchpath('libTHCUNN', cpath))
+THCUNN.C = ffi.load(package.searchpath('libTHCUNN', package.cpath))
 
 local THCState_ptr = ffi.typeof('THCState*')
 
