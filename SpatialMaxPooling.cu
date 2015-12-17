@@ -117,6 +117,15 @@ static int cunn_SpatialMaxPooling_updateOutput(lua_State *L)
   else {
     nOutputCols = floor(float(nInputCols - kW + 2*padW) / float(dW)) + 1;
     nOutputRows = floor(float(nInputRows - kH + 2*padH) / float(dH)) + 1;
+  }  
+  
+  if (padW || padH)
+  {
+    // ensure that the last pooling starts inside the image
+    if ((nOutputRows - 1)*dH >= nInputRows + padH)
+      --nOutputRows;
+    if ((nOutputCols  - 1)*dW >= nInputCols  + padW)
+      --nOutputCols;
   }
 
   input = THCudaTensor_newContiguous(state, input);
