@@ -14,7 +14,7 @@ IF(APPLE)
   endif()
 ENDIF()
 
-FIND_PACKAGE(CUDA 4.0 REQUIRED)
+FIND_PACKAGE(CUDA 6.5 REQUIRED)
 
 # Detect CUDA architecture and get best NVCC flags
 INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindCudaArch.cmake)
