@@ -16,7 +16,6 @@ LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 int luaopen_libcunn(lua_State *L)
 {
   lua_newtable(L);
-  cunn_ClassNLLCriterion_init(L);
   cunn_SpatialCrossMapLRN_init(L);
   cunn_Tanh_init(L);
   cunn_ELU_init(L);
