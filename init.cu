@@ -16,13 +16,10 @@ LUA_EXTERNC DLL_EXPORT int luaopen_libcunn(lua_State *L);
 int luaopen_libcunn(lua_State *L)
 {
   lua_newtable(L);
-  cunn_ClassNLLCriterion_init(L);
   cunn_SpatialCrossMapLRN_init(L);
   cunn_Tanh_init(L);
   cunn_ELU_init(L);
   cunn_Sigmoid_init(L);
-  cunn_HardTanh_init(L);
-  cunn_L1Cost_init(L);
   cunn_LogSoftMax_init(L);
   cunn_SoftMax_init(L);
   cunn_TemporalConvolution_init(L);
@@ -41,7 +38,6 @@ int luaopen_libcunn(lua_State *L)
   cunn_Threshold_init(L);
   cunn_MSECriterion_init(L);
   cunn_SmoothL1Criterion_init(L);
-  cunn_DistKLDivCriterion_init(L);
   cunn_SoftPlus_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
   cunn_VolumetricConvolution_init(L);

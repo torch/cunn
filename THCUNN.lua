@@ -9,7 +9,7 @@ THCUNN.C = ffi.load(package.searchpath('libTHCUNN', package.cpath))
 local THCState_ptr = ffi.typeof('THCState*')
 
 function THCUNN.getState()
-  return THCState_ptr(cutorch.getState());
+   return THCState_ptr(cutorch.getState());
 end
 
 local THCUNN_h = [[
@@ -29,7 +29,7 @@ TH_API void THNN_CudaAbsCriterion_updateOutput(
           THCState *state,
           THCudaTensor *input,
           THCudaTensor *target,
-          float *output,
+          THCudaTensor *output,
           bool sizeAverage);
 TH_API void THNN_CudaAbsCriterion_updateGradInput(
           THCState *state,
@@ -37,17 +37,71 @@ TH_API void THNN_CudaAbsCriterion_updateGradInput(
           THCudaTensor *target,
           THCudaTensor *gradInput,
           bool sizeAverage);
+
+TH_API void THNN_CudaClassNLLCriterion_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *output,
+          bool sizeAverage,
+          THCudaTensor *weights,
+          THCudaTensor *total_weight);
+TH_API void THNN_CudaClassNLLCriterion_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *gradInput,
+          bool sizeAverage,
+          THCudaTensor *weights,
+          THCudaTensor *total_weight);
+
+TH_API void THNN_CudaDistKLDivCriterion_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *output,
+          bool sizeAverage);
+TH_API void THNN_CudaDistKLDivCriterion_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *gradInput,
+          bool sizeAverage);
+
+TH_API void THNN_CudaHardTanh_updateOutput(
+          THCState *state, 
+          THCudaTensor *input,
+          THCudaTensor *output,
+          float min_val,
+          float max_val);
+TH_API void THNN_CudaHardTanh_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *gradOutput,
+          THCudaTensor *gradInput,
+          float min_val,
+          float max_val);
+
+TH_API void THNN_CudaL1Cost_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *output);
+TH_API void THNN_CudaL1Cost_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *gradOutput,
+          THCudaTensor *gradInput);
 ]]
 
 local preprocessed = string.gsub(THCUNN_h, 'TH_API ', '')
 ffi.cdef(preprocessed)
 
 local function extract_function_names(s)
-  local t = {}
-  for n in string.gmatch(s, 'TH_API void THNN_Cuda([%a%d_]+)') do
-    t[#t+1] = n
-  end
-  return t
+   local t = {}
+   for n in string.gmatch(s, 'TH_API void THNN_Cuda([%a%d_]+)') do
+      t[#t+1] = n
+   end
+   return t
 end
 
 -- build function table
