@@ -3828,6 +3828,343 @@ function cunntest.LookupTable_backward()
    mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
+function cunntest.SpatialBatchNormalization_evaluate_pow2()
+   local nBatch = 32
+   local nFeature = 16
+   local iH = 8
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization evaluate %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature)
+   sconv:evaluate()
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:evaluate()
+   local rescuda = gconv:forward(input)
+   cutorch.synchronize()
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.SpatialBatchNormalization_evaluate_pow2_not_affine()
+   local nBatch = 32
+   local nFeature = 16
+   local iH = 8
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization evaluate %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature, eps, momentum, false)
+   sconv:evaluate()
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:evaluate()
+   local rescuda = gconv:forward(input)
+   cutorch.synchronize()
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+-- test the optimized SBN forward path
+function cunntest.SpatialBatchNormalization_forward_pow2()
+   local nBatch = 32
+   local nFeature = 16
+   local iH = 8
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization forward %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+   local groundrunningmean = sconv.running_mean
+   local groundrunningstd = sconv.running_std
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:resetRunningStats(nFeature)
+   local rescuda = gconv:forward(input)
+   cutorch.synchronize()
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+   local cudarunningmean = gconv.running_mean
+   local cudarunningstd = gconv.running_std
+
+   local error = rescuda:float() - groundtruth
+   local rmeanerror = cudarunningmean:float() - groundrunningmean
+   local rstderror = cudarunningstd:float() - groundrunningstd
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+   mytester:assertlt(rmeanerror:abs():max(), precision_forward, 'error on running_mean (forward) ')
+   mytester:assertlt(rstderror:abs():max(), precision_forward, 'error on running_std (forward) ')
+end
+
+function cunntest.SpatialBatchNormalization_forward_pow2_not_affine()
+   local nBatch = 32
+   local nFeature = 16
+   local iH = 8
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization forward not affine %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature, eps, momentum, false)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+   local groundrunningmean = sconv.running_mean
+   local groundrunningstd = sconv.running_std
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:resetRunningStats(nFeature)
+   local rescuda = gconv:forward(input)
+   cutorch.synchronize()
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+   local cudarunningmean = gconv.running_mean
+   local cudarunningstd = gconv.running_std
+
+   local error = rescuda:float() - groundtruth
+   local rmeanerror = cudarunningmean:float() - groundrunningmean
+   local rstderror = cudarunningstd:float() - groundrunningstd
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+   mytester:assertlt(rmeanerror:abs():max(), precision_forward, 'error on running_mean (forward) ')
+   mytester:assertlt(rstderror:abs():max(), precision_forward, 'error on running_std (forward) ')
+end
+
+-- test the optimized SBN backward path
+function cunntest.SpatialBatchNormalization_backward_pow2()
+   local nBatch = 32
+   local nFeature = 16
+   local iH = 8
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization backward %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local gradOutput = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature)
+   sconv:resetGradParams()
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:resetGradParams()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+end
+
+function cunntest.SpatialBatchNormalization_backward_pow2_not_affine()
+   local nBatch = 32
+   local nFeature = 16
+   local iH = 8
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization backward not affine %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local gradOutput = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature, eps, momentum, false)
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+function cunntest.SpatialBatchNormalization_forward()
+   local nBatch = math.random(1,100)
+   local nFeature = math.random(1,100)
+   local iH = math.random(1,100)
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization forward %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature)
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = sconv:clone():cuda()
+   local rescuda = gconv:forward(input)
+   cutorch.synchronize()
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.SpatialBatchNormalization_backward()
+   local nBatch = math.random(1,100)
+   local nFeature = math.random(1,100)
+   local iH = math.random(1,100)
+   local iW = iH
+   local nSpatial = iH * iW
+
+   -- manual seed for consistent initialization
+   torch.manualSeed(1)
+   cutorch.manualSeedAll(1)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization backward %dx%d -> %dx%d', nFeature, nSpatial, nFeature, nSpatial)
+   times[title] = tm
+
+   local input = torch.randn(nBatch, nFeature, iH, iW)
+   local gradOutput = torch.randn(nBatch, nFeature, iH, iW)
+   local sconv = nn.SpatialBatchNormalization(nFeature)
+   sconv:resetGradParams()
+   sconv:forward(input)
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = sconv:clone():cuda()
+   gconv:resetGradParams()
+   gconv:forward(input)
+   local rescuda = gconv:backward(input, gradOutput)
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+end
+
 local function setUp()
    cutorch.setDevice(1)
 end

@@ -49,6 +49,7 @@ int luaopen_libcunn(lua_State *L)
   cunn_RReLU_init(L);
   cunn_LeakyReLU_init(L);
   cunn_LookupTable_init(L);
+  cunn_SpatialBatchNormalization_init(L);
 
   return 1;
 }
