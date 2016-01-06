@@ -499,6 +499,141 @@ function cunntest.WeightedEuclidean_backward_batch()
    mytester:assertlt(derror:abs():max(), precision_backward, 'error on diagCov (backward) ')
 end
 
+function cunntest.SpatialBatchNormalization_forward()
+   local batch = math.random(2,32)
+   local planes = math.random(1,64)
+   local height = math.random(1,64)
+   local width = math.random(1,64)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization.forward %dx%dx%d%d',
+                               batch, planes, height, width)
+   times[title] = tm
+
+   local input = torch.randn(batch,planes,height,width)
+   local sbnorm = nn.SpatialBatchNormalization(planes)
+   local groundtruth = sbnorm:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sbnorm:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gbnorm = nn.SpatialBatchNormalization(planes):cuda()
+   gbnorm.weight = sbnorm.weight:cuda()
+   gbnorm.bias = sbnorm.bias:cuda()
+   local rescuda = gbnorm:forward(input)
+
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gbnorm:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward)')
+   mytester:assertlt((gbnorm.running_mean:float() - sbnorm.running_mean):abs():max(),
+      precision_forward, 'error on running_mean (forward)')
+   mytester:assertlt((gbnorm.running_var:float() - sbnorm.running_var):abs():max(),
+      precision_forward, 'error on running_var (forward)')
+end
+
+function cunntest.SpatialBatchNormalization_forward_inference()
+   local batch = math.random(2,32)
+   local planes = math.random(1,64)
+   local height = math.random(1,64)
+   local width = math.random(1,64)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization.forward (evaluate) %dx%dx%d%d',
+                               batch, planes, height, width)
+   times[title] = tm
+
+   local input = torch.randn(batch,planes,height,width)
+   local sbnorm = nn.SpatialBatchNormalization(planes)
+   sbnorm.running_mean:normal(1, 2)
+   sbnorm.running_var:uniform(1e-3, 2)
+   sbnorm:evaluate()
+   local groundtruth = sbnorm:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sbnorm:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gbnorm = nn.SpatialBatchNormalization(planes):cuda()
+   gbnorm:evaluate()
+   gbnorm.weight = sbnorm.weight:cuda()
+   gbnorm.bias = sbnorm.bias:cuda()
+   gbnorm.running_mean = sbnorm.running_mean:cuda()
+   gbnorm.running_var = sbnorm.running_var:cuda()
+   local rescuda = gbnorm:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gbnorm:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward evaluate)')
+end
+
+function cunntest.SpatialBatchNormalization_backward()
+   local batch = math.random(2,32)
+   local planes = math.random(1,64)
+   local height = math.random(1,64)
+   local width = math.random(1,64)
+
+   local tm = {}
+   local title = string.format('SpatialBatchNormalization.backward %dx%dx%d%d',
+                               batch, planes, height, width)
+   times[title] = tm
+
+   local input = torch.randn(batch,planes,height,width)
+   local gradOutput = torch.randn(batch,planes,height,width)
+   local sbnorm = nn.SpatialBatchNormalization(planes)
+   sbnorm:forward(input)
+   sbnorm:zeroGradParameters()
+   local groundgrad = sbnorm:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sbnorm:zeroGradParameters()
+      groundgrad = sbnorm:backward(input, gradOutput)
+   end
+   local groundweight = sbnorm.gradWeight
+   local groundbias = sbnorm.gradBias
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gbnorm = nn.SpatialBatchNormalization(planes):cuda()
+   gbnorm.weight = sbnorm.weight:cuda()
+   gbnorm.bias = sbnorm.bias:cuda()
+   gbnorm:forward(input)
+   gbnorm:zeroGradParameters()
+   local rescuda = gbnorm:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gbnorm:zeroGradParameters()
+      rescuda = gbnorm:backward(input, gradOutput)
+   end
+   local weightcuda = gbnorm.gradWeight
+   local biascuda = gbnorm.gradBias
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+end
 
 function cunntest.SpatialConvolutionMM_forward_single()
    local from = math.random(1,32)
