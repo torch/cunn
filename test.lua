@@ -1225,6 +1225,59 @@ function cunntest.SpatialMaxPooling_forward_batch()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
+function cunntest.SpatialMaxUnpooling_forward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local ki = math.random(2,4)
+   local kj = math.random(2,4)
+   local si = ki
+   local sj = kj
+   local outi = math.random(32,256)
+   local outj = math.random(32,256)
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ceil_mode = math.random(0,1) == 1
+   local fun = ceil_mode and torch.ceil or torch.floor
+   local ini = fun((outi + padi*2 - ki)/si) +1
+   local inj = fun((outj + padj*2 - kj)/sj) +1
+
+   local tm = {}
+   local title = string.format('SpatialMaxUnpooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
+                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
+   times[title] = tm
+
+   local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then pooler:ceil() end
+   local sunpool = nn.SpatialMaxUnpooling(pooler)
+
+   local original = torch.randn(bs,from,outj,outi)
+   local input = pooler:forward(original)
+   local groundtruth = sunpool:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sunpool:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   original = original:cuda()
+   pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then pooler:ceil() end
+   local gunpool = nn.SpatialMaxUnpooling(pooler):cuda()
+
+   input = pooler:forward(original)
+   local rescuda = gunpool:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gunpool:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
 function cunntest.SpatialMaxPooling_backward()
    local from = math.random(1,64)
    local to = from
@@ -1334,6 +1387,68 @@ function cunntest.SpatialMaxPooling_backward_batch()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
+function cunntest.SpatialMaxUnpooling_backward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local ki = math.random(2,4)
+   local kj = math.random(2,4)
+   local si = ki
+   local sj = kj
+   local outi = math.random(32,256)
+   local outj = math.random(32,256)
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local ceil_mode = math.random(0,1) == 1
+   local fun = ceil_mode and torch.ceil or torch.floor
+   local ini = fun((outi + padi*2 - ki)/si) +1
+   local inj = fun((outj + padj*2 - kj)/sj) +1
+
+   local tm = {}
+   local title = string.format('SpatialMaxUnpooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
+                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
+   times[title] = tm
+
+   local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
+   if ceil_mode then pooler:ceil() end
+   local sunpool = nn.SpatialMaxUnpooling(pooler)
+
+   local original = torch.randn(bs,from,outj,outi)
+   local input = pooler:forward(original)
+   local gradOutput = torch.randn(original:size())
+   sunpool:forward(input)
+   sunpool:zeroGradParameters()
+   local groundgrad = sunpool:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sunpool:zeroGradParameters()
+      groundgrad = sunpool:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
+   if ceil_mode then pooler:ceil() end
+   local gunpool = nn.SpatialMaxUnpooling(pooler):cuda()
+
+   original = original:cuda()
+   input = pooler:forward(original)
+   gunpool:forward(input)
+
+   gradOutput = gradOutput:cuda()
+   gunpool:zeroGradParameters()
+   local rescuda = gunpool:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gunpool:zeroGradParameters()
+      rescuda = gunpool:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
 
 function cunntest.SpatialFractionalMaxPooling_forward()
     local batch = math.random(1, 3)
