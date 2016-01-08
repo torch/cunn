@@ -18,9 +18,7 @@ int luaopen_libcunn(lua_State *L)
   lua_newtable(L);
   cunn_SpatialCrossMapLRN_init(L);
   cunn_Tanh_init(L);
-  cunn_ELU_init(L);
   cunn_Sigmoid_init(L);
-  cunn_LogSoftMax_init(L);
   cunn_SoftMax_init(L);
   cunn_TemporalConvolution_init(L);
   cunn_TemporalMaxPooling_init(L);
@@ -46,11 +44,8 @@ int luaopen_libcunn(lua_State *L)
   cunn_VolumetricFullConvolution_init(L);
   cunn_VolumetricMaxPooling_init(L);
   cunn_VolumetricAveragePooling_init(L);
-  cunn_LogSigmoid_init(L);
   cunn_PReLU_init(L);
   cunn_RReLU_init(L);
-  cunn_LeakyReLU_init(L);
-  cunn_LookupTable_init(L);
 
   return 1;
 }

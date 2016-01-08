@@ -12,9 +12,7 @@ THCState* getCutorchState(lua_State* L);
 
 void cunn_SpatialCrossMapLRN_init(lua_State *L);
 void cunn_Tanh_init(lua_State *L);
-void cunn_ELU_init(lua_State *L);
 void cunn_Sigmoid_init(lua_State *L);
-void cunn_LogSoftMax_init(lua_State *L);
 void cunn_SoftMax_init(lua_State *L);
 void cunn_TemporalConvolution_init(lua_State *L);
 void cunn_TemporalMaxPooling_init(lua_State *L);
@@ -40,10 +38,7 @@ void cunn_VolumetricConvolution_init(lua_State *L);
 void cunn_VolumetricFullConvolution_init(lua_State *L);
 void cunn_VolumetricMaxPooling_init(lua_State *L);
 void cunn_VolumetricAveragePooling_init(lua_State *L);
-void cunn_LogSigmoid_init(lua_State *L);
 void cunn_PReLU_init(lua_State *L);
 void cunn_RReLU_init(lua_State *L);
-void cunn_LeakyReLU_init(lua_State *L);
-void cunn_LookupTable_init(lua_State *L);
 
 #endif
