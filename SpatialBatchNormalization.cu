@@ -327,8 +327,8 @@ static int cunn_SpatialBatchNormalization_backward(lua_State *L) {
 
   cudaStream_t s = THCState_getCurrentStream(state);
 
-  dim3 blocks(gradInput.getSize(1));
-  if (gradInput.getSize(3) >= 12 && gradInput.getSize(2) >= 12) {
+  dim3 blocks(gradOutput.getSize(1));
+  if (gradOutput.getSize(3) >= 12 && gradOutput.getSize(2) >= 12) {
     dim3 threads(16, 16);
     SpatialBatchNormalizationBackward_kernel<16>
       <<<blocks, threads, 0, s>>>

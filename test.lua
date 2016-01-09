@@ -582,7 +582,7 @@ function cunntest.SpatialBatchNormalization_forward_inference()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward evaluate)')
 end
 
-function cunntest.SpatialBatchNormalization_backward()
+local function SpatialBatchNormalization_backward(backwardFn)
    local batch = math.random(2,32)
    local planes = math.random(1,64)
    local height = math.random(1,64)
@@ -598,11 +598,11 @@ function cunntest.SpatialBatchNormalization_backward()
    local sbnorm = nn.SpatialBatchNormalization(planes)
    sbnorm:forward(input)
    sbnorm:zeroGradParameters()
-   local groundgrad = sbnorm:backward(input, gradOutput)
+   local groundgrad = backwardFn(sbnorm, input, gradOutput)
    local a = torch.Timer()
    for i = 1,nloop do
       sbnorm:zeroGradParameters()
-      groundgrad = sbnorm:backward(input, gradOutput)
+      groundgrad = backwardFn(sbnorm, input, gradOutput)
    end
    local groundweight = sbnorm.gradWeight
    local groundbias = sbnorm.gradBias
@@ -615,11 +615,11 @@ function cunntest.SpatialBatchNormalization_backward()
    gbnorm.bias = sbnorm.bias:cuda()
    gbnorm:forward(input)
    gbnorm:zeroGradParameters()
-   local rescuda = gbnorm:backward(input, gradOutput)
+   local rescuda = backwardFn(gbnorm, input, gradOutput)
    a:reset()
    for i = 1,nloop do
       gbnorm:zeroGradParameters()
-      rescuda = gbnorm:backward(input, gradOutput)
+      rescuda = backwardFn(gbnorm, input, gradOutput)
    end
    local weightcuda = gbnorm.gradWeight
    local biascuda = gbnorm.gradBias
@@ -633,6 +633,17 @@ function cunntest.SpatialBatchNormalization_backward()
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+end
+
+function cunntest.SpatialBatchNormalization_backward()
+   SpatialBatchNormalization_backward(function(m, input, gradOutput)
+      return m:backward(input, gradOutput)
+   end)
+   SpatialBatchNormalization_backward(function(m, input, gradOutput)
+      local gradInput = m:updateGradInput(input, gradOutput)
+      m:accGradParameters(input, gradOutput)
+      return gradInput
+   end)
 end
 
 function cunntest.SpatialConvolutionMM_forward_single()
