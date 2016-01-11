@@ -1,189 +1,45 @@
-local gpuLocalCopyBuffers = {}
-local baseGpuIndex = 1  -- A constant
+--[[
+   This file implements data parallelism for Torch modules.
 
--- *****************************************************************************
--- Helper Functions
--- *****************************************************************************
--- queryGPUDeviceId - Function to query a tensor or table for the
--- GPUID.  For tables we will search the table for CudaTensors, query their
--- device and make sure the deviceIds of ALL CudaTensors are on the same GPU.
-local function queryGPUDeviceId(object)
-   if torch.type(object) == 'torch.CudaTensor' then
-      return object:getDevice()
+   The same model is replicated on multiple GPUs. The input is split, typically
+   into smaller mini-batches. Each replicated model handles only its portion of the input.
+   The weight updates for each replica are summed together on the first replica
+   in accGradParameters.
+
+   By default, this module uses only one thread and relies on asynchronous kernel launches.
+   To use multiple threads, call DataParallelTable:threads(initFunc).
+
+   For best performance, install NCCL:
+    https://github.com/NVIDIA/nccl
+    https://github.com/ngimel/nccl.torch
+]]--
+local DataParallelTable, parent = torch.class('nn.DataParallelTable', 'nn.Container')
+
+local Impls = {}
+local BasicImpl = torch.class('nn.DataParallelTable.Basic', Impls)
+local ThreadsImpl = torch.class('nn.DataParallelTable.Threads', Impls)
+
+
+-- NCCL does not work when CUDA_LAUNCH_BLOCKING is set
+local cudaLaunchBlocking = os.getenv('CUDA_LAUNCH_BLOCKING') == '1'
+
+-- extracts the value at idx from each entry in tbl
+local function pluck(tbl, idx)
+   local r = {}
+   for n, val in ipairs(tbl) do
+      r[n] = val[idx]
    end
-
-   local deviceId
-
-   -- Try finding a parameter
-   local stack = {}  -- explicit stack to recurse on tables
-   for key, param in pairs(object) do
-      if key ~= 'modules' then
-         stack[#stack+1] = param  -- Push onto the stack
-      end
-   end
-   while #stack > 0 do
-      local param = stack[#stack]; stack[#stack] = nil  -- Pop the stack
-      if (torch.type(param) == 'table') then
-         for i = 1, #param do stack[#stack+1] = param[i] end  -- Push onto stack
-      elseif (torch.type(param) == 'torch.CudaTensor') then
-         if (torch.numel(param) > 0) then
-            -- Empty tensors are always on GPU "0"
-            local curId = param:getDevice()
-            if deviceId == nil then
-               deviceId = curId
-            else
-               assert(deviceId == curId,
-               'Found CudaTensor instances from different devices')
-            end
-         end
-      end
-   end
-
-   return deviceId
+   return r
 end
 
--- Get an avaliable GPU buffer for asyncGPUCopy.  It is used when the GPU tensor
--- is not contiguous.
-local function getBuffer()
-   local device = cutorch.getDevice()
-   if not gpuLocalCopyBuffers[device] then
-      gpuLocalCopyBuffers[device] = torch.CudaTensor()
-   end
-   return gpuLocalCopyBuffers[device]
-end
-
--- setDeviceSafe - Avoid redundant calls to setDevice
-local function setDevice(gpuid)
-   if (cutorch.getDevice() ~= gpuid) then
-      cutorch.setDevice(gpuid)
+-- Synchronizes the current stream on dst device with src device. This is only
+-- necessary if we are not on the default stream
+local function waitForDevice(dst, src)
+   local stream = cutorch.getStream()
+   if stream ~= 0 then
+      cutorch.streamWaitForMultiDevice(dst, stream, { [src] = {stream} })
    end
 end
-
--- Asynchronous copy from source to dest from GPU to GPU.
--- This is borrowed (with modifications) from fbcunn.
-local function asyncGPUCopy(dest, source)
-   assert(torch.typename(dest) == 'torch.CudaTensor')
-   assert(torch.typename(source) == 'torch.CudaTensor')
-   local prevDevice = cutorch.getDevice()
-
-   local destGpuid = dest:getDevice()
-   local sourceGpuid = source:getDevice()
-
-   if sourceGpuid == destGpuid then
-      -- if both tensors are on the same gpu normal operation works
-      setDevice(destGpuid)
-      dest:copy(source)
-      setDevice(prevDevice)
-      return
-   end
-
-   if source:isContiguous() and dest:isContiguous() then
-      -- if both tensors are contiguous operation across gpus works
-      setDevice(destGpuid)
-      dest:copy(source)
-      setDevice(prevDevice)
-      return
-   end
-
-   -- Either the dest or the source are not contiguous.  we will need to do
-   -- intermediate copies.
-   local tmpSource = source
-   if not source:isContiguous() then
-      setDevice(sourceGpuid)
-      tmpSource = getBuffer()
-      tmpSource:resizeAs(source)
-      tmpSource:copy(source)  -- Make contiguous using a copy
-   end
-
-   setDevice(destGpuid)
-   local tmpDest = dest
-   if not dest:isContiguous() then
-      local tmpDest = getBuffer()
-      tmpDest:resizeAs(tmpSource)
-      tmpDest:copy(tmpSource)
-   end
-
-   dest:copy(tmpDest)
-
-   cutorch.synchronize()  -- Ensures we keep the buffer for the copy duration
-
-   -- Put the device back to what it was.
-   setDevice(prevDevice)
-end
-
-local function equalSize(sizeTable1, sizeTable2)
-   if (#sizeTable1 ~= #sizeTable2) then
-      return false
-   end
-   for i = 1, #sizeTable1 do
-      if sizeTable1[i] ~= sizeTable2[i] then return false end
-   end
-   return true
-end
-
--- deepTensorsCopy - perform an elementwise copy of the tensors in the nested
--- table. We assume that the tables are properly initialized (ie same size and
--- structure), although we will assert it.
-local function deepTensorsCopy(dst, src)
-   if (torch.type(src) == 'table') then
-      assert(torch.type(dst) == 'table' and #src == #dst)
-      for i = 1, #src do deepTensorsCopy(dst[i], src[i]) end
-   elseif torch.type(src):find('torch%..+Tensor') then
-      assert(torch.type(dst):find('torch%..+Tensor'))
-      assert(dst:isSameSizeAs(src))
-      asyncGPUCopy(dst, src)
-   else
-      error('input must be a nested table of tensors!')
-   end
-end
-
--- deepTensorsAdd - perform an elementwise add of the tensors in the nested
--- table. We assume that the tables are properly initialized (ie same size and
--- structure), although we will assert it.
---
--- Note: this is necessary because add() will malloc new memory on the cuda
--- driver side every time we want to get new memory!  Therefore, we actually
--- need to copy src to the dst gpu
-local function deepTensorsAdd(dst, src)
-   if (torch.type(src) == 'table') then
-      assert(torch.type(dst) == 'table' and #src == #dst)
-      for i = 1, #src do deepTensorsAdd(dst[i], src[i]) end
-   elseif torch.type(src):find('torch%..+Tensor') then
-      assert(torch.type(dst):find('torch%..+Tensor'))
-      assert(dst:isSameSizeAs(src))
-
-      local dstGpuid = dst:getDevice()
-      local srcGpuid = src:getDevice()
-      local curGpuid = cutorch:getDevice()
-      setDevice(dstGpuid)
-
-      -- Copy src over to a buffer on the dst GPU
-      local srcBufferOnDstGpu = src
-      if (dstGpuid ~= srcGpuid) then
-         srcBufferOnDstGpu = getBuffer()
-         srcBufferOnDstGpu:resizeAs(src)
-         assert(src:isContiguous())
-         srcBufferOnDstGpu:copy(src)
-      end
-
-      -- Perform the actual add
-      dst:add(srcBufferOnDstGpu)
-      if (dstGpuid ~= srcGpuid) then
-         -- Ensures we get to keep the buffer for the duration of the add
-         cutorch.synchronize()
-      end
-
-      setDevice(curGpuid)  -- Put the GPU id back to what it was
-   else
-      error('input must be a nested table of tensors!')
-   end
-end
-
--- *****************************************************************************
--- DataParallelTable
--- *****************************************************************************
-local DataParallelTable, parent = torch.class('nn.DataParallelTable',
-'nn.Container')
 
 function DataParallelTable:__init(dimension, flattenParams, usenccl)
    parent.__init(self)
@@ -198,253 +54,206 @@ function DataParallelTable:__init(dimension, flattenParams, usenccl)
    self.gradOutputGpu = {} -- gradOutputs for each gpu
    self.outputGpu = {} -- outputs for each gpu
    self.gradInputGpu = {} -- gradInput for each gpu
-   self.flattenParams = flattenParams ~= nil and flattenParams or true
-   self.usenccl = (usenccl ~= nil and usenccl or true) and self.flattenParams
-   self.flattenedParamsGpu = {} --flattened parameters for each gpu
-   self.flattenedGradParamsGpu = {} --flattened parameters for each gpu
-   if self.usenccl then
-     if not pcall(function() require('nccl') end) then
-        print("warning: could not load nccl, falling back to default communication")
-        self.usenccl=false
-     end
+   self.flattenedParams = nil -- flattened parameters for each gpu
+   self.flattenParams = flattenParams or false
+   self.usenccl = false
+   self.needsSync = false
+   self.impl = Impls.Basic(self)
+   if usenccl then
+      assert(self.flattenParams, 'cannot use nccl without flattenParams')
+      self.usenccl = pcall(require, 'nccl')
+      if not self.usenccl then
+         print("warning: could not load nccl, falling back to default communication")
+      end
    end
 end
 
+function DataParallelTable:add(module, gpus)
+   if type(gpus) == 'number' then
+      if #self.modules == 0 then
+         table.insert(self.modules, module)
+      end
+      table.insert(self.gpuAssignments, gpus)
+      return self
+   end
 
--- NOTE: The input should be on the FIRST added GPU device, and similarly the
--- output will be on the FIRST GPU device.
-function DataParallelTable:add(module, gpuid)
-   assert(gpuid <= cutorch.getDeviceCount() and gpuid >= 1)
-   assert(#self.modules == #self.gpuAssignments)
+   assert(torch.type(gpus) == 'table' and #gpus >= 1, 'table of GPU IDs required')
+   assert(#self.modules == 0, 'add should only be called once with a table of GPU assignments')
+   self.modules[1] = module
+   self.gpuAssignments = gpus
+   return self
+end
 
-   self.modules[#self.modules + 1] = module:cuda()
-   self.gpuAssignments[#self.gpuAssignments + 1] = gpuid
-
+function DataParallelTable:threads(initFunc)
+   require 'threads'
+   self.impl:close()
+   self.impl = Impls.Threads(self, initFunc)
    return self
 end
 
 function DataParallelTable:__tostring()
-   return 'DataParallelTable: ' .. #self.modules .. ' x ' .. tostring(self.modules[1])
+   return 'DataParallelTable: ' .. #self.gpuAssignments .. ' x ' .. tostring(self.modules[1])
 end
 
 function DataParallelTable:get(index)
    return self.modules[index]
 end
 
-
+-- this flattens parameters, so that syncParameters and accGradParameters can be much more efficient
 function DataParallelTable:flattenParameters()
-  if #self.modules == 1 then self.flattenParams = false return end
-  local prevGpuid = cutorch.getDevice()
-  local sizetmp,stridetmp
-  for i=1, #self.modules do
-   if i ~= baseGpuIndex then
-     local gpuid = self.gpuAssignments[i]
-     setDevice(gpuid)
-     self.flattenedParamsGpu[i],self.flattenedGradParamsGpu[i] = self.modules[i]:getParameters()
-     sizetmp = self.flattenedParamsGpu[i]:size()
-     stridetmp = self.flattenedParamsGpu[i]:stride()
-   end
-  end
---make sure that parameters for baseGpu were flattened before
-  local params, gradParams = self.modules[baseGpuIndex]:parameters()
-  local paramStorage = params[1]:storage()
-  local gradParamStorage = gradParams[1]:storage()
-  local paramsOffset = params[1]:storageOffset()
-  local gradOffset = gradParams[1]:storageOffset()
-  local baseFlattened = true
-  for i=2, #params do
-    if params[i]:storage() ~= paramStorage then baseFlattened = false end
-    if gradParams[i]:storage() ~= gradParamStorage then baseFlattened = false end
-  end
-  if not baseFlattened then
-    self.flattenedParamsGpu = {}
-    self.flattenedGradParamsGpu = {}
-    self.flattenParams = false
-  else
-    setDevice(self.gpuAssignments[baseGpuIndex])
-    self.flattenedParamsGpu[baseGpuIndex]=params[1].new(paramStorage,paramsOffset,sizetmp,stridetmp)
-    self.flattenedGradParamsGpu[baseGpuIndex]=params[1].new(gradParamStorage,gradOffset,sizetmp,stridetmp)
-  end
+   self.flattenedParams = self.impl:exec(function(module)
+      return { module:getParameters() }
+   end)
+   self.flattenParams = true
+end
 
-  setDevice(prevGpuid)
+function DataParallelTable:getParameters()
+   self:flattenParameters()
+   return table.unpack(self.flattenedParams[1])
+end
+
+local function hasFlattenedParmeters(self)
+   if not self.flattenedParams then
+      return false
+   end
+   for _, param in ipairs(self.modules[1]:parameters()) do
+      if param:storage() ~= self.flattenedParams[1][1]:storage() then
+         return false
+      end
+   end
+   return true
+end
+
+function DataParallelTable:training()
+   self.impl:exec(function(module)
+      module:training()
+   end)
+   parent.training(self)
+end
+
+function DataParallelTable:evaluate()
+   self.impl:exec(function(module)
+      module:evaluate()
+   end)
+   parent.evaluate(self)
 end
 
 function DataParallelTable:updateOutput(input)
-
-   if self.flattenParams and not self.flattenedParamsGpu[baseGpuIndex] then
-     self:flattenParameters()
+   if self.flattenParams and not hasFlattenedParmeters(self) then
+      self:flattenParameters()
    end
-
-   local baseGpuid = self.gpuAssignments[baseGpuIndex]
-   assert(queryGPUDeviceId(input) == baseGpuid, 'Input is not on gpu ' ..
-   baseGpuid)
+   if self.needsSync then
+      self:syncParameters()
+   end
 
    local prevGpuid = cutorch.getDevice()
 
    -- distribute the input to GPUs
-   for i = 1, #self.modules do
-      local gpuid = self.gpuAssignments[i]
-      -- Split the tensors in the input nested table to the GPU with gpuid
-      -- _distributeTensorRecursive(src,dst,srcGpuid,srcInd,dstGpuid,dstInd)
-      self.inputGpu[gpuid] = self:_distributeTensorRecursive(
-         input, self.inputGpu[gpuid],
-         baseGpuid, baseGpuIndex, gpuid, i,
-         #self.modules
-      )
-   end
+   self:_distribute(self.inputGpu, input)
 
-   cutorch.synchronize()
-
-   -- update output for each module asynchronously
-   for i, module in ipairs(self.modules) do
-      local gpuid = self.gpuAssignments[i]
-      setDevice(gpuid)
-      self.outputGpu[gpuid] = module:updateOutput(self.inputGpu[gpuid])
-   end
-
-   cutorch.synchronize()
+   -- update output for each module
+   local inputGpu = self.inputGpu
+   self.outputGpu = self.impl:exec(function(m, i)
+      if torch.isTensor(inputGpu[i]) and inputGpu[i]:numel() == 0 then
+         return torch.CudaTensor()
+      else
+         return m:updateOutput(inputGpu[i])
+      end
+   end)
 
    -- concatenate the outputs to the base GPU
-   for i = 1, #self.modules do
-      local gpuid = self.gpuAssignments[i]
-      -- Merge the tensors in the input nested table to the GPU with gpuid
-      -- _concatTensorRecursive(src,dst,srcGpuid,srcInd,dstGpuid,dstInd)
-      self.output = self:_concatTensorRecursive(
-         self.outputGpu[gpuid], self.output,
-         gpuid, i, baseGpuid, baseGpuIndex,
-         #self.modules
-      )
-   end
+   self.output = self:_concat(self.output, self.outputGpu)
 
-   setDevice(prevGpuid)
+   cutorch.setDevice(prevGpuid)
 
    return self.output
 end
 
-function DataParallelTable:updateGradInput(input, gradOutput)
-   -- We assume that updateOutput has already been called (therefore inputGpu
-   -- has been populated)
-   local baseGpuid = self.gpuAssignments[baseGpuIndex]
-   assert(queryGPUDeviceId(gradOutput) == baseGpuid,
-   'gradOutput is not on gpu ' .. baseGpuid)
+function DataParallelTable:moduleParameters()
+   -- Returns a table containing the parameters for each replica
+   if self.flattenedParams then
+      local res = {}
+      for i, params in ipairs(self.flattenedParams) do
+         res[i] = { {params[1]}, {params[2]} }
+      end
+      return res
+   end
+   return self.impl:exec(function(m)
+      return { m:parameters() }
+   end)
+end
 
+function DataParallelTable:__backward(method, input, gradOutput, scale)
    local prevGpuid = cutorch.getDevice()
+   local inputGpu, gradOutputGpu = self.inputGpu, self.gradOutputGpu
 
-   -- distribute the gradOutput to GPUs
-   for i = 1, #self.modules do
-      local gpuid = self.gpuAssignments[i]
-      -- Split the tensors in the input nested table to the GPU with gpuid
-      -- _distributeTensorRecursive(src,dst,srcGpuid,srcInd,dstGpuid,dstInd)
-      self.gradOutputGpu[gpuid] = self:_distributeTensorRecursive(gradOutput,
-         self.gradOutputGpu[gpuid], baseGpuid, baseGpuIndex, gpuid, i, #self.modules)
+   if method == 'backward' or method == 'updateGradInput' then
+      -- distribute the gradOutput to GPUs
+      self:_distribute(self.gradOutputGpu, gradOutput)
+
+      self.gradInputGpu = self.impl:exec(function(m, i)
+         if torch.isTensor(inputGpu[i]) and inputGpu[i]:numel() == 0 then
+            return torch.CudaTensor()
+         else
+            return m[method](m, inputGpu[i], gradOutputGpu[i], scale)
+         end
+      end)
+
+      if self.gradInput then
+         -- concatenate the gradInput to the base GPU
+         self.gradInput = self:_concat(self.gradInput, self.gradInputGpu)
+      end
    end
 
-   cutorch.synchronize()
-
-   -- update gradInput for each module asynchronously
-   for i, module in ipairs(self.modules) do
-      local gpuid = self.gpuAssignments[i]
-      setDevice(gpuid)
-      self.gradInputGpu[gpuid] = module:updateGradInput(self.inputGpu[gpuid],
-      self.gradOutputGpu[gpuid])
-   end
-   if self.gradInput then
-
-   cutorch.synchronize()
-
-   -- concatenate the outputs to the base GPU
-   for i = 1, #self.modules do
-      local gpuid = self.gpuAssignments[i]
-      -- Merge the tensors in the input nested table to the GPU with gpuid
-      -- _concatTensorRecursive(src,dst,srcGpuid,srcInd,dstGpuid,dstInd)
-      self.gradInput = self:_concatTensorRecursive(self.gradInputGpu[gpuid],
-         self.gradInput, gpuid, i, baseGpuid, baseGpuIndex, #self.modules)
+   if method == 'accGradParameters' then
+      self.impl:exec(function(m, i)
+         if torch.isTensor(inputGpu[i]) and inputGpu[i]:numel() == 0 then
+            return torch.CudaTensor()
+         else
+            return m:accGradParameters(inputGpu[i], gradOutputGpu[i], scale)
+         end
+      end)
    end
 
-   cutorch.synchronize()
+   if method == 'backward' or method == 'accGradParameters' then
+      -- Accumulate the gradients onto the base GPU
+      if self.flattenedParams and self.usenccl and not cudaLaunchBlocking then
+         if #self.gpuAssignments > 1 then
+            nccl.reduce(pluck(self.flattenedParams, 2), nil, true, 1)
+         end
+      else
+         self:_reduce(pluck(self:moduleParameters(), 2))
+      end
+      self.needsSync = true
    end
-   setDevice(prevGpuid)
 
+   cutorch.setDevice(prevGpuid)
    return self.gradInput
 end
 
+function DataParallelTable:backward(input, gradOutput, scale)
+   return self:__backward('backward', input, gradOutput, scale)
+end
+
+function DataParallelTable:updateGradInput(input, gradOutput)
+   return self:__backward('updateGradInput', input, gradOutput)
+end
+
 function DataParallelTable:accGradParameters(input, gradOutput, scale)
-   -- We assume updateGradInput has already been called (so gradOutput has
-   -- already been populated)
-   local prevGpuid = cutorch.getDevice()
-   local baseGpuid = self.gpuAssignments[baseGpuIndex]
-
-   scale = scale or 1
-   -- Calculate the gradWeight + gradBias on each sub-module
-   for i, module in ipairs(self.modules) do
-      local gpuid = self.gpuAssignments[i]
-      setDevice(gpuid)
-      module:accGradParameters(self.inputGpu[gpuid], self.gradOutputGpu[gpuid],
-      scale)
-   end
-
-   setDevice(self.gpuAssignments[baseGpuIndex])
-
---   cutorch.synchronize()  -- We have to wait until accGradParameters has finished - no we don't. If we are using default streams, implicit sync in memcpy is enough, if we are not, then cutorch.synchronize on the last device is not enough
-
-   -- Accumulate the gradients onto one GPU (the first one)
-   -- TODO: Parallelize this (ie a parallel merge)
-   if self.flattenParams and self.usenccl then                
-       nccl.reduce(self.flattenedGradParamsGpu, nil,true,baseGpuIndex)
-   else
-      local baseParams, baseGradParams
-      if self.flattenParams then
-	baseGradParams = self.flattenedGradParamsGpu[baseGpuIndex]
-      else
-	 _, baseGradParams = self.modules[baseGpuIndex]:parameters()
-      end
-      for i, module in ipairs(self.modules) do
-	 if (i ~= baseGpuIndex) then
-	    local gradParams
-	    if self.flattenParams then
-	       gradParams = self.flattenedGradParamsGpu[i]
-	    else
-	       _, gradParams = self.modules[i]:parameters()
-	    end
-	    deepTensorsAdd(baseGradParams, gradParams)  -- dst, src
-	    cutorch.synchronize()         
-	 end
-      end
-   end
-   setDevice(prevGpuid)
+   self:__backward('accGradParameters', input, gradOutput, scale)
 end
 
 function DataParallelTable:syncParameters()
    local prevGpuid = cutorch.getDevice()
-   if self.flattenParams and self.usenccl then
-      nccl.bcast(self.flattenedParamsGpu, true,baseGpuIndex)
+   if self.flattenedParams and self.usenccl and not cudaLaunchBlocking then
+      if #self.gpuAssignments > 1 then
+         nccl.bcast(pluck(self.flattenedParams, 1), true, 1)
+      end
    else
-      local baseParams
-      if self.flattenParams then
-	   baseParams = self.flattenedParamsGpu[baseGpuIndex]
-      else
-	   baseParams, _ = self.modules[baseGpuIndex]:parameters()
-      end
-      -- TODO: Parallelize this (ie a parallel copy)
-      for i, module in ipairs(self.modules) do
-	 if (i ~= baseGpuIndex) then
-	    local params
-	    if self.flattenParams then
-	      params = self.flattenedParamsGpu[i]
-	    else
-	      params, _ = self.modules[i]:parameters()
-	    end
-	    deepTensorsCopy(params, baseParams)  -- dst, src
-	 end
-      end
-      cutorch.synchronize()
+      self:_broadcast(pluck(self:moduleParameters(), 1))
    end
-   setDevice(prevGpuid)
-end
-
--- For compatability with nn.Optim from fbcunn
-function DataParallelTable:MixGrads()
-   self:syncParameters()
+   self.needsSync = false
+   cutorch.setDevice(prevGpuid)
 end
 
 function DataParallelTable:accUpdateGradParameters(input, gradOutput, lr)
@@ -453,147 +262,419 @@ end
 
 function DataParallelTable:zeroGradParameters()
    local prevGpuid = cutorch.getDevice()
-   for i, module in ipairs(self.modules) do
-      setDevice(self.gpuAssignments[i])
-      module:zeroGradParameters()
+   if self.flattenedParams then
+      for i, parameters in ipairs(self.flattenedParams) do
+         cutorch.setDevice(self.gpuAssignments[i])
+         parameters[2]:zero()
+      end
+   else
+      self.impl:exec(function(m)
+         m:zeroGradParameters()
+      end)
    end
-   setDevice(prevGpuid)
+   cutorch.setDevice(prevGpuid)
 end
 
 function DataParallelTable:updateParameters(learningRate)
-   error("updateParameters not supported for DataParallelTable.")
+   local prevGpuid = cutorch.getDevice()
+   cutorch.setDevice(self.gpuAssignments[1])
+   self.modules[1]:updateParameters(learningRate)
+   self:syncParameters()
+   cutorch.setDevice(prevGpuid)
 end
 
 function DataParallelTable:parameters()
-   local prevGpuid = cutorch.getDevice()
-   setDevice(self.gpuAssignments[1])
-   local ret = {self.modules[1]:parameters()}
-   setDevice(prevGpuid)
-   return unpack(ret)
+   return self.modules[1]:parameters()
 end
 
 function DataParallelTable:share(mlp,...)
-   error("Share not supported for DataParallelTable.")
+   error("Share not supported for DataParallelTable")
 end
 
-function DataParallelTable:clone()
-   error("clone not supported for DataParallelTable.")
+function DataParallelTable:clone(...)
+   assert(select('#',...) == 0, "Sharing not supported for DataParallelTable")
+   return parent.clone(self)
 end
 
 function DataParallelTable:reset(stdv)
    local prevGpuid = cutorch.getDevice()
-   for i, module in ipairs(self.modules) do
-      setDevice(self.gpuAssignments[i])
-      module:reset(stdv)
-   end
-   setDevice(prevGpuid)
-end
-
-function DataParallelTable:name()
-   return 'DataParallelTable'
+   cutorch.setDevice(self.gpuAssignments[1])
+   self.modules[1]:reset(stdv)
+   self:syncParameters()
+   cutorch.setDevice(prevGpuid)
 end
 
 function DataParallelTable:type(typeStr)
-   assert(typeStr == 'torch.CudaTensor', "DataParallelTable supports only torch.CudaTensor type.")
+   assert(typeStr == 'torch.CudaTensor', 'DataParallelTable supports only torch.CudaTensor type')
+   for i, m in ipairs(self.modules) do
+      m:type(typeStr)
+   end
+   return self
 end
 
-function DataParallelTable:_calculateSliceRange(tensor, id, total)
-   local outerDim = tensor:size(self.dimension)
-   local eltsPerMod = torch.round( outerDim / #self.modules )
-   local rangeStart = (id - 1) * eltsPerMod + 1
-   local rangeEnd = rangeStart + eltsPerMod - 1
-   if id == total then
-      rangeEnd = outerDim
+-- Backward compatibility purposes
+DataParallelTable.__version = 3
+
+-- DataParallelTable.deserializeNGPUs controls how many GPUs to deserialize
+-- upon, otherwise will deserialize to as many GPUs as serialized and error
+-- out if it doesn;t have enough available
+function DataParallelTable:__read(file, version)
+   if version < 2 then
+      local var = file:readObject()
+      for k, v in pairs(var) do
+         self[k] = v
+      end
+      return
    end
-   self.batchSize = outerDim -- TODO: this is a hack to propagate batchSize to line 494
-                             --       but might not be generic enough
-   return {rangeStart, rangeEnd}
+
+   -- Pre-read gpuAssignments and either use them of ignore them depending on
+   -- whether DataParallelTable.deserializeNGPUs is set.
+   local gpuAssignments = file:readObject()
+   if DataParallelTable.deserializeNGPUs then
+      gpuAssignments = {}
+      for i = 1, DataParallelTable.deserializeNGPUs do gpuAssignments[i] = i end
+      if DataParallelTable.deserializeNGPUs > cutorch.getDeviceCount() then
+         error('Deserialization requested on too many GPUs: ' ..
+                  DataParallelTable.deserializeNGPUs .. ' vs ' ..
+                  cutorch.getDeviceCount() .. ' available')
+      end
+   end
+
+   -- If DataParallelTable.deserializeNGPUs, deserialization overrides
+   -- gpu assignments anyway. If not, we need as many GPUs as the max,
+   -- there may be holes.
+   local nGPUs = math.max(unpack(gpuAssignments))
+   if nGPUs > cutorch.getDeviceCount() then
+      error('Model was serialized on ' ..
+               math.max(unpack(gpuAssignments)) ..
+               ' nGPUs, but you are running on ' .. cutorch.getDeviceCount() ..
+               ' please set DataParallelTable.deserializeNGPUs to ignore ' ..
+               ' serialized tower-GPU assignments')
+   end
+
+   local prevGpuid = cutorch.getDevice()
+   cutorch.setDevice(gpuAssignments[1])
+   -- Deserialize from table
+   local var = file:readObject()
+   for k, v in pairs(var) do
+      self[k] = v
+   end
+   cutorch.setDevice(prevGpuid)
+
+   if self.usenccl then
+      self.usenccl = pcall(require, 'nccl')
+   end
+   if not self.impl then
+      self.impl = Impls.Basic(self)
+   end
+
+   -- use previously deserialize / recomputed gpuAssignments
+   self.gpuAssignments = gpuAssignments
+   assert(#self.modules == 1)
+
+   local flattenedParams = self.flattenedParams
+   if flattenedParams then
+      self.flattenedParams = self.impl:exec(function(m, i)
+         if i == 1 then
+            return flattenedParams[1]
+         else
+            return { m:getParameters() }
+         end
+      end)
+   end
+end
+
+function DataParallelTable:__write(file)
+   -- Prewrite the current assignments, we may need them to
+   -- deserialize the first tower
+   file:writeObject(self.gpuAssignments)
+   -- Convert to table
+   local t = {}
+   for k, v in pairs(self) do
+      -- Only keep the flattenedParams from the first module
+      if k  == 'flattenedParams' then
+         t[k] = {v[1]}
+      elseif k == 'inputGpu' or k == 'outputGpu' or k == 'gradInputGpu' or k == 'gradOutputGpu' then
+         t[k] = {}
+      elseif k == 'buffer' then
+         t[k] = nil
+      else
+         t[k] = v
+      end
+   end
+   file:writeObject(t)
+   -- Force synchronization, this keeps you honest
+   self:syncParameters()
+end
+
+function DataParallelTable:apply(callback)
+   parent.apply(self, callback)
+   self.impl:applyChanges()
+end
+
+local function sliceRange(nElem, idx, splits)
+   local eltsPerMod = nElem / splits
+   local rangeStart = math.floor((idx - 1) * eltsPerMod) + 1
+   if idx == splits then
+      return rangeStart, nElem - rangeStart + 1
+   else
+      return rangeStart, math.floor(idx * eltsPerMod) - rangeStart + 1
+   end
+end
+
+local function sumSizes(tensors, dim)
+   local size
+   for i=1,#tensors do
+      if tensors[i]:numel() > 0 then
+         if size then
+            size[dim] = size[dim] + tensors[i]:size(dim)
+         else
+            size = tensors[i]:size()
+         end
+      end
+   end
+   return size
+end
+
+-- Copies the parameters from the first replica to all other replicas
+function DataParallelTable:_broadcast(params)
+   for moduleIdx = 2, #params do
+      for paramIdx = 1, #params[moduleIdx] do
+         params[moduleIdx][paramIdx]:copy(params[1][paramIdx])
+      end
+      waitForDevice(self.gpuAssignments[moduleIdx], self.gpuAssignments[1])
+   end
+end
+
+-- Sums all the gradParams on to the first replica
+function DataParallelTable:_reduce(gradParams)
+   local dstGpuid = self.gpuAssignments[1]
+   cutorch.setDevice(dstGpuid)
+
+   self.buffer = self.buffer or torch.CudaTensor()
+   for moduleIdx = 2, #gradParams do
+      for paramIdx = 1, #gradParams[moduleIdx] do
+         local dst = gradParams[1][paramIdx]
+         local src = gradParams[moduleIdx][paramIdx]
+
+         -- Synchronize before and after copy to ensure that it doesn't overlap
+         -- with this add or previous adds
+         waitForDevice(self.gpuAssignments[moduleIdx], dstGpuid)
+         self.buffer:resizeAs(src):copy(src)
+         waitForDevice(dstGpuid, self.gpuAssignments[moduleIdx])
+
+         dst:add(self.buffer)
+      end
+   end
+end
+
+function DataParallelTable:_distribute(dst, src)
+   for i = 1, #self.gpuAssignments do
+      cutorch.setDevice(self.gpuAssignments[i])
+      dst[i] = self:_distributeTensorRecursive(dst[i], src, i, #self.gpuAssignments)
+   end
 end
 
 -- _distributeTensorRecursive - if the src is a tensor then the function slices
 -- it long self.dimension and copies each portion into each child module.
 -- Otherwise it does a recursive call on tables.
-function DataParallelTable:_distributeTensorRecursive(src, dst,
-   srcGpuid, srcIndex, dstGpuid, dstIndex, nModules)
-   if (torch.type(src) == 'table') then
+function DataParallelTable:_distributeTensorRecursive(dst, src, idx, n)
+   if torch.type(src) == 'table' then
       if torch.type(dst) ~= 'table' or #src ~= #dst then
          dst = {}
       end
 
       -- Recurse on the table
       for i = 1, #src do
-         dst[i] = self:_distributeTensorRecursive(src[i], dst[i], srcGpuid,
-         srcIndex, dstGpuid, dstIndex, nModules)
+         dst[i] = self:_distributeTensorRecursive(dst[i], src[i], idx, n)
       end
+      return dst
+   end
 
-   elseif torch.type(src):find('torch%..+Tensor') then
-      if (dst == nil or torch.type(dst) ~= 'torch.CudaTensor') then
-         -- Allocate only on startup or when input table structure changes.
-         -- Otherwise we will just resize the tensor below.
-         setDevice(dstGpuid)
-         dst = torch.CudaTensor()
-      end
+   assert(torch.isTensor(src), 'input must be a tensor or table of tensors')
+   assert(src:type() == 'torch.CudaTensor' or src:type() == 'torch.FloatTensor',
+      'input must be a CUDA or Float tensor')
 
-      -- Split the tensor
-      assert(torch.typename(src) == 'torch.CudaTensor')
-      local slice = src[{self:_calculateSliceRange(src, dstIndex, nModules)}]
+   dst = torch.type(dst) == 'torch.CudaTensor' and dst or torch.CudaTensor()
 
-      if not dst:isSameSizeAs(slice) then
-         setDevice(dstGpuid)
-         dst:resizeAs(slice)
-      end
-
-      asyncGPUCopy(dst, slice)  -- dst, src
+   local index, size = sliceRange(src:size(self.dimension), idx, n)
+   if size == 0 then
+      dst:resize(0)
    else
-      error('input must be a nested table of tensors!')
+      local slice = src:narrow(self.dimension, index, size)
+      dst:resize(slice:size()):copyAsync(slice)
+      if slice.getDevice then
+         waitForDevice(dst:getDevice(), slice:getDevice())
+      end
    end
 
    return dst
 end
 
--- _concatTensorRecursive - if the src is a tensor then the function copies it
+-- _concat - if the src is a tensor then the function copies it
 -- into the dst slice along self.dimension.
 -- Otherwise it does a recursive call on tables.
-function DataParallelTable:_concatTensorRecursive(src, dst, srcGpuid,
-   srcIndex, dstGpuid, dstIndex, nModules)
-   if (torch.type(src) == 'table') then
-      if torch.type(dst) ~= 'table' or #src ~= #dst then
+function DataParallelTable:_concat(dst, src)
+   dst = self:_concatTensorRecursive(dst, src)
+   for i=2,#self.gpuAssignments do
+      waitForDevice(self.gpuAssignments[1], self.gpuAssignments[i])
+   end
+   return dst
+end
+
+function DataParallelTable:_concatTensorRecursive(dst, src)
+   if torch.type(src[1]) == 'table' then
+      if torch.type(dst) ~= 'table' or #src[1] ~= #dst then
          dst = {}
       end
-
-      -- Recurse on the table
-      for i = 1, #src do
-         dst[i] = self:_concatTensorRecursive(src[i], dst[i], srcGpuid,
-            srcIndex, dstGpuid, dstIndex, nModules)
+      for i=1,#src[1] do
+         dst[i] = self:_concatTensorRecursive(dst[i], pluck(src, i))
       end
+      return dst
+   end
 
-   elseif torch.type(src):find('torch%..+Tensor') then
-      if (dst == nil or torch.type(dst) ~= 'torch.CudaTensor') then
-         -- Allocate only on startup or when input table structure changes.
-         -- Otherwise we will just resize the tensor below.
-         setDevice(dstGpuid)
-         dst = torch.CudaTensor()
+   assert(torch.isTensor(src[1]), 'input must be a tensor or table of tensors')
+
+   cutorch.setDevice(self.gpuAssignments[1])
+   dst = torch.type(dst) == 'torch.CudaTensor' and dst or torch.CudaTensor()
+
+   local cumsum = sumSizes(src, self.dimension)
+
+   if cumsum == nil then return dst end
+
+   dst:resize(cumsum)
+
+   local start = 1
+   for i, s in ipairs(src) do
+      if torch.numel(s) > 0 then
+         local sz = s:size(self.dimension)
+         dst:narrow(self.dimension, start, sz):copy(s)
+         start = start + sz
       end
-
-      if (torch.numel(src) > 0) then
-         -- Some modules return empty gradInputs if they don't actually return
-         -- anything.
-         local dstSize = src:size():totable()
-         dstSize[self.dimension] = self.batchSize
-         if not (equalSize(dst:size():totable(), dstSize)) then
-            setDevice(dstGpuid)
-            dst:resize(unpack(dstSize))
-         end
-
-         -- Split the tensor
-         assert(torch.typename(src) == 'torch.CudaTensor')
-         local slice = dst[{ self:_calculateSliceRange(dst, srcIndex, nModules) }]
-
-         asyncGPUCopy(slice, src)  -- dst, src
-      end
-   else
-      error('input must be a nested table of tensors!')
    end
 
    return dst
+end
+
+-- Single-thread dispatch
+function BasicImpl:__init(dpt)
+   self.dpt = dpt
+end
+
+-- Re-copies the first replica onto all the other GPUs, if already setup
+function BasicImpl:applyChanges()
+   if self.modules then
+      local prevGpuid = cutorch.getDevice()
+      self.modules = { self.dpt.modules[1] }
+      collectgarbage()
+      for i=2,#self.dpt.gpuAssignments do
+         cutorch.setDevice(self.dpt.gpuAssignments[i])
+         table.insert(self.modules, self.dpt.modules[1]:clone())
+      end
+      cutorch.setDevice(prevGpuid)
+   end
+end
+
+-- Copies the first replica onto all the other GPUs, if necessary
+function BasicImpl:setup()
+   if not self.modules then
+      self.modules = {}
+      self:applyChanges()
+   end
+end
+
+-- Applies a function to each replica, combining the results into a table
+function BasicImpl:exec(closure)
+   local prevGpuid = cutorch.getDevice()
+   self:setup()
+   local res = {}
+   for i, gpu in ipairs(self.dpt.gpuAssignments) do
+      cutorch.setDevice(gpu)
+      res[i] = closure(self.modules[i], i)
+   end
+   cutorch.setDevice(prevGpuid)
+   return res
+end
+
+function BasicImpl:__write(file)
+   local t = {}
+   for k, v in pairs(self) do
+      if k ~= 'modules' then
+         t[k] = v
+      end
+   end
+   file:writeObject(t)
+end
+
+function BasicImpl:close()
+   self.modules = nil
+end
+
+-- Multi-threaded dispatch
+function ThreadsImpl:__init(dpt, initFunc)
+   self.dpt = dpt
+   self.initFunc = initFunc
+end
+
+function ThreadsImpl:applyChanges()
+   if self.__threads then
+      local module = self.dpt.modules[1]
+      for i, gpu in ipairs(self.dpt.gpuAssignments) do
+         self.__threads:addjob(i, function()
+            cutorch.setDevice(gpu)
+            if i == 1 then
+               _G.module = module
+            else
+               _G.module = nil
+               collectgarbage()
+               _G.module = module:clone()
+            end
+         end)
+      end
+      self.__threads:synchronize()
+   end
+end
+
+function ThreadsImpl:setup()
+   if not self.__threads then
+      local threads = require 'threads'
+      threads.Threads.serialization('threads.sharedserialize')
+      self.__threads = threads.Threads(
+         #self.dpt.gpuAssignments,
+         function() require 'cunn' end,
+         self.initFunc)
+      self.__threads:specific(true)
+      self:applyChanges()
+   end
+end
+
+function ThreadsImpl:exec(closure)
+   self:setup()
+   local res = {}
+   for i=1,#self.dpt.gpuAssignments do
+      self.__threads:addjob(i,
+         function()
+            return closure(_G.module, i)
+         end,
+         function (_res_)
+            res[i] = _res_
+         end)
+   end
+   self.__threads:synchronize()
+   return res
+end
+
+function ThreadsImpl:close()
+   self.__threads:terminate()
+   self.__threads = nil
+end
+
+function ThreadsImpl:__write(file)
+   local t = {}
+   for k, v in pairs(self) do
+      if k ~= '__threads' then
+         t[k] = v
+      end
+   end
+   file:writeObject(t)
 end
