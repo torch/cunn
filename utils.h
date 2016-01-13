@@ -33,6 +33,7 @@ void cunn_Threshold_init(lua_State *L);
 void cunn_MSECriterion_init(lua_State *L);
 void cunn_SmoothL1Criterion_init(lua_State *L);
 void cunn_SoftPlus_init(lua_State *L);
+void cunn_SoftShrink_init(lua_State *L);
 void cunn_SpatialUpSamplingNearest_init(lua_State *L);
 void cunn_VolumetricConvolution_init(lua_State *L);
 void cunn_VolumetricFullConvolution_init(lua_State *L);

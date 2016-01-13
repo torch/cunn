@@ -244,6 +244,18 @@ function cunntest.Square_transposed()
    pointwise_transposed(nn.Square(), 'Square')
 end
 
+function cunntest.SoftShrink_forward()
+  pointwise_forward(nn.SoftShrink(math.random()), 'SoftShrink', precision_forward)
+end
+
+function cunntest.SoftShrink_backward()
+  pointwise_backward(nn.SoftShrink(math.random()), 'SoftShrink', precision_backward)
+end
+
+function cunntest.SoftShrink_transposed()
+  pointwise_transposed(nn.SoftShrink(math.random()), 'SoftShrink', precision_backward)
+end
+
 function cunntest.ELU_forward()
    pointwise_forward(nn.ELU(), 'ELU', precision_forward)
 end
