@@ -11,12 +11,6 @@ __device__ __forceinline__ int getMSB(int val) {
   return 31 - __clz(val);
 }
 
-// Computes floor(a / b)
-template <typename T>
-__host__ __device__ __forceinline__ T floor(T a, T b) {
-    return (a - b + 1) / b;
-}
-
 struct Float2 {
   float v1, v2;
   __device__ Float2() {}
@@ -227,7 +221,7 @@ static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
   if (!train) {
       dim3 blocks(input.getSize(1), input.getSize(0));
       dim3 threads(input.getSize(3),
-        min(input.getSize(2), floor(maxThreadsPerBlock, input.getSize(3))));
+        min(input.getSize(2), maxThreadsPerBlock / input.getSize(3)));
 
       SpatialBatchNormalizationUpdateOutputInference_kernel
         <<<blocks, threads, 0, s>>>
