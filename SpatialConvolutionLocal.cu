@@ -75,11 +75,24 @@ static int cunn_SpatialConvolutionLocal_updateOutput(lua_State *L) {
                                              outputHeight*outputWidth, 1,
                                              kW*kH*nInputPlane, outputHeight*outputWidth,
                                              1, kW*kH*nInputPlane*outputHeight*outputWidth);
-
+                            
     THCudaTensor_copy(state, output_n, bias);
+                                            
+    for (int i = 0; i < oH; i++) {
+      for(int j = 0; j < oW; j++) {
+        int sliceidx = i * oW + j;
+        THCudaTensor *wslice, *islice, *oslice;
+        THTensor_select(wslice, weight, 0, sliceidx);
+        THTensor_select(islice, finput3d, 0, sliceidx);
+        THTensor_select(oslice, output3d, 0, sliceidx);
+        THCudaTensor_addmm(state, oslice, 1.0, oslice, 1.0, wslice, islice);
+      }
+    }
+    
+    
     // weight:    oH*oW x nOutputPlane x nInputPlane*kH*kW
     // finput3d:  oH*oW x nInputPlane*kH*kW x 1  
-    THCudaTensor_baddbmm(state, output3d, 1.0, output3d, 1.0, weight, finput3d);
+    // THCudaTensor_baddbmm(state, output3d, 1.0, output3d, 1.0, weight, finput3d);
     // output3d:  oH*oW x nOutputPlane x 1
     
     THCudaTensor_free(state, output3d);
@@ -170,9 +183,20 @@ static int cunn_SpatialConvolutionLocal_updateGradInput(lua_State *L) {
                                                kW*kH*nInputPlane, outputHeight*outputWidth,
                                                1, kW*kH*nInputPlane*outputHeight*outputWidth);
 
+    for (int i = 0; i < oH; i++) {
+      for(int j = 0; j < oW; j++) {
+        int sliceidx = i * oW + j;
+        THCudaTensor *wslice, *gislice, *goslice;
+        THTensor_select(wslice, weight, 0, sliceidx);
+        THTensor_select(gislice, fgradInput3d, 0, sliceidx);
+        THTensor_select(goslice, gradOutput3d, 0, sliceidx);
+        THCudaTensor_addmm(state, gislice, 0.0, gislice, 1.0, wslice, goslice);
+      }
+    }
+
     // weight:        oH*oW x nInputPlane*kH*kW x nOutputPlane
     // gradOutput3d:  oH*oW x nOutputPlane x 1         
-    THCudaTensor_baddbmm(state, fgradInput3d, 0.0, fgradInput3d, 1.0, weight, gradOutput3d);
+    //THCudaTensor_baddbmm(state, fgradInput3d, 0.0, fgradInput3d, 1.0, weight, gradOutput3d);
     // fgradInput3d:  oH*oW x nInputPlane*kH*kW x 1  
 
     // Unpack columns back into input:
@@ -275,9 +299,19 @@ static int cunn_SpatialConvolutionLocal_accGradParameters(lua_State *L) {
       THCudaTensor_data(state, finput_n)
     );
 
+    for (int i = 0; i < oH; i++) {
+      for(int j = 0; j < oW; j++) {
+        int sliceidx = i * oW + j;
+        THCudaTensor *gwslice, *goslice, *islice;
+        THTensor_select(gwslice, gradWeight, 0, sliceidx);
+        THTensor_select(goslice, gradOutput3d, 0, sliceidx);
+        THTensor_select(islice, finput3d, 0, sliceidx);
+        THCudaTensor_addmm(state, gwslice, 1.0, gwslice, scale, goslice, islice);
+      }
+    }
     // gradOutput3d:  oH*oW x nOutputPlane x 1  
     // finput3d:      oH*oW x 1 x kW*kH*nInputPlane
-    THCudaTensor_baddbmm(state, gradWeight, 1.0, gradWeight, scale, gradOutput3d, finput3d);
+    //THCudaTensor_baddbmm(state, gradWeight, 1.0, gradWeight, scale, gradOutput3d, finput3d);
     // gradWeight:    oH*oW x nOutputPlane x kW*kH*nInputPlane
     
     THCudaTensor_cadd(state, gradBias, gradBias, scale, gradOutput_n);
