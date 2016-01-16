@@ -16,6 +16,8 @@ int cunn_SpatialFullConvolution_updateOutput(lua_State *L) {
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int padW = luaT_getfieldcheckint(L, 1, "padW");
   int padH = luaT_getfieldcheckint(L, 1, "padH");
+  int adjW = luaT_getfieldcheckint(L, 1, "adjW");
+  int adjH = luaT_getfieldcheckint(L, 1, "adjH");
 
   THCudaTensor *weight  = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *bias    = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
@@ -39,8 +41,8 @@ int cunn_SpatialFullConvolution_updateOutput(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
-  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW + adjW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH + adjH;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -146,6 +148,8 @@ static int cunn_SpatialFullConvolution_updateGradInput(lua_State *L) {
   int nInputPlane = luaT_getfieldcheckint(L, 1, "nInputPlane");
   int padW = luaT_getfieldcheckint(L, 1, "padW");
   int padH = luaT_getfieldcheckint(L, 1, "padH");
+  int adjW = luaT_getfieldcheckint(L, 1, "adjW");
+  int adjH = luaT_getfieldcheckint(L, 1, "adjH");
 
   THCudaTensor *weight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
   THCudaTensor *gradColumns = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "finput", "torch.CudaTensor");
@@ -165,8 +169,8 @@ static int cunn_SpatialFullConvolution_updateGradInput(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
-  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW + adjW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH + adjH;
 
   // Batch size + input planes
   long batchSize = input->size[0];
@@ -207,7 +211,7 @@ static int cunn_SpatialFullConvolution_updateGradInput(lua_State *L) {
         state,
         'n', 'n',
         n, m, k,
-	1,
+        1,
         THCudaTensor_data(state, gradColumns), n,
         THCudaTensor_data(state, weight), k,
         0,
@@ -247,6 +251,8 @@ static int cunn_SpatialFullConvolution_accGradParameters(lua_State *L) {
   int nOutputPlane = luaT_getfieldcheckint(L, 1, "nOutputPlane");
   int padW = luaT_getfieldcheckint(L, 1, "padW");
   int padH = luaT_getfieldcheckint(L, 1, "padH");
+  int adjW = luaT_getfieldcheckint(L, 1, "adjW");
+  int adjH = luaT_getfieldcheckint(L, 1, "adjH");
   float scale = luaL_optnumber(L, 4, 1);
 
   THCudaTensor *gradWeight = (THCudaTensor *)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
@@ -268,8 +274,8 @@ static int cunn_SpatialFullConvolution_accGradParameters(lua_State *L) {
 
   long inputWidth   = input->size[3];
   long inputHeight  = input->size[2];
-  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW;
-  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH;
+  long outputWidth  = (inputWidth - 1) * dW - 2*padW + kW + adjW;
+  long outputHeight = (inputHeight - 1) * dH - 2*padH + kH + adjH;
 
   // Batch size + input planes
   long batchSize = input->size[0];
