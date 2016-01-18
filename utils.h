@@ -18,7 +18,6 @@ void cunn_TemporalConvolution_init(lua_State *L);
 void cunn_TemporalMaxPooling_init(lua_State *L);
 void cunn_SpatialBatchNormalization_init(lua_State *L);
 void cunn_SpatialConvolutionMM_init(lua_State *L);
-void cunn_SpatialConvolutionLocal_init(lua_State *L);
 void cunn_SpatialFullConvolution_init(lua_State *L);
 void cunn_SpatialMaxPooling_init(lua_State *L);
 void cunn_SpatialMaxUnpooling_init(lua_State *L);
