@@ -1,9 +1,8 @@
-#include "TH.h"
+#include "common.h"
+#include "utils.h"
 #include "THCDeviceTensor.cuh"
 #include "THCDeviceTensorUtils.cuh"
 #include "THCDeviceUtils.cuh"
-
-#include "utils.h"
 
 __global__ void cuda_VolumetricMaxPooling_updateOutput(
   THCDeviceTensor<float, 4> input, THCDeviceTensor<float, 4> indices,
@@ -19,31 +18,31 @@ __global__ void cuda_VolumetricMaxPooling_updateOutput(
     int iRow    = oRow    * dH;
     int iFrame  = oFrame  * dT;
 
-    int maxColumn;
-    int maxRow;
-    int maxFrame;
+    int maxColumn = 0;
+    int maxRow = 0;
+    int maxFrame = 0;
 
     float max = -THInf;
 
-    float *in = &input[slice][iFrame][iRow][iColumn];
-    int frameOffset = 0;
     for (int frame = 0; frame < kT; ++frame) {
-      int rowOffset = frameOffset;
-      for (int row = 0; row < kH; ++row) {
-        int columnOffset = rowOffset;
-        for (int column = 0; column < kW; ++column) {
-          float val = in[columnOffset];
-          if (max < val) {
-            max = val;
-            maxColumn = column;
-            maxRow    = row;
-            maxFrame  = frame;
+      if (iFrame + frame < input.getSize(1)) {
+        for (int row = 0; row < kH; ++row) {
+          if (iRow + row < input.getSize(2)) {
+            for (int column = 0; column < kW; ++column) {
+              if (iColumn + column < input.getSize(3)) {
+                float val = input[slice][iFrame + frame][iRow + row][iColumn + column];
+
+                if (max < val) {
+                  max = val;
+                  maxColumn = column;
+                  maxRow    = row;
+                  maxFrame  = frame;
+                }
+              }
+            }
           }
-          ++columnOffset;
         }
-        rowOffset += input.getSize(3);
       }
-      frameOffset += input.getSize(2) * input.getSize(3);
     }
 
     output[slice][oFrame][oRow][oColumn] = max;
@@ -70,31 +69,31 @@ __global__ void cuda_VolumetricMaxPooling_updateOutput(
     int iRow    = oRow    * dH;
     int iFrame  = oFrame  * dT;
 
-    int maxColumn;
-    int maxRow;
+    int maxColumn = 0;
+    int maxRow = 0;
     int maxFrame;
 
     float max = -THInf;
 
-    float *in = &input[slice][iFrame][iRow][iColumn];
-    int frameOffset = 0;
     for (int frame = 0; frame < kT; ++frame) {
-      int rowOffset = frameOffset;
-      for (int row = 0; row < kH; ++row) {
-        int columnOffset = rowOffset;
-        for (int column = 0; column < KERNEL_WIDTH; ++column) {
-          float val = in[columnOffset];
-          if (max < val) {
-            max = val;
-            maxColumn = column;
-            maxRow    = row;
-            maxFrame  = frame;
+      if (iFrame + frame < input.getSize(1)) {
+        for (int row = 0; row < kH; ++row) {
+          if (iRow + row < input.getSize(2)) {
+            for (int column = 0; column < KERNEL_WIDTH; ++column) {
+              if (iColumn + column < input.getSize(3)) {
+                float val = input[slice][iFrame + frame][iRow + row][iColumn + column];
+
+                if (max < val) {
+                  max = val;
+                  maxColumn = column;
+                  maxRow    = row;
+                  maxFrame  = frame;
+                }
+              }
+            }
           }
-          ++columnOffset;
         }
-        rowOffset += input.getSize(3);
       }
-      frameOffset += input.getSize(2) * input.getSize(3);
     }
 
     output[slice][oFrame][oRow][oColumn] = max;
@@ -131,6 +130,8 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
 
+  bool ceil_mode = luaT_getfieldcheckboolean(L, 1, "ceil_mode");
+
   THCudaTensor* output = static_cast<THCudaTensor*>(
     luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor"));
 
@@ -139,6 +140,9 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
   int inputTime;
   int inputHeight;
   int inputWidth;
+  int outputTime;
+  int outputHeight;
+  int outputWidth;
 
   THAssert(THCudaTensor_checkGPU(state, 3, input, indices, output));
 
@@ -170,10 +174,15 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
     luaL_argcheck(L, 0, 2, "4D or 5D tensor expected");
   }
 
-  int outputTime   = (inputTime   - kT) / dT + 1;
-  int outputHeight = (inputHeight - kH) / dH + 1;
-  int outputWidth  = (inputWidth  - kW) / dW + 1;
-
+  if (ceil_mode) {
+    outputTime   = (int)(ceil((float)(inputTime   - kT) / dT)) + 1;
+    outputHeight = (int)(ceil((float)(inputHeight - kH) / dH)) + 1;
+    outputWidth  = (int)(ceil((float)(inputWidth  - kW) / dW)) + 1;
+  } else {
+    outputTime   = (int)(floor((float)(inputTime   - kT) / dT)) + 1;
+    outputHeight = (int)(floor((float)(inputHeight - kH) / dH)) + 1;
+    outputWidth  = (int)(floor((float)(inputWidth  - kW) / dW)) + 1;
+  }
   if (input->nDimension == 4) { /* 4D */
     /* resize output */
     THCudaTensor_resize4d(state, output, inputSlices,

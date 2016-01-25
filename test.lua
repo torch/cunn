@@ -3258,9 +3258,9 @@ function cunntest.VolumetricConvolution_forward_single()
    local si = math.random(1,ki)
    local sj = math.random(1,kj)
    local sk = math.random(1,kk)
-   local outi = math.random(1,64)
-   local outj = math.random(1,64)
-   local outk = math.random(1,64)
+   local outi = math.random(1,20)
+   local outj = math.random(1,20)
+   local outk = math.random(1,20)
    local ini = (outi-1)*si+ki
    local inj = (outj-1)*sj+kj
    local ink = (outk-1)*sk+kk
@@ -3476,17 +3476,17 @@ function cunntest.VolumetricMaxPooling_forward()
    local dT = math.random(1, 13)
    local dH = math.random(1, 13)
    local dW = math.random(1, 13)
-   local oT = math.random(1, 64)
-   local oH = math.random(1, 64)
-   local oW = math.random(1, 64)
+   local oT = math.random(1, 20)
+   local oH = math.random(1, 20)
+   local oW = math.random(1, 20)
    local iF = math.random(1, 16) -- features
    local iT = (oT - 1) * dT + kT
    local iH = (oH - 1) * dH + kH
    local iW = (oW - 1) * dW + kW
 
    local tm = {}
-   local title = string.format('VolumetricMaxPooling.forward %dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%d',
-                           iF, iT, iH, iW, kT, kH, kW, iF, oT, oH, oW)
+   local title = string.format('VolumetricMaxPooling.forward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d)-> %dx%dx%dx%d',
+                           iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
@@ -3519,17 +3519,17 @@ function cunntest.VolumetricMaxPooling_backward()
    local dT = math.random(1, 13)
    local dH = math.random(1, 13)
    local dW = math.random(1, 13)
-   local oT = math.random(1, 64)
-   local oH = math.random(1, 64)
-   local oW = math.random(1, 64)
+   local oT = math.random(1, 20)
+   local oH = math.random(1, 20)
+   local oW = math.random(1, 20)
    local iF = math.random(1, 16) -- features
    local iT = (oT - 1) * dT + kT
    local iH = (oH - 1) * dH + kH
    local iW = (oW - 1) * dW + kW
 
    local tm = {}
-   local title = string.format('VolumetricMaxPooling.backward %dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%d',
-                               iF, iT, iH, iW, kT, kH, kW, iF, oT, oH, oW)
+   local title = string.format('VolumetricMaxPooling.backward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
+                               iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
@@ -3568,17 +3568,17 @@ function cunntest.VolumetricAveragePooling_forward()
    local dT = math.random(1, 13)
    local dH = math.random(1, 13)
    local dW = math.random(1, 13)
-   local oT = math.random(1, 64)
-   local oH = math.random(1, 64)
-   local oW = math.random(1, 64)
+   local oT = math.random(1, 20)
+   local oH = math.random(1, 20)
+   local oW = math.random(1, 20)
    local iF = math.random(1, 16) -- features
    local iT = (oT - 1) * dT + kT
    local iH = (oH - 1) * dH + kH
    local iW = (oW - 1) * dW + kW
 
    local tm = {}
-   local title = string.format('VolumetricAveragePooling.forward %dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%d',
-                               iF, iT, iH, iW, kT, kH, kW, iF, oT, oH, oW)
+   local title = string.format('VolumetricAveragePooling.forward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
+                               iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
@@ -3611,17 +3611,17 @@ function cunntest.VolumetricAveragePooling_backward()
    local dT = math.random(1, 13)
    local dH = math.random(1, 13)
    local dW = math.random(1, 13)
-   local oT = math.random(1, 64)
-   local oH = math.random(1, 64)
-   local oW = math.random(1, 64)
+   local oT = math.random(1, 20)
+   local oH = math.random(1, 20)
+   local oW = math.random(1, 20)
    local iF = math.random(1, 16) -- features
    local iT = (oT - 1) * dT + kT
    local iH = (oH - 1) * dH + kH
    local iW = (oW - 1) * dW + kW
 
    local tm = {}
-   local title = string.format('VolumetricAveragePooling.backward %dx%dx%dx%d o %dx%dx%d -> %dx%dx%dx%d',
-                           iF, iT, iH, iW, kT, kH, kW, iF, oT, oH, oW)
+   local title = string.format('VolumetricAveragePooling.backward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
+                           iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
@@ -4107,6 +4107,21 @@ function cunntest.LookupTable_backward()
 
    local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
    mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
+end
+
+function cunntest.getParameters()
+  -- tensors are non-contiguous but compact; they can be gathered
+  local L = nn.Linear(10,10):cuda()
+  L.weight = torch.CudaTensor(10,10):t():fill(1)
+  local tmp = torch.CudaTensor(10,10):fill(2)
+  L.bias = tmp:select(1,2)
+  local P = L:getParameters()
+  mytester:asserteq(L.weight:mean(), 1)
+  mytester:asserteq(L.bias:mean(), 2)
+  mytester:asserteq(L.weight:storage(), L.bias:storage())
+  mytester:asserteq(P:nElement(), 110)
+  mytester:asserteq(P:storage():size(), 110)
+  mytester:assertlt(L.bias[{ {10} }]:storageOffset() - 1, L.bias:storage():size())
 end
 
 local function setUp()
