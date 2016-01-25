@@ -1,9 +1,8 @@
-#include "TH.h"
+#include "common.h"
+#include "utils.h"
 #include "THCDeviceTensor.cuh"
 #include "THCDeviceTensorUtils.cuh"
 #include "THCDeviceUtils.cuh"
-
-#include "utils.h"
 
 __global__ void cuda_VolumetricAveragePooling_updateOutput(
   THCDeviceTensor<float, 4> input, THCDeviceTensor<float, 4> output,
@@ -15,25 +14,27 @@ __global__ void cuda_VolumetricAveragePooling_updateOutput(
 
   if (oRow < output.getSize(2) && oCol < output.getSize(3)) {
     float sum = 0.0;
-    const int frameStride = input.getSize(2) * input.getSize(3);
-    float *in = &input[slice][oFrame * dT][oRow * dH][oCol * dW];
-    int frameOffset = 0;
+
+    int iColumn = oCol * dW;
+    int iRow    = oRow    * dH;
+    int iFrame  = oFrame  * dT;
+
     for (int frame = 0; frame < kT; ++frame) {
-      int rowOffset = frameOffset;
-      for (int row = 0; row < kH; ++row) {
-        int offset = rowOffset;
-        for (int col = 0; col < kW; ++col) {
-#if __CUDA_ARCH__ >= 350
-          sum += __ldg(in + offset);
-#else
-          sum += *(in + offset);
-#endif
-          ++offset;
+      if (iFrame + frame < input.getSize(1)) {
+        for (int row = 0; row < kH; ++row) {
+          if (iRow + row < input.getSize(2)) {
+            for (int column = 0; column < kW; ++column) {
+              if (iColumn + column < input.getSize(3)) {
+                float val = input[slice][iFrame + frame][iRow + row][iColumn + column];
+
+                sum += val;
+              }
+            }
+          }
         }
-        rowOffset += input.getSize(3);
       }
-      frameOffset += frameStride;
     }
+
     output[slice][oFrame][oRow][oCol] = sum * normFactor;
   }
 }
@@ -52,25 +53,27 @@ __global__ void cuda_VolumetricAveragePooling_updateOutput(
 
   if (oRow < output.getSize(2) && oCol < output.getSize(3)) {
     float sum = 0.0;
-    const int frameStride = input.getSize(2) * input.getSize(3);
-    float *in = &input[slice][oFrame * dT][oRow * dH][oCol * dW];
-    int frameOffset = 0;
+
+    int iColumn = oCol * dW;
+    int iRow    = oRow    * dH;
+    int iFrame  = oFrame  * dT;
+
     for (int frame = 0; frame < kT; ++frame) {
-      int rowOffset = frameOffset;
-      for (int row = 0; row < kH; ++row) {
-        int offset = rowOffset;
-        for (int col = 0; col < KERNEL_WIDTH; ++col) {
-#if __CUDA_ARCH__ >= 350
-          sum += __ldg(in + offset);
-#else
-          sum += *(in + offset);
-#endif
-          ++offset;
+      if (iFrame + frame < input.getSize(1)) {
+        for (int row = 0; row < kH; ++row) {
+          if (iRow + row < input.getSize(2)) {
+            for (int column = 0; column < KERNEL_WIDTH; ++column) {
+              if (iColumn + column < input.getSize(3)) {
+                float val = input[slice][iFrame + frame][iRow + row][iColumn + column];
+
+                sum += val;
+              }
+            }
+          }
         }
-        rowOffset += input.getSize(3);
       }
-      frameOffset += frameStride;
     }
+
     output[slice][oFrame][oRow][oCol] = sum * normFactor;
   }
 }
