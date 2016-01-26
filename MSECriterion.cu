@@ -5,6 +5,9 @@
 #include <thrust/device_ptr.h>
 #include <thrust/reduce.h>
 #include <thrust/inner_product.h>
+#if CUDA_VERSION >= 7000
+#include <thrust/system/cuda/execution_policy.h>
+#endif
 
 struct mse_functor
 {
@@ -38,7 +41,12 @@ static int cunn_MSECriterion_updateOutput(lua_State *L)
 
   thrust::device_ptr<float> input_data(THCudaTensor_data(state, input));
   thrust::device_ptr<float> target_data(THCudaTensor_data(state, target));
-  sum = thrust::inner_product(input_data, input_data+size, target_data, (float) 0, thrust::plus<float>(), mse_functor());
+  sum = thrust::inner_product(
+#if CUDA_VERSION >= 7000
+    thrust::cuda::par.on(THCState_getCurrentStream(state)),
+#endif
+    input_data, input_data+size, target_data, (float) 0,
+    thrust::plus<float>(), mse_functor());
 
   if(sizeAverage)
     sum /= size;
@@ -89,7 +97,12 @@ static int cunn_MSECriterion_updateGradInput(lua_State *L)
   thrust::device_ptr<float> target_data(THCudaTensor_data(state, target));
   thrust::device_ptr<float> gradInput_data(THCudaTensor_data(state, gradInput));
 
-  thrust::transform(input_data, input_data+size, target_data, gradInput_data, mse_updateGradInput_functor(norm));
+  thrust::transform(
+#if CUDA_VERSION >= 7000
+    thrust::cuda::par.on(THCState_getCurrentStream(state)),
+#endif
+    input_data, input_data+size, target_data, gradInput_data,
+    mse_updateGradInput_functor(norm));
 
   THCudaTensor_free(state, input);
   THCudaTensor_free(state, target);
