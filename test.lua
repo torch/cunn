@@ -3691,10 +3691,13 @@ function cunntest.VolumetricMaxPooling_forward()
    local oT = math.random(1, 20)
    local oH = math.random(1, 20)
    local oW = math.random(1, 20)
+   local padT = math.random(0,kT/2-1)
+   local padH = math.random(0,kH/2-1)
+   local padW = math.random(0,kW/2-1)
    local iF = math.random(1, 16) -- features
-   local iT = (oT - 1) * dT + kT
-   local iH = (oH - 1) * dH + kH
-   local iW = (oW - 1) * dW + kW
+   local iT = (oT - 1) * dT + kT - padT*2
+   local iH = (oH - 1) * dH + kH - padH*2
+   local iW = (oW - 1) * dW + kW - padW*2
 
    local tm = {}
    local title = string.format('VolumetricMaxPooling.forward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d)-> %dx%dx%dx%d',
@@ -3702,7 +3705,7 @@ function cunntest.VolumetricMaxPooling_forward()
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricMaxPooling(kT, kH, kW, dT, dH, dW):float()
+   local layer = nn.VolumetricMaxPooling(kT, kH, kW, dT, dH, dW, padT, padH, padW):float()
    local output = layer:forward(input)
    local timer = torch.Timer()
    for i = 1,nloop do
@@ -3734,10 +3737,13 @@ function cunntest.VolumetricMaxPooling_backward()
    local oT = math.random(1, 20)
    local oH = math.random(1, 20)
    local oW = math.random(1, 20)
+   local padT = math.random(0,kT/2-1)
+   local padH = math.random(0,kH/2-1)
+   local padW = math.random(0,kW/2-1)
    local iF = math.random(1, 16) -- features
-   local iT = (oT - 1) * dT + kT
-   local iH = (oH - 1) * dH + kH
-   local iW = (oW - 1) * dW + kW
+   local iT = (oT - 1) * dT + kT - padT*2
+   local iH = (oH - 1) * dH + kH - padH*2
+   local iW = (oW - 1) * dW + kW - padW*2
 
    local tm = {}
    local title = string.format('VolumetricMaxPooling.backward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
@@ -3745,7 +3751,7 @@ function cunntest.VolumetricMaxPooling_backward()
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricMaxPooling(kT, kH, kW, dT, dH, dW):float()
+   local layer = nn.VolumetricMaxPooling(kT, kH, kW, dT, dH, dW, padT, padH, padW):float()
    local output = layer:forward(input)
    local gradOutput = output:clone():uniform(-1, 1)
 

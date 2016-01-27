@@ -7,16 +7,16 @@
 __global__ void cuda_VolumetricMaxPooling_updateOutput(
   THCDeviceTensor<float, 4> input, THCDeviceTensor<float, 4> indices,
   THCDeviceTensor<float, 4> output,
-  int kT, int kH, int kW, int dT, int dH, int dW) {
+  int kT, int kH, int kW, int dT, int dH, int dW, int padT, int padH, int padW) {
   int oColumn = blockIdx.x * blockDim.x + threadIdx.x;
   int oRow    = blockIdx.y * blockDim.y + threadIdx.y;
   int oFrame  = blockIdx.z % output.getSize(1); // output frame/time
   int slice   = blockIdx.z / output.getSize(1); // output slice/feature
 
   if (oRow < output.getSize(2) && oColumn < output.getSize(3)) {
-    int iColumn = oColumn * dW;
-    int iRow    = oRow    * dH;
-    int iFrame  = oFrame  * dT;
+    int iColumn = oColumn * dW - padW;
+    int iRow    = oRow    * dH - padH;
+    int iFrame  = oFrame  * dT - padT;
 
     int maxColumn = 0;
     int maxRow = 0;
@@ -25,11 +25,14 @@ __global__ void cuda_VolumetricMaxPooling_updateOutput(
     float max = -THInf;
 
     for (int frame = 0; frame < kT; ++frame) {
-      if (iFrame + frame < input.getSize(1)) {
+      if (iFrame + frame < input.getSize(1) && iFrame + frame >= 0)
+      {
         for (int row = 0; row < kH; ++row) {
-          if (iRow + row < input.getSize(2)) {
+          if (iRow + row < input.getSize(2) && iRow + row >= 0)
+          {
             for (int column = 0; column < kW; ++column) {
-              if (iColumn + column < input.getSize(3)) {
+              if (iColumn + column < input.getSize(3) && iColumn + column >= 0)
+              {
                 float val = input[slice][iFrame + frame][iRow + row][iColumn + column];
 
                 if (max < val) {
@@ -58,16 +61,16 @@ template <int KERNEL_WIDTH>
 __global__ void cuda_VolumetricMaxPooling_updateOutput(
   THCDeviceTensor<float, 4> input, THCDeviceTensor<float, 4> indices,
   THCDeviceTensor<float, 4> output,
-  int kT, int kH, int dT, int dH, int dW) {
+  int kT, int kH, int dT, int dH, int dW, int padT, int padH, int padW) {
   int oColumn = blockIdx.x * blockDim.x + threadIdx.x;
   int oRow    = blockIdx.y * blockDim.y + threadIdx.y;
   int oFrame  = blockIdx.z % output.getSize(1); // output frame/time
   int slice   = blockIdx.z / output.getSize(1); // output slice/feature
 
   if (oRow < output.getSize(2) && oColumn < output.getSize(3)) {
-    int iColumn = oColumn * dW;
-    int iRow    = oRow    * dH;
-    int iFrame  = oFrame  * dT;
+    int iColumn = oColumn * dW - padW;
+    int iRow    = oRow    * dH - padH;
+    int iFrame  = oFrame  * dT - padT;
 
     int maxColumn = 0;
     int maxRow = 0;
@@ -76,11 +79,14 @@ __global__ void cuda_VolumetricMaxPooling_updateOutput(
     float max = -THInf;
 
     for (int frame = 0; frame < kT; ++frame) {
-      if (iFrame + frame < input.getSize(1)) {
+      if (iFrame + frame < input.getSize(1) && iFrame + frame >= 0)
+      {
         for (int row = 0; row < kH; ++row) {
-          if (iRow + row < input.getSize(2)) {
+          if (iRow + row < input.getSize(2) && iRow + row >= 0)
+          {
             for (int column = 0; column < KERNEL_WIDTH; ++column) {
-              if (iColumn + column < input.getSize(3)) {
+              if (iColumn + column < input.getSize(3) && iColumn + column >= 0)
+              {
                 float val = input[slice][iFrame + frame][iRow + row][iColumn + column];
 
                 if (max < val) {
@@ -108,7 +114,7 @@ __global__ void cuda_VolumetricMaxPooling_updateOutput(
 #define UPDATE_OUTPUT_KERNEL_WIDTH(KW) case KW:                         \
   cuda_VolumetricMaxPooling_updateOutput<KW><<<grid, block,             \
                                 0, THCState_getCurrentStream(state)>>>( \
-    cudaInput, cudaIndices, cudaOutput, kT, kH, dT, dH, dW);            \
+    cudaInput, cudaIndices, cudaOutput, kT, kH, dT, dH, dW, padT, padH, padW);            \
   break
 
 
@@ -129,7 +135,10 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
   int kT = luaT_getfieldcheckint(L, 1, "kT");
   int kH = luaT_getfieldcheckint(L, 1, "kH");
   int kW = luaT_getfieldcheckint(L, 1, "kW");
-
+  int padT = luaT_getfieldcheckint(L, 1, "padT");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  
   bool ceil_mode = luaT_getfieldcheckboolean(L, 1, "ceil_mode");
 
   THCudaTensor* output = static_cast<THCudaTensor*>(
@@ -152,6 +161,7 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
                   THCudaTensor_size(state, input, 2) >= kH &&
                   THCudaTensor_size(state, input, 3) >= kW, 2,
                   "input image smaller than kernel size");
+
     /* sizes */
     batchSize   = 1;
     inputSlices = THCudaTensor_size(state, input, 0);
@@ -164,6 +174,7 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
                   THCudaTensor_size(state, input, 3) >= kH &&
                   THCudaTensor_size(state, input, 2) >= kT, 2,
                   "input image smaller than kernel size");
+
     /* sizes */
     batchSize   = THCudaTensor_size(state, input, 0);
     inputSlices = THCudaTensor_size(state, input, 1);
@@ -174,15 +185,27 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
     luaL_argcheck(L, 0, 2, "4D or 5D tensor expected");
   }
 
+  luaL_argcheck(L, kT/2 >= padT && kW/2 >= padW && kH/2 >= padH, 2, "pad should be smaller than half of kernel size");
+  
   if (ceil_mode) {
-    outputTime   = (int)(ceil((float)(inputTime   - kT) / dT)) + 1;
-    outputHeight = (int)(ceil((float)(inputHeight - kH) / dH)) + 1;
-    outputWidth  = (int)(ceil((float)(inputWidth  - kW) / dW)) + 1;
+    outputTime   = (int)(ceil((float)(inputTime   - kT + 2*padT) / dT)) + 1;
+    outputHeight = (int)(ceil((float)(inputHeight - kH + 2*padH) / dH)) + 1;
+    outputWidth  = (int)(ceil((float)(inputWidth  - kW + 2*padW) / dW)) + 1;
   } else {
-    outputTime   = (int)(floor((float)(inputTime   - kT) / dT)) + 1;
-    outputHeight = (int)(floor((float)(inputHeight - kH) / dH)) + 1;
-    outputWidth  = (int)(floor((float)(inputWidth  - kW) / dW)) + 1;
+    outputTime   = (int)(floor((float)(inputTime   - kT + 2*padT) / dT)) + 1;
+    outputHeight = (int)(floor((float)(inputHeight - kH + 2*padH) / dH)) + 1;
+    outputWidth  = (int)(floor((float)(inputWidth  - kW + 2*padW) / dW)) + 1;
   }
+  if (padT || padW || padH)
+  {
+    if ((outputTime - 1)*dT >= inputTime + padT)
+      --outputTime;
+    if ((outputHeight - 1)*dH >= inputHeight + padH)
+      --outputHeight;
+    if ((outputWidth  - 1)*dW >= inputWidth  + padW)
+      --outputWidth;
+  }
+
   if (input->nDimension == 4) { /* 4D */
     /* resize output */
     THCudaTensor_resize4d(state, output, inputSlices,
@@ -240,7 +263,7 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
     default:
       cuda_VolumetricMaxPooling_updateOutput<<<grid, block,
         0, THCState_getCurrentStream(state)>>>(
-        cudaInput, cudaIndices, cudaOutput, kT, kH, kW, dT, dH, dW);
+        cudaInput, cudaIndices, cudaOutput, kT, kH, kW, dT, dH, dW, padT, padH, padW);
   }
 
   THCudaTensor_free(state, input);
@@ -253,7 +276,7 @@ static int cunn_VolumetricMaxPooling_updateOutput(lua_State *L) {
 
 __global__ void cuda_VolumetricMaxPooling_updateGradInput(
   THCDeviceTensor<float, 4> gradOutput, THCDeviceTensor<float, 4> indices,
-  THCDeviceTensor<float, 4> gradInput, int dT, int dH, int dW) {
+  THCDeviceTensor<float, 4> gradInput, int dT, int dH, int dW, int padT, int padH, int padW) {
   int oColumn = blockIdx.x * blockDim.x + threadIdx.x;
   int oRow    = blockIdx.y * blockDim.y + threadIdx.y;
   int oFrame  = blockIdx.z % gradOutput.getSize(1); // output frame/time
@@ -261,9 +284,9 @@ __global__ void cuda_VolumetricMaxPooling_updateGradInput(
 
   if (oRow < gradOutput.getSize(2) && oColumn < gradOutput.getSize(3)) {
     float *idx = &indices[slice][oFrame][oRow][oColumn];
-    int iFrame  = ((unsigned char*)(idx))[0] + oFrame * dT;
-    int iRow    = ((unsigned char*)(idx))[1] + oRow * dH;
-    int iColumn = ((unsigned char*)(idx))[2] + oColumn * dW;
+    int iFrame  = ((unsigned char*)(idx))[0] + oFrame * dT -padT;
+    int iRow    = ((unsigned char*)(idx))[1] + oRow * dH - padH;
+    int iColumn = ((unsigned char*)(idx))[2] + oColumn * dW - padW;
     atomicAdd(&gradInput[slice][iFrame][iRow][iColumn],
               gradOutput[slice][oFrame][oRow][oColumn]);
   }
@@ -282,7 +305,10 @@ static int cunn_VolumetricMaxPooling_updateGradInput(lua_State *L) {
   int dT = luaT_getfieldcheckint(L, 1, "dT");
   int dH = luaT_getfieldcheckint(L, 1, "dH");
   int dW = luaT_getfieldcheckint(L, 1, "dW");
-
+  int padT = luaT_getfieldcheckint(L, 1, "padT");
+  int padH = luaT_getfieldcheckint(L, 1, "padH");
+  int padW = luaT_getfieldcheckint(L, 1, "padW");
+  
   // Indices
   THCudaTensor* indices = static_cast<THCudaTensor*>(
     luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor"));
@@ -355,7 +381,7 @@ static int cunn_VolumetricMaxPooling_updateGradInput(lua_State *L) {
     0, THCState_getCurrentStream(state)>>>(cudaGradOutput,
                                            cudaIndices,
                                            cudaGradInput,
-                                           dT, dH, dW);
+                                           dT, dH, dW, padT, padH, padW);
   // cleanup
   THCudaTensor_free(state, gradOutput);
   THCudaTensor_free(state, indices1);
