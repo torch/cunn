@@ -3,7 +3,7 @@
 
 # Known NVIDIA GPU achitectures Torch can be compiled for.
 # This list will be used for CUDA_ARCH_NAME = All option
-SET(KNOWN_GPU_ARCHITECTURES "2.0 2.1(2.0) 3.0 3.5 5.0")
+SET(KNOWN_GPU_ARCHITECTURES "3.0 3.5 5.0 5.2")
 
 IF (CUDA_VERSION VERSION_GREATER "6.5")
    SET(KNOWN_GPU_ARCHITECTURES "${KNOWN_GPU_ARCHITECTURES} 5.2")
@@ -96,6 +96,13 @@ FUNCTION(SELECT_NVCC_ARCH_FLAGS out_variable)
   else()
     unSET(CUDA_ARCH_BIN CACHE)
     unSET(CUDA_ARCH_PTX CACHE)
+  ENDIF()
+
+  # Allow a user to specify architecture from env
+  IF($ENV{CUDA_ARCH_BIN})
+    SET(CUDA_ARCH_NAME "Manual")
+    SET(CUDA_ARCH_BIN $ENV{CUDA_ARCH_BIN})
+    unSET(CUDA_ARCH_PTX)
   ENDIF()
 
   IF(${CUDA_ARCH_NAME} STREQUAL "Fermi")
