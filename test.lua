@@ -2726,26 +2726,9 @@ function cunntest.mse()
       cutorch.synchronize()
       tm.gpu = a:time().real
 
-      local tm2 = {}
-      local title = string.format('MSECriterion2 sizeAverage %d, %d ',sizeAverage, size)
-      times[title] = tm2
-      tm2.cpu = tm.cpu
-      local cinput2 = input:cuda()
-      local ctarget2 = target:cuda()
-      local cmod2 = nn.MSECriterion(sizeAverage == 1):cuda()
-      a:reset()
-      local cout2 = cinput2.nn.MSECriterion_updateOutput2(cmod,cinput2,ctarget2)
-      local cgin2 = cinput2.nn.MSECriterion_updateGradInput2(cmod,cinput2,ctarget2)
-      cutorch.synchronize()
-      tm2.gpu = a:time().real
-
       mytester:assertlt(math.abs(fout-cout), 0.02, 'error  on output')
       local gerr = cgin:float() - fgin
       mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
-
-      mytester:assertlt(math.abs(fout-cout2), 0.02, 'error  on output - 2')
-      local gerr2 = cgin2:float() - fgin
-      mytester:assertlt(gerr2:abs():max(), precision_forward, 'error  on gradInput -2')
    end
 end
 
