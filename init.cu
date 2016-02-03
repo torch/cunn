@@ -26,10 +26,5 @@ int luaopen_libcunn(lua_State *L)
   cunn_SpatialFractionalMaxPooling_init(L);
   cunn_SpatialSubSampling_init(L);
   cunn_SpatialUpSamplingNearest_init(L);
-  cunn_VolumetricConvolution_init(L);
-  cunn_VolumetricFullConvolution_init(L);
-  cunn_VolumetricMaxPooling_init(L);
-  cunn_VolumetricAveragePooling_init(L);
-
   return 1;
 }
