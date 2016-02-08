@@ -121,6 +121,7 @@ static THCDeviceTensor<float, Dim> checktensor(lua_State* L, int index) {
   return toDeviceTensor<float, Dim>(getCutorchState(L), t);
 }
 
+template<int NumThreads>
 __global__ void SpatialBatchNormalizationUpdateOutputInference_kernel(
     const DeviceTensor4 input,
     DeviceTensor4 output,
@@ -130,7 +131,6 @@ __global__ void SpatialBatchNormalizationUpdateOutputInference_kernel(
     const DeviceTensor1 bias,
     float epsilon) {
 
-  int x = threadIdx.x;
   int plane = blockIdx.x;
   int batch = blockIdx.y;
 
@@ -139,10 +139,12 @@ __global__ void SpatialBatchNormalizationUpdateOutputInference_kernel(
   float gamma = weight.numElements() > 0 ? weight[plane].ldg() : 1.0f;
   float beta = bias.numElements() > 0 ? bias[plane].ldg() : 0.0f;
 
-  for (int y = threadIdx.y; y < output.getSize(2); y += blockDim.y) {
-    float inp = input[batch][plane][y][x].ldg();
-    // TODO: everyone pulling this, optimize by reusing better
-    output[batch][plane][y][x] = gamma * (inp - mean) * invstd + beta;
+  // Write normalized and update the output
+  for (int y = threadIdx.y; y < input.getSize(2); y += NumThreads) {
+    for (int x = threadIdx.x; x < input.getSize(3); x += NumThreads) {
+      float inp = input[batch][plane][y][x].ldg();
+      output[batch][plane][y][x] = gamma * (inp - mean) * invstd + beta;
+    }
   }
 }
 
@@ -219,13 +221,18 @@ static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
   int maxThreadsPerBlock = prop->maxThreadsPerBlock;
 
   if (!train) {
-      dim3 blocks(input.getSize(1), input.getSize(0));
-      dim3 threads(input.getSize(3),
-        min(input.getSize(2), maxThreadsPerBlock / input.getSize(3)));
-
-      SpatialBatchNormalizationUpdateOutputInference_kernel
+    dim3 blocks(input.getSize(1), input.getSize(0));
+    if (input.getSize(3) >= 12 && input.getSize(2) >= 12) {
+      dim3 threads(16, 16);
+      SpatialBatchNormalizationUpdateOutputInference_kernel<16>
         <<<blocks, threads, 0, s>>>
         (input, output, runningMean, runningVar, weight, bias, eps);
+    } else {
+      dim3 threads(8, 8);
+      SpatialBatchNormalizationUpdateOutputInference_kernel<8>
+        <<<blocks, threads, 0, s>>>
+        (input, output, runningMean, runningVar, weight, bias, eps);
+    }
   } else {
     dim3 blocks(input.getSize(1));
     if (input.getSize(3) >= 12 && input.getSize(2) >= 12) {
