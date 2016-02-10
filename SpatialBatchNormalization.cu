@@ -218,7 +218,6 @@ static int cunn_SpatialBatchNormalization_updateOutput(lua_State *L) {
 
   cudaStream_t s = THCState_getCurrentStream(state);
   cudaDeviceProp *prop = THCState_getCurrentDeviceProperties(state);
-  int maxThreadsPerBlock = prop->maxThreadsPerBlock;
 
   if (!train) {
     dim3 blocks(input.getSize(1), input.getSize(0));
