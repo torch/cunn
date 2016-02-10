@@ -11,8 +11,6 @@ extern "C"
 THCState* getCutorchState(lua_State* L);
 
 void cunn_SpatialCrossMapLRN_init(lua_State *L);
-void cunn_TemporalConvolution_init(lua_State *L);
-void cunn_TemporalMaxPooling_init(lua_State *L);
 void cunn_SpatialBatchNormalization_init(lua_State *L);
 void cunn_SpatialConvolutionLocal_init(lua_State *L);
 void cunn_SpatialFullConvolution_init(lua_State *L);

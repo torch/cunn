@@ -1,17 +1,14 @@
-#include "utils.h"
+#include "THCUNN.h"
 
-static int cunn_TemporalConvolution_updateOutput(lua_State *L)
-{
-  THCState *state = getCutorchState(L);
-  THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
-  int inputFrameSize = luaT_getfieldcheckint(L, 1, "inputFrameSize");
-  int outputFrameSize = luaT_getfieldcheckint(L, 1, "outputFrameSize");
-
-  THCudaTensor *weight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
-  THCudaTensor *bias = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "bias", "torch.CudaTensor");
-  THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
+void THNN_CudaTemporalConvolution_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *output,
+          THCudaTensor *weight,
+          THCudaTensor *bias,
+          int kW, int dW,
+          int inputFrameSize,
+          int outputFrameSize) {
 
   THCudaTensor *outputWindow, *inputWindow;
   int nInputFrame, nOutputFrame;
@@ -21,15 +18,15 @@ static int cunn_TemporalConvolution_updateOutput(lua_State *L)
   int dimF = 1; // feature dimension
 
   THAssert(THCudaTensor_checkGPU(state, 4, input, output, weight, bias));
-  luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
+  THArgCheck( input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
 
   if (input->nDimension == 3)
   {
     dimS = 1;
     dimF = 2;
   }
-  luaL_argcheck(L, input->size[dimF] == inputFrameSize, 2, "invalid input frame size");
-  luaL_argcheck(L, input->size[dimS] >= kW, 2, "input sequence smaller than kernel size");
+  THArgCheck( input->size[dimF] == inputFrameSize, 2, "invalid input frame size");
+  THArgCheck( input->size[dimS] >= kW, 2, "input sequence smaller than kernel size");
 
   input = THCudaTensor_newContiguous(state, input);
   outputWindow = THCudaTensor_new(state);
@@ -130,21 +127,18 @@ static int cunn_TemporalConvolution_updateOutput(lua_State *L)
   THCudaTensor_free(state, inputWindow);
   THCudaTensor_free(state, input);
 
-  return 1;
 }
 
-static int cunn_TemporalConvolution_updateGradInput(lua_State *L)
-{
-  THCState *state = getCutorchState(L);
-  THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
+void THNN_CudaTemporalConvolution_updateGradInput(
+          THCState* state,
+          THCudaTensor *input,
+          THCudaTensor *gradOutput,
+          THCudaTensor *gradInput,
+          THCudaTensor *weight,
+          int kW, int dW) {
+
   long nInputFrame;
   long nOutputFrame;
-
-  THCudaTensor *weight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "weight", "torch.CudaTensor");
-  THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
 
   THCudaTensor *gradOutputWindow;
   THCudaTensor *gradInputWindow;
@@ -232,22 +226,19 @@ static int cunn_TemporalConvolution_updateGradInput(lua_State *L)
   THCudaTensor_free(state, gradOutputWindow);
   THCudaTensor_free(state, gradInputWindow);
 
-  return 1;
 }
 
-static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
-{
-  THCState *state = getCutorchState(L);
-  THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
-  float scale = luaL_optnumber(L, 4, 1);
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
+void THNN_CudaTemporalConvolution_accGradParameters(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *gradOutput,
+          THCudaTensor *gradWeight,
+          THCudaTensor *gradBias,
+          int kW, int dW,
+          float scale) {
+
   long nInputFrame;
   long nOutputFrame;
-
-  THCudaTensor *gradWeight = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradWeight", "torch.CudaTensor");
-  THCudaTensor *gradBias = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradBias", "torch.CudaTensor");
 
   THCudaTensor *gradOutputWindow;
   THCudaTensor *inputWindow;
@@ -350,19 +341,4 @@ static int cunn_TemporalConvolution_accGradParameters(lua_State *L)
   THCudaTensor_free(state, inputWindow);
   THCudaTensor_free(state, input);
 
-  return 1;
-}
-
-static const struct luaL_Reg cunn_TemporalConvolution__ [] = {
-  {"TemporalConvolution_updateOutput", cunn_TemporalConvolution_updateOutput},
-  {"TemporalConvolution_updateGradInput", cunn_TemporalConvolution_updateGradInput},
-  {"TemporalConvolution_accGradParameters", cunn_TemporalConvolution_accGradParameters},
-  {NULL, NULL}
-};
-
-void cunn_TemporalConvolution_init(lua_State *L)
-{
-  luaT_pushmetatable(L, "torch.CudaTensor");
-  luaT_registeratname(L, cunn_TemporalConvolution__, "nn");
-  lua_pop(L,1);
 }

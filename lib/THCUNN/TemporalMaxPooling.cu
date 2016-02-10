@@ -1,4 +1,4 @@
-#include "utils.h"
+#include "THCUNN.h"
 
 #define TEMPORAL_MAX_POOLING_THREADS 1024
 
@@ -73,15 +73,12 @@ __global__ void cunn_TemporalMaxPooling_updateGradInputKernelAtomic(float *gradI
   }
 }
 
-static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
-{
-  THCState *state = getCutorchState(L);
-  THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
-
-  THCudaTensor *output = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "output", "torch.CudaTensor");
-  THCudaTensor *indices = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
+void THNN_CudaTemporalMaxPooling_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *output,
+          THCudaTensor *indices,
+          int kW, int dW) {
 
   int dimT = 0; // Temporal dimension
   int dimF = 1; // Feature dimension
@@ -97,7 +94,7 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
   float *indices_data;
 
   THAssert(THCudaTensor_checkGPU(state, 3, input, output, indices));
-  luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
+  THArgCheck( input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
 
   if (input->nDimension == 3)
   {
@@ -105,7 +102,7 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
     dimF = 2;
     batch = input->size[0];
   }
-  luaL_argcheck(L, input->size[dimT] >= kW, 2, "input sequence smaller than kernel size");
+  THArgCheck( input->size[dimT] >= kW, 2, "input sequence smaller than kernel size");
 
   input = THCudaTensor_newContiguous(state, input);
 
@@ -148,18 +145,15 @@ static int cunn_TemporalMaxPooling_updateOutput(lua_State *L)
 
   THCudaTensor_free(state, input);
 
-  return 1;
 }
 
-static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
-  THCState *state = getCutorchState(L);
-  THCudaTensor *input = (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");
-  THCudaTensor *gradOutput = (THCudaTensor*)luaT_checkudata(L, 3, "torch.CudaTensor");
-  int kW = luaT_getfieldcheckint(L, 1, "kW");
-  int dW = luaT_getfieldcheckint(L, 1, "dW");
-
-  THCudaTensor *gradInput = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "gradInput", "torch.CudaTensor");
-  THCudaTensor *indices = (THCudaTensor*)luaT_getfieldcheckudata(L, 1, "indices", "torch.CudaTensor");
+void THNN_CudaTemporalMaxPooling_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *gradOutput,
+          THCudaTensor *gradInput,
+          THCudaTensor *indices,
+          int kW, int dW) {
 
   int dimT = 0; // Temporal dimension
   int dimF = 1; // Feature dimension
@@ -175,7 +169,7 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
   float *indices_data;
 
   THAssert(THCudaTensor_checkGPU(state, 4, input, gradOutput, gradInput, indices));
-  luaL_argcheck(L, input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
+  THArgCheck( input->nDimension == 2 || input->nDimension == 3, 2, "2D or 3D(batch mode) tensor expected");
 
   THCudaTensor_resizeAs(state, gradInput, input);
   THCudaTensor_zero(state, gradInput);
@@ -186,7 +180,7 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
     dimF = 2;
     batch = input->size[0];
   }
-  luaL_argcheck(L, input->size[dimT] >= kW, 2, "input sequence smaller than kernel size");
+  THArgCheck( input->size[dimT] >= kW, 2, "input sequence smaller than kernel size");
 
   gradOutput = THCudaTensor_newContiguous(state, gradOutput);
 
@@ -223,18 +217,4 @@ static int cunn_TemporalMaxPooling_updateGradInput(lua_State *L) {
 
   THCudaTensor_free(state, gradOutput);
 
-  return 1;
-}
-
-static const struct luaL_Reg cunn_TemporalMaxPooling__ [] = {
-  {"TemporalMaxPooling_updateOutput", cunn_TemporalMaxPooling_updateOutput},
-  {"TemporalMaxPooling_updateGradInput", cunn_TemporalMaxPooling_updateGradInput},
-  {NULL, NULL}
-};
-
-void cunn_TemporalMaxPooling_init(lua_State *L)
-{
-  luaT_pushmetatable(L, "torch.CudaTensor");
-  luaT_registeratname(L, cunn_TemporalMaxPooling__, "nn");
-  lua_pop(L,1);
 }

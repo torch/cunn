@@ -17,8 +17,6 @@ int luaopen_libcunn(lua_State *L)
 {
   lua_newtable(L);
   cunn_SpatialCrossMapLRN_init(L);
-  cunn_TemporalConvolution_init(L);
-  cunn_TemporalMaxPooling_init(L);
   cunn_SpatialBatchNormalization_init(L);
   cunn_SpatialConvolutionLocal_init(L);
   cunn_SpatialFullConvolution_init(L);
