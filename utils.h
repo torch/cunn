@@ -10,13 +10,4 @@ extern "C"
 
 THCState* getCutorchState(lua_State* L);
 
-void cunn_SpatialCrossMapLRN_init(lua_State *L);
-void cunn_SpatialBatchNormalization_init(lua_State *L);
-void cunn_SpatialConvolutionLocal_init(lua_State *L);
-void cunn_SpatialFullConvolution_init(lua_State *L);
-void cunn_SpatialMaxUnpooling_init(lua_State *L);
-void cunn_SpatialFractionalMaxPooling_init(lua_State *L);
-void cunn_SpatialSubSampling_init(lua_State *L);
-void cunn_SpatialUpSamplingNearest_init(lua_State *L);
-
 #endif
