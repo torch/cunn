@@ -324,6 +324,7 @@ function DataParallelTable:__read(file, version)
       for k, v in pairs(var) do
          self[k] = v
       end
+      self.impl = self.impl or Impls.Basic(self)
       return
    end
 
