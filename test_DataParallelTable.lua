@@ -397,6 +397,47 @@ function test.DataParallelTable_noGradInput()
       'backward prop error')
 end
 
+function test.DataParallelTable_accGradParameters()
+   local net = nn.Sequential()
+      :add(nn.Linear(3, 10))
+      :add(nn.ReLU())
+      :add(nn.Linear(10, 7))
+      :cuda()
+
+   local inputs = {}
+   local gradOutputs = {}
+   for i=1,3 do
+      inputs[i] = torch.randn(8, 3):cuda()
+      gradOutputs[i] = torch.randn(8, 7):cuda()
+   end
+
+   local configs = {
+      {1, false, false},
+      {1, true,  false},
+   }
+
+   local function accumulateGradient(m)
+      m:zeroGradParameters()
+      for i=1,#inputs do
+         m:forward(inputs[i])
+         m:backward(inputs[i], gradOutputs[i])
+      end
+      m:updateParameters(0.5)
+   end
+
+   local base = net:clone()
+   accumulateGradient(base)
+   local expected = base:forward(inputs[1])
+
+   for _, config in ipairs(configs) do
+      local dpt = nn.DataParallelTable(1, true, false)
+         :add(net:clone(), torch.range(1, numGpus):totable())
+      accumulateGradient(dpt)
+      local output = dpt:forward(inputs[1])
+      mytester:assertlt((output - expected):abs():max(), 1e-5, 'invalid output')
+   end
+end
+
 function test.DataParallelTable_streams()
    local net = nn.Sequential()
       :add(nn.Linear(3, 10))

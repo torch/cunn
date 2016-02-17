@@ -216,13 +216,21 @@ function DataParallelTable:__backward(method, input, gradOutput, scale)
    end
 
    if method == 'backward' or method == 'accGradParameters' then
+      local params = self:moduleParameters()
       -- Accumulate the gradients onto the base GPU
       if self.flattenedParams and self.usenccl and not cudaLaunchBlocking then
          if #self.gpuAssignments > 1 then
             nccl.reduce(pluck(self.flattenedParams, 2), nil, true, 1)
          end
       else
-         self:_reduce(pluck(self:moduleParameters(), 2))
+         self:_reduce(pluck(params, 2))
+      end
+      -- Zero out gradients on the other GPUs
+      for i = 2, #self.gpuAssignments do
+         cutorch.setDevice(self.gpuAssignments[i])
+         for _, gradParam in ipairs(params[i][2]) do
+            gradParam:zero()
+         end
       end
       self.needsSync = true
    end
