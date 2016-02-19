@@ -4237,45 +4237,57 @@ function cunntest.LookupTable_forward()
 end
 
 function cunntest.LookupTable_backward()
-   local nVocab = 10000
+   local grid = {
+      nInput = {10, 101, 1000, 10007},
+      nVocab = {100, 10000},
+      nDim = {97, 255},
+      scaleGradByFreq = {false, true},
+      batch = {false, true},
+      paddingValue = {0, 1},
+   }
 
-   for _,nDim in ipairs{97,255} do
-      for _,nInput in ipairs{10,101,1000,10007} do
-         for _,scaleGradByFreq in ipairs{false,true} do
-            for _,batch in ipairs{false, true} do
-               local input, gradOutput
-               if batch then
-                  input = torch.LongTensor(nInput, 5):random(nVocab)
-                  gradOutput = torch.randn(nInput, 5, nDim)
-               else
-                  input = torch.LongTensor(nInput):random(nVocab)
-                  gradOutput = torch.randn(nInput, nDim)
-               end
-
-               local sconv = nn.LookupTable(nVocab, nDim)
-               local gconv = sconv:clone():cuda()
-               if scaleGradByFreq then
-                  sconv = sconv:scaleGradByFreq()
-                  gconv = gconv:scaleGradByFreq()
-               end
-
-               sconv:forward(input)
-               sconv:backward(input, gradOutput)
-
-               input = input:cuda()
-               gradOutput = gradOutput:cuda()
-               gconv:forward(input)
-               gconv:backward(input, gradOutput)
-
-               local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
-               mytester:assertlt(weightGradError:abs():max(), precision_backward,
-                  'error on weight for size ' .. tostring(nInput) .. ' scaleGradByFreq: ' .. tostring(scaleGradByFreq)
-                  .. ' nDim ' .. tostring(nDim))
-            end
-         end
+   for itr = 1, 10 do
+      -- Randomly sample from grid of parameters
+      local s = {}
+      for k, v in pairs(grid) do
+         s[k] = v[torch.random(#v)]
       end
+
+      local input, gradOutput
+      if s.batch then
+         input = torch.LongTensor(s.nInput, 5):random(s.nVocab)
+         gradOutput = torch.randn(s.nInput, 5, s.nDim)
+      else
+         input = torch.LongTensor(s.nInput):random(s.nVocab)
+         gradOutput = torch.randn(s.nInput, s.nDim)
+      end
+
+      local sconv = nn.LookupTable(s.nVocab, s.nDim, s.paddingValue)
+      local gconv = sconv:clone():cuda()
+      if s.scaleGradByFreq then
+         sconv = sconv:scaleGradByFreq()
+         gconv = gconv:scaleGradByFreq()
+      end
+
+      sconv:forward(input)
+      sconv:backward(input, gradOutput)
+
+      input = input:cuda()
+      gradOutput = gradOutput:cuda()
+      gconv:forward(input)
+      gconv:backward(input, gradOutput)
+
+      local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
+      mytester:assertlt(weightGradError:abs():max(), precision_backward,
+         'error on weight for size ' .. tostring(s.nInput) ..
+          ' nVocab: ' .. tostring(s.nVocab) ..
+          ' nDim ' .. tostring(s.nDim) ..
+          ' scaleGradByFreq: ' .. tostring(s.scaleGradByFreq) ..
+          ' batch: ' .. tostring(s.batch) ..
+          ' paddingValue: ' .. tostring(s.paddingValue))
    end
 
+   local nVocab = 10000
    local nDim = 128
    local nInput = 1000
    local tm = {}
