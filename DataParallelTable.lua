@@ -102,7 +102,24 @@ end
 -- this flattens parameters, so that syncParameters and accGradParameters can be much more efficient
 function DataParallelTable:flattenParameters()
    self.flattenedParams = self.impl:exec(function(module)
-      return { module:getParameters() }
+      local p, dp = module:parameters()
+      local flattened = true
+      for i=2,#p do
+         if p[i]:storage() ~= p[1]:storage() 
+            or dp[i]:storage() ~= dp[1]:storage() then
+            flattened = false
+            break
+         end
+      end
+      if flattened then
+         local pp = torch.CudaTensor(p[1]:storage(), p[1]:storageOffset(), 
+                    p[#p]:storageOffset()+p[#p]:numel()-1)
+         local dpp = torch.CudaTensor(dp[1]:storage(), dp[1]:storageOffset(), 
+                     dp[#dp]:storageOffset()+dp[#dp]:numel()-1)
+         return {pp, dpp}
+      else
+         return { module:getParameters() }
+      end
    end)
    self.flattenParams = true
 end
