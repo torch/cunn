@@ -511,19 +511,19 @@ function cunntest.WeightedEuclidean_backward_batch()
    mytester:assertlt(derror:abs():max(), precision_backward, 'error on diagCov (backward) ')
 end
 
-function cunntest.SpatialBatchNormalization_forward()
-   local batch = math.random(2,32)
-   local planes = math.random(1,64)
-   local height = math.random(1,64)
-   local width = math.random(1,64)
+local function BatchNormalization_forward(moduleName, dim, k)
+   local planes = torch.random(1,k)
+   local inputSize = { torch.random(2,32), planes }
+   for i=1,dim do
+      table.insert(inputSize, torch.random(1,k))
+   end
 
    local tm = {}
-   local title = string.format('SpatialBatchNormalization.forward %dx%dx%d%d',
-                               batch, planes, height, width)
+   local title = moduleName .. '.forward ' .. table.concat(inputSize, 'x')
    times[title] = tm
 
-   local input = torch.randn(batch,planes,height,width)
-   local sbnorm = nn.SpatialBatchNormalization(planes)
+   local input = torch.randn(table.unpack(inputSize))
+   local sbnorm = nn[moduleName](planes)
    local groundtruth = sbnorm:forward(input)
    local a = torch.Timer()
    for i = 1,nloop do
@@ -532,7 +532,7 @@ function cunntest.SpatialBatchNormalization_forward()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gbnorm = nn.SpatialBatchNormalization(planes):cuda()
+   local gbnorm = nn[moduleName](planes):cuda()
    gbnorm.weight = sbnorm.weight:cuda()
    gbnorm.bias = sbnorm.bias:cuda()
    local rescuda = gbnorm:forward(input)
@@ -552,19 +552,19 @@ function cunntest.SpatialBatchNormalization_forward()
       precision_forward, 'error on running_var (forward)')
 end
 
-function cunntest.SpatialBatchNormalization_forward_inference()
-   local batch = math.random(2,32)
-   local planes = math.random(1,64)
-   local height = math.random(1,64)
-   local width = math.random(1,64)
+local function BatchNormalization_forward_inference(moduleName, dim, k)
+   local planes = torch.random(1,k)
+   local inputSize = { torch.random(2,32), planes }
+   for i=1,dim do
+      table.insert(inputSize, torch.random(1,k))
+   end
 
    local tm = {}
-   local title = string.format('SpatialBatchNormalization.forward (evaluate) %dx%dx%d%d',
-                               batch, planes, height, width)
+   local title = moduleName .. '.forward (evaluate) ' .. table.concat(inputSize, 'x')
    times[title] = tm
 
-   local input = torch.randn(batch,planes,height,width)
-   local sbnorm = nn.SpatialBatchNormalization(planes)
+   local input = torch.randn(table.unpack(inputSize))
+   local sbnorm = nn[moduleName](planes)
    sbnorm.running_mean:normal(1, 2)
    sbnorm.running_var:uniform(1e-3, 2)
    sbnorm:evaluate()
@@ -576,7 +576,7 @@ function cunntest.SpatialBatchNormalization_forward_inference()
    tm.cpu = a:time().real
 
    input = input:cuda()
-   local gbnorm = nn.SpatialBatchNormalization(planes):cuda()
+   local gbnorm = nn[moduleName](planes):cuda()
    gbnorm:evaluate()
    gbnorm.weight = sbnorm.weight:cuda()
    gbnorm.bias = sbnorm.bias:cuda()
@@ -594,20 +594,20 @@ function cunntest.SpatialBatchNormalization_forward_inference()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward evaluate)')
 end
 
-local function SpatialBatchNormalization_backward(backwardFn)
-   local batch = math.random(2,32)
-   local planes = math.random(1,64)
-   local height = math.random(1,64)
-   local width = math.random(1,64)
+local function BatchNormalization_backward(moduleName, dim, k, backwardFn)
+   local planes = torch.random(1,k)
+   local inputSize = { torch.random(2,32), planes }
+   for i=1,dim do
+      table.insert(inputSize, torch.random(1,k))
+   end
 
    local tm = {}
-   local title = string.format('SpatialBatchNormalization.backward %dx%dx%d%d',
-                               batch, planes, height, width)
+   local title = moduleName .. '.backward ' .. table.concat(inputSize, 'x')
    times[title] = tm
 
-   local input = torch.randn(batch,planes,height,width)
-   local gradOutput = torch.randn(batch,planes,height,width)
-   local sbnorm = nn.SpatialBatchNormalization(planes)
+   local input = torch.randn(table.unpack(inputSize))
+   local gradOutput = torch.randn(table.unpack(inputSize))
+   local sbnorm = nn[moduleName](planes)
    sbnorm:forward(input)
    sbnorm:zeroGradParameters()
    local groundgrad = backwardFn(sbnorm, input, gradOutput)
@@ -622,7 +622,7 @@ local function SpatialBatchNormalization_backward(backwardFn)
 
    input = input:cuda()
    gradOutput = gradOutput:cuda()
-   local gbnorm = nn.SpatialBatchNormalization(planes):cuda()
+   local gbnorm = nn[moduleName](planes):cuda()
    gbnorm.weight = sbnorm.weight:cuda()
    gbnorm.bias = sbnorm.bias:cuda()
    gbnorm:forward(input)
@@ -647,11 +647,39 @@ local function SpatialBatchNormalization_backward(backwardFn)
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
 
-function cunntest.SpatialBatchNormalization_backward()
-   SpatialBatchNormalization_backward(function(m, input, gradOutput)
+function cunntest.BatchNormalization()
+   BatchNormalization_forward('BatchNormalization', 0, 128)
+   BatchNormalization_forward_inference('BatchNormalization', 0, 128)
+   BatchNormalization_backward('BatchNormalization', 0, 128, function(m, input, gradOutput)
       return m:backward(input, gradOutput)
    end)
-   SpatialBatchNormalization_backward(function(m, input, gradOutput)
+   BatchNormalization_backward('BatchNormalization', 0, 128, function(m, input, gradOutput)
+      local gradInput = m:updateGradInput(input, gradOutput)
+      m:accGradParameters(input, gradOutput)
+      return gradInput
+   end)
+end
+
+function cunntest.SpatialBatchNormalization()
+   BatchNormalization_forward('SpatialBatchNormalization', 2, 64)
+   BatchNormalization_forward_inference('SpatialBatchNormalization', 2, 64)
+   BatchNormalization_backward('SpatialBatchNormalization', 2, 64, function(m, input, gradOutput)
+      return m:backward(input, gradOutput)
+   end)
+   BatchNormalization_backward('SpatialBatchNormalization', 2, 64, function(m, input, gradOutput)
+      local gradInput = m:updateGradInput(input, gradOutput)
+      m:accGradParameters(input, gradOutput)
+      return gradInput
+   end)
+end
+
+function cunntest.VolumetricBatchNormalization()
+   BatchNormalization_forward('VolumetricBatchNormalization', 3, 16)
+   BatchNormalization_forward_inference('VolumetricBatchNormalization', 3, 16)
+   BatchNormalization_backward('VolumetricBatchNormalization', 3, 16, function(m, input, gradOutput)
+      return m:backward(input, gradOutput)
+   end)
+   BatchNormalization_backward('VolumetricBatchNormalization', 3, 16, function(m, input, gradOutput)
       local gradInput = m:updateGradInput(input, gradOutput)
       m:accGradParameters(input, gradOutput)
       return gradInput
