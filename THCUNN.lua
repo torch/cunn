@@ -396,7 +396,7 @@ TH_API void THNN_CudaTemporalMaxPooling_updateGradInput(
           THCudaTensor *indices,
           int kW, int dW);
 
-TH_API void THNN_CudaSpatialBatchNormalization_updateOutput(
+TH_API void THNN_CudaBatchNormalization_updateOutput(
           THCState *state,
           THCudaTensor *input,
           THCudaTensor *output,
@@ -409,7 +409,7 @@ TH_API void THNN_CudaSpatialBatchNormalization_updateOutput(
           bool train,
           double momentum,
           double eps);
-TH_API void THNN_CudaSpatialBatchNormalization_backward(
+TH_API void THNN_CudaBatchNormalization_backward(
           THCState *state,
           THCudaTensor *input,
           THCudaTensor *gradOutput,
