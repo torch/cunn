@@ -1,6 +1,5 @@
 require "cutorch"
 require "nn"
-require "libcunn"
 require "cunn.THCUNN"
 
 require('cunn.test')
