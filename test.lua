@@ -511,6 +511,122 @@ function cunntest.WeightedEuclidean_backward_batch()
    mytester:assertlt(derror:abs():max(), precision_backward, 'error on diagCov (backward) ')
 end
 
+function cunntest.SparseLinear_forward()
+    local inb = math.random(5,10)
+    local ini = math.random(50,100)
+    local inj = math.random(5,10)
+
+    local module = nn.SparseLinear(ini,inj)
+    local sslin = module
+    local gslin = module:clone():cuda()
+
+    -- Create a random sparse vector
+    local input = {}
+    for i=1,inb do
+        local nnz = math.random(5, 10)
+        local inds = torch.randperm(ini)[{{1,nnz}}]
+        input[i] = torch.Tensor(nnz, 2)
+        input[i]:select(2,1):copy(inds)
+        input[i]:select(2,2):copy(torch.rand(nnz))
+    end
+
+    local tm = {}
+    local title = string.format('SparseLinear forward %d -> %d', ini, inj)
+    times[title] = tm
+
+    local groundtruth = sslin:forward(input)
+    sslin:zeroGradParameters()
+    local a = torch.Timer()
+    for i = 1,nloop do
+        groundtruth = sslin:forward(input)
+    end
+    tm.cpu = a:time().real
+
+    for i,v in ipairs(input) do input[i] = input[i]:cuda() end
+    local rescuda = gslin:forward(input)
+    gslin:zeroGradParameters()
+    a:reset()
+    for i = 1,nloop do
+        rescuda = gslin:forward(input)
+    end
+    cutorch.synchronize()
+    tm.gpu = a:time().real
+
+    local error = rescuda:float() - groundtruth
+    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.SparseLinear_backward()
+    local inb = math.random(5,10)
+    local ini = math.random(50,100)
+    local inj = math.random(5,10)
+
+    local gslin = nn.SparseLinear(ini,inj):cuda()
+    local sslin = nn.Linear(ini,inj)
+    gslin.weight = sslin.weight:clone():cuda()
+    gslin.bias = sslin.bias:clone():cuda()
+
+    -- Create a random sparse vector
+    local input = {}
+    local nonsparse = torch.zeros(inb, ini)
+    for i=1,inb do
+        local nnz = math.random(3, 5)
+        local inds = torch.randperm(ini)[{{1,nnz}}]
+        input[i] = torch.Tensor(nnz, 2)
+        input[i]:select(2,1):copy(inds)
+        input[i]:select(2,2):copy(torch.rand(nnz))
+        nonsparse[i]:scatter(1, input[i]:select(2,1):long(), input[i]:select(2,2))
+    end
+    print(input)
+    print(nonsparse)
+
+    local tm = {}
+    local title = string.format('SparseLinear backward %d <- %d', ini, inj)
+    times[title] = tm
+
+    local gradOutput = torch.randn(inb, inj)
+    sslin:forward(nonsparse)
+    local groundgrad = sslin:backward(nonsparse, gradOutput)
+    sslin:zeroGradParameters()
+    local a = torch.Timer()
+    for i = 1,nloop do
+        sslin:backward(nonsparse, gradOutput)
+    end
+    tm.cpu = a:time().real
+    local groundweight = sslin.gradWeight
+    local groundbias = sslin.gradBias
+
+    for i,v in ipairs(input) do input[i] = input[i]:cuda() end
+    gradOutput = gradOutput:cuda()
+    gslin:forward(input)
+    local rescuda = gslin:backward(input, gradOutput)
+    gslin:zeroGradParameters()
+    a:reset()
+    for i = 1,nloop do
+        gslin:backward(input, gradOutput)
+    end
+    local weightcuda = gslin.gradWeight
+    local biascuda = gslin.gradBias
+    cutorch.synchronize()
+    tm.gpu = a:time().real
+
+    local werror = weightcuda:float() - groundweight
+    local berror = biascuda:float() - groundbias
+
+    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+
+    gslin:updateParameters(.1)
+    sslin:updateParameters(.1)
+    werror = gslin.weight:float() - sslin.weight
+    berror = gslin.bias:float() - sslin.bias
+
+    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (update) ')
+    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (update) ')
+
+    gslin:zeroGradParameters()
+end
+
 local function BatchNormalization_forward(moduleName, dim, k)
    local planes = torch.random(1,k)
    local inputSize = { torch.random(2,32), planes }
