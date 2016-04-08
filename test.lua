@@ -4743,3 +4743,8 @@ function nn.testcuda(tests, print_timing, n_loop, seed)
        print ' ------------------------------------------------------------------------------------------------'
    end
 end
+
+-- add alias, in same format as eg cutorch.test()
+cunn = cunn or {}
+cunn.test = nn.testcuda
+
