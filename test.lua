@@ -1,4 +1,4 @@
-local cunntest = {}
+local cunntest = torch.TestSuite()
 local precision_forward = 1e-4
 local precision_backward = 1e-2
 local nloop = 1
@@ -4370,17 +4370,6 @@ function cunntest.VolumetricFullConvolution()
     end
 end
 
-function cunntest.getParameters()
-   -- smoke test for getParameters
-   local model = nn.Sequential()
-   model:add( nn.SpatialConvolution(1,10,3,3) )
-   model:add( nn.SpatialConvolution(10,20,3,3) )
-   model:cuda()
-   local weights, gradients = model:getParameters()
-   local copy = model:clone():float():cuda()
-   local weights, gradients = copy:getParameters()
-end
-
 function cunntest.LookupTable_forward()
    local nVocab = 10000
    local nDim = 100
@@ -4706,8 +4695,8 @@ local function setUp()
    cutorch.setDevice(1)
 end
 
-for k,v in pairs(cunntest) do
-   cunntest[k] = function()
+for k,v in pairs(cunntest.__tests) do
+   cunntest.__tests[k] = function()
       setUp()
       v()
    end
