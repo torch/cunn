@@ -2942,7 +2942,7 @@ end
 function cunntest.distkldiv()
    for sizeAverage = 0, 1 do
       local size = math.random(3000,5000)
-      local input = torch.randn(size,1,1)
+      local input = torch.randn(size) -- TODO, make it back to (size, 1, 1), see https://github.com/torch/cunn/issues/245#issuecomment-209260954
       local target = torch.randn(size)
       local mod = nn.DistKLDivCriterion(sizeAverage == 1)
 
@@ -4736,4 +4736,3 @@ end
 -- add alias, in same format as eg cutorch.test()
 cunn = cunn or {}
 cunn.test = nn.testcuda
-
