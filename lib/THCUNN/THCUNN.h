@@ -501,7 +501,6 @@ TH_API void THNN_CudaSpatialConvolutionMM_updateGradInput(
           THCudaTensor *gradOutput,
           THCudaTensor *gradInput,
           THCudaTensor *weight,
-          THCudaTensor *bias,
           THCudaTensor *columns,
           THCudaTensor *ones,
           int kW, int kH,
