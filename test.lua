@@ -710,7 +710,7 @@ end
 
 local function BatchNormalization_backward(moduleName, mode, dim, k, backwardFn)
    assert(mode == 'training' or mode == 'evaluation', 'invalid mode')
-   
+
    local planes = torch.random(1,k)
    local inputSize = { torch.random(2,32), planes }
    for i=1,dim do
@@ -889,7 +889,7 @@ function cunntest.SpatialConvolutionMM_forward_single()
       local error = rescuda:float() - groundtruth
       mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
    end
-   
+
    jacTests(false)
    jacTests(true)
 end
@@ -948,8 +948,8 @@ function cunntest.SpatialConvolutionMM_forward_batch()
       local error = rescuda:float() - groundtruth
       mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
    end
-   
-   
+
+
 end
 
 function cunntest.SpatialConvolutionMM_backward_single()
@@ -1018,13 +1018,13 @@ function cunntest.SpatialConvolutionMM_backward_single()
 
       mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
       mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
-      
+
       if gconv.bias then
          local berror = gconv.gradBias:float() - groundbias
          mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
       end
    end
-   
+
    jacTests(false)
    jacTests(true)
 end
@@ -1101,7 +1101,7 @@ function cunntest.SpatialConvolutionMM_backward_batch()
          mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
       end
    end
-   
+
    jacTests(false)
    jacTests(true)
 end
@@ -3939,16 +3939,16 @@ function cunntest.VolumetricMaxPooling_forward()
    local dT = math.random(1, 13)
    local dH = math.random(1, 13)
    local dW = math.random(1, 13)
-   local oT = math.random(1, 20)
-   local oH = math.random(1, 20)
-   local oW = math.random(1, 20)
+   local iT = math.random(kT*2, 60)
+   local iH = math.random(kH*2, 60)
+   local iW = math.random(kW*2, 60)
    local padT = math.random(0,kT/2-1)
    local padH = math.random(0,kH/2-1)
    local padW = math.random(0,kW/2-1)
    local iF = math.random(1, 16) -- features
-   local iT = (oT - 1) * dT + kT - padT*2
-   local iH = (oH - 1) * dH + kH - padH*2
-   local iW = (oW - 1) * dW + kW - padW*2
+   local oT = math.floor((iT - kT + 2*padT) / dT + 1)
+   local oH = math.floor((iH - kH + 2*padH) / dH + 1)
+   local oW = math.floor((iW - kW + 2*padW) / dW + 1)
 
    local tm = {}
    local title = string.format('VolumetricMaxPooling.forward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d)-> %dx%dx%dx%d',
@@ -3956,7 +3956,7 @@ function cunntest.VolumetricMaxPooling_forward()
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricMaxPooling(kT, kH, kW, dT, dH, dW, padT, padH, padW):float()
+   local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):float()
    local output = layer:forward(input)
    local timer = torch.Timer()
    for i = 1,nloop do
@@ -3985,16 +3985,16 @@ function cunntest.VolumetricMaxPooling_backward()
    local dT = math.random(1, 13)
    local dH = math.random(1, 13)
    local dW = math.random(1, 13)
-   local oT = math.random(1, 20)
-   local oH = math.random(1, 20)
-   local oW = math.random(1, 20)
+   local iT = math.random(kT*2, 60)
+   local iH = math.random(kH*2, 60)
+   local iW = math.random(kW*2, 60)
    local padT = math.random(0,kT/2-1)
    local padH = math.random(0,kH/2-1)
    local padW = math.random(0,kW/2-1)
    local iF = math.random(1, 16) -- features
-   local iT = (oT - 1) * dT + kT - padT*2
-   local iH = (oH - 1) * dH + kH - padH*2
-   local iW = (oW - 1) * dW + kW - padW*2
+   local oT = math.floor((iT - kT + 2*padT) / dT + 1)
+   local oH = math.floor((iH - kH + 2*padH) / dH + 1)
+   local oW = math.floor((iW - kW + 2*padW) / dW + 1)
 
    local tm = {}
    local title = string.format('VolumetricMaxPooling.backward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
@@ -4002,7 +4002,7 @@ function cunntest.VolumetricMaxPooling_backward()
    times[title] = tm
 
    local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricMaxPooling(kT, kH, kW, dT, dH, dW, padT, padH, padW):float()
+   local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):float()
    local output = layer:forward(input)
    local gradOutput = output:clone():uniform(-1, 1)
 
