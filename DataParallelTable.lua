@@ -155,6 +155,14 @@ function DataParallelTable:evaluate()
    parent.evaluate(self)
 end
 
+function DataParallelTable:clearState()
+   self.impl:exec(function(module)
+      module:clearState()
+   end)
+   parent.clearState(self)
+end
+
+
 function DataParallelTable:updateOutput(input)
    if self.flattenParams and not hasFlattenedParmeters(self) then
       self:flattenParameters()
