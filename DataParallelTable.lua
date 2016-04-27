@@ -129,7 +129,7 @@ function DataParallelTable:getParameters()
    return table.unpack(self.flattenedParams[1])
 end
 
-local function hasFlattenedParmeters(self)
+local function hasFlattenedParameters(self)
    if not self.flattenedParams then
       return false
    end
@@ -162,9 +162,22 @@ function DataParallelTable:clearState()
    return parent.clearState(self)
 end
 
+local function _hasData(input)
+   if torch.isTensor(input) then
+      return input:numel() ~= 0
+   else
+      assert(type(input) == 'table')
+      for i = 1, #input do
+         if _hasData(input[i]) then
+            return true
+         end
+      end
+      return false
+   end
+end
 
 function DataParallelTable:updateOutput(input)
-   if self.flattenParams and not hasFlattenedParmeters(self) then
+   if self.flattenParams and not hasFlattenedParameters(self) then
       self:flattenParameters()
    end
    if self.needsSync then
@@ -179,10 +192,10 @@ function DataParallelTable:updateOutput(input)
    -- update output for each module
    local inputGpu = self.inputGpu
    self.outputGpu = self.impl:exec(function(m, i)
-      if torch.isTensor(inputGpu[i]) and inputGpu[i]:numel() == 0 then
-         return torch.CudaTensor()
-      else
+      if _hasData(inputGpu[i]) then
          return m:updateOutput(inputGpu[i])
+      else
+         return inputGpu[i]
       end
    end)
 
@@ -441,18 +454,32 @@ function DataParallelTable:__write(file)
    self:syncParameters()
 end
 
+function DataParallelTable:_reflattenReplicaParameters()
+   local flattenedParams = self.flattenedParams
+   if flattenedParams then
+      self.flattenedParams = self.impl:exec(function(m, i)
+         if i == 1 then
+            return flattenedParams[1]
+         else
+            return { m:getParameters() }
+         end
+      end)
+   end
+end
+
 function DataParallelTable:apply(callback)
    parent.apply(self, callback)
    self.impl:applyChanges()
+   self:_reflattenReplicaParameters()
 end
 
 local function sliceRange(nElem, idx, splits)
    local eltsPerMod = nElem / splits
-   local rangeStart = math.floor((idx - 1) * eltsPerMod) + 1
+   local rangeStart = math.ceil((idx - 1) * eltsPerMod) + 1
    if idx == splits then
       return rangeStart, nElem - rangeStart + 1
    else
-      return rangeStart, math.floor(idx * eltsPerMod) - rangeStart + 1
+      return rangeStart, math.ceil(idx * eltsPerMod) - rangeStart + 1
    end
 end
 
@@ -519,8 +546,8 @@ function DataParallelTable:_distributeTensorRecursive(dst, src, idx, n)
       end
 
       -- Recurse on the table
-      for i = 1, #src do
-         dst[i] = self:_distributeTensorRecursive(dst[i], src[i], idx, n)
+      for i, s in ipairs(src) do
+         dst[i] = self:_distributeTensorRecursive(dst[i], s, idx, n)
       end
       return dst
    end
@@ -531,7 +558,8 @@ function DataParallelTable:_distributeTensorRecursive(dst, src, idx, n)
 
    dst = torch.type(dst) == 'torch.CudaTensor' and dst or torch.CudaTensor()
 
-   local index, size = sliceRange(src:size(self.dimension), idx, n)
+   local srcsize = src:dim() > 0 and src:size(self.dimension) or 0
+   local index, size = sliceRange(srcsize, idx, n)
    if size == 0 then
       dst:resize(0)
    else
@@ -561,7 +589,7 @@ function DataParallelTable:_concatTensorRecursive(dst, src)
       if torch.type(dst) ~= 'table' or #src[1] ~= #dst then
          dst = {}
       end
-      for i=1,#src[1] do
+      for i, _ in ipairs(src[1]) do
          dst[i] = self:_concatTensorRecursive(dst[i], pluck(src, i))
       end
       return dst
