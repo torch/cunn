@@ -2820,6 +2820,49 @@ function cunntest.MarginCriterion_forward()
   mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
 end
 
+function cunntest.MultiLabelMarginCriterion_forward()
+  local size = math.random(1,100)
+  local input = (torch.rand(size)-0.5) * 2 -- data spread from -1 to 1
+  local target = torch.round(torch.rand(size)*(size-1)):add(1) -- generate random labels > 0
+  local zero = math.random(0,size) -- turn some labels into 0 targets
+  if zero > 0 then
+     target:sub(size-zero+1,size):zero()
+  end
+
+  local crit = nn.MultiLabelMarginCriterion()
+  local groundtruth= crit:forward(input, target)
+  input = input:cuda()
+  target = target:cuda()
+  local g_crit = nn.MultiLabelMarginCriterion():cuda()
+  local rescuda = g_crit:forward(input, target)
+  local errorVal = rescuda - groundtruth
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.MultiLabelMarginCriterion_backward()
+   local size = math.random(1,100)
+   local input = (torch.rand(size)-0.5) * 2 -- data spread from -1 to 1
+   local target = torch.round(torch.rand(size)*(size-1)):add(1) -- generate random labels > 0
+   local zero = math.random(0,size) -- turn some labels into 0 targets
+   if zero > 0 then
+      target:sub(size-zero+1,size):zero()
+   end
+
+   local crit = nn.MultiLabelMarginCriterion()
+   local pred = crit:forward(input, target)
+   local groundgrad = crit:backward(input, target)
+
+   input = input:cuda()
+   target = target:cuda()
+   local g_crit = nn.MultiLabelMarginCriterion():cuda()
+   g_crit:forward(input, target)
+   local rescuda = g_crit:backward(input, target)
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
 function cunntest.SpatialCrossMapLRN_forward_batch()
    local bs = math.random(4,10)
    local inputSize = math.random(6,9)
