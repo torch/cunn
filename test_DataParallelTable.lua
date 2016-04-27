@@ -55,6 +55,7 @@ local function buildNet(width, height, pool, feat, filt, tableInOut, numConvs)
 end
 
 local function serialize(net)
+   net:clearState()
    local uniq = sys.execute('echo "$(($(date +%s%N)/1000000))"')
    local f = torch.DiskFile(string.format('/tmp/%s', uniq), 'w')
    f:binary()
@@ -246,6 +247,27 @@ function test.DataParallelTable_smallBatch()
    end
 end
 
+
+function test.DataParallelTable_emptyTensor()
+   local net = nn.Sequential():add(nn.SelectTable(2)):add(nn.Linear(10,2)):cuda()
+
+   local dpt = nn.DataParallelTable(1)
+   for i=1,numGpus do
+      cutorch.withDevice(i, function()
+         dpt:add(net:clone():cuda(), i)
+      end)
+   end
+
+   local input      = {torch.CudaTensor(0), torch.CudaTensor(numGpus, 10):fill(1)}
+   local output     = dpt:forward(input)
+   local expected   = net:forward(input)
+   assert((output   - expected ):abs():max() < precision, 'unexpected output')
+   local gradOutput = output:clone():uniform(-1,1)
+   local gradInput  = dpt:backward(input, gradOutput)
+   local expected   = net:backward(input, gradOutput)
+   assert((expected[2] - gradInput[2]):abs():max() < precision, 'unexpected gradInput')
+end
+
 function test.DataParallelTable_type()
    local net = nn.SpatialConvolution(3, 3, 3, 5)
 
@@ -430,11 +452,64 @@ function test.DataParallelTable_accGradParameters()
    local expected = base:forward(inputs[1])
 
    for _, config in ipairs(configs) do
-      local dpt = nn.DataParallelTable(1, true, false)
+      local dpt = nn.DataParallelTable(table.unpack(config))
          :add(net:clone(), torch.range(1, numGpus):totable())
       accumulateGradient(dpt)
       local output = dpt:forward(inputs[1])
       mytester:assertlt((output - expected):abs():max(), 1e-5, 'invalid output')
+   end
+end
+
+function test.DataParallelTable_apply()
+   local net = nn.Sequential()
+      :add(nn.Linear(3, 10))
+      :add(nn.ReLU())
+      :add(nn.Linear(10, 7))
+      :cuda()
+
+   local inputs = {}
+   local gradOutputs = {}
+   for i=1,3 do
+      inputs[i] = torch.randn(8, 3):cuda()
+      gradOutputs[i] = torch.randn(8, 7):cuda()
+   end
+
+   local configs = {
+      {1, false, false},
+      {1, true,  false},
+   }
+
+   local function trainNetwork(m)
+      -- Test that apply doesn't break everything. This will be very slow
+      -- in the training loop, but should still be correct.
+      local function emptyFn() end
+      m:apply(emptyFn)
+      for i=1,#inputs do
+         m:zeroGradParameters()
+         m:forward(inputs[i])
+         m:backward(inputs[i], gradOutputs[i])
+         m:updateParameters(0.1)
+         m:apply(emptyFn)
+      end
+   end
+
+   local base = net:clone()
+   trainNetwork(base)
+   local expected = base:forward(inputs[1])
+
+   for _, usethreads in ipairs{false,true} do
+      for _, config in ipairs(configs) do
+         local dpt = nn.DataParallelTable(table.unpack(config))
+            :add(net:clone(), torch.range(1, numGpus):totable())
+         if usethreads then
+            dpt:threads()
+         end
+         trainNetwork(dpt)
+         local output = dpt:forward(inputs[1])
+         mytester:assertlt((output - expected):abs():max(), 1e-5,
+            'invalid output: flatten=' .. tostring(config[2]) ..
+            ' threads=' .. tostring(usethreads))
+      end
    end
 end
 
@@ -486,6 +561,52 @@ function test.DataParallelTable_streams()
    end
    cutorch.setStream(0)
 end
+
+function test.DataParallelTable_emptyData()
+   local function eq(a,b)
+      if not torch.isTensor(a) then
+         local res = true
+         for i = 1, #a do
+            res = res and eq(a[i], b[i])
+         end
+         return res
+      end
+      return a:clone():add(-b):abs():max() == 0
+   end
+
+   local identity = nn.Linear(5,5)
+   identity.bias:zero()
+   identity.weight=torch.eye(5)
+
+   local a = nn.DataParallelTable(1)
+   a:add(identity, torch.range(1,numGpus):totable())
+   a:cuda()
+
+   local inputs = {torch.range(1,numGpus*5):reshape(numGpus,5):cuda(),
+                   torch.range(1,5):reshape(1,5):cuda(),
+                   torch.range(1,10):reshape(2,5):cuda(),
+                  }
+
+   for _, input in ipairs(inputs) do
+      local output = a:forward(input)
+      local gradInput = a:backward(input, output)
+      mytester:assert(eq(input, output))
+      mytester:assert(eq(input, gradInput))
+   end
+
+   a = nn.DataParallelTable(1)
+   a:add(nn.ParallelTable():add(identity):add(identity), torch.range(1,numGpus):totable())
+   a:cuda()
+
+   for _, input in ipairs(inputs) do
+      input = {input, input}
+      local output = a:forward(input)
+      local gradInput = a:backward(input, output)
+      mytester:assert(eq(input, output))
+      mytester:assert(eq(input, gradInput))
+   end
+end
+
 
 function test.ProfileDataParallelTable()
    local width = 32
