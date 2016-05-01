@@ -3910,6 +3910,42 @@ function cunntest.ClassNLLCriterionMultipleTarget()
    mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
 end
 
+function cunntest.SpatialClassNLLCriterion()
+   local batchSize = math.random(5, 10)
+   local h = math.random(300, 500)
+   local w = math.random(300, 800)
+   local classes = math.random(10,30)
+   local input = torch.randn(batchSize, classes, h, w)
+   local target = torch.Tensor(batchSize, h, w)
+   target:apply(function() return math.random(1, classes) end)
+   local mod = nn.SpatialClassNLLCriterion()
+
+   local tm = {}
+   local title = string.format('SpatialClassNLLCriterion %dx%dx%dx%d ',
+         batchSize, classes, h, w)
+   times[title] = tm
+
+   local a = torch.Timer()
+   local fout = mod:forward(input, target)
+   local fgin = mod:backward(input, target):clone()
+   tm.cpu = a:time().real
+
+   local cinput = input:cuda()
+   local ctarget = target:cuda()
+
+   local cmod = nn.SpatialClassNLLCriterion():cuda()
+   a:reset()
+   local cout = cmod:forward(cinput,ctarget)
+   local cgin = cmod:backward(cinput,ctarget)
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   mytester:assertlt(
+       math.abs(fout-cout), precision_forward, 'error on output')
+
+   local gerr = cgin:float() - fgin
+   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+end
 
 function cunntest.ClassNLLCriterionMultipleTargetWeights()
    local size = math.random(3000,5000)
