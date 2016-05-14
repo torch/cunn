@@ -47,6 +47,23 @@ TH_API void THNN_CudaClassNLLCriterion_updateGradInput(
           THCudaTensor *weights,
           THCudaTensor *total_weight);
 
+TH_API void THNN_CudaWeightedClassNLLCriterion_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *output,
+          bool sizeAverage,
+          THCudaTensor *weights,
+          THCudaTensor *total_weight);
+TH_API void THNN_CudaWeightedClassNLLCriterion_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *gradInput,
+          bool sizeAverage,
+          THCudaTensor *weights,
+          THCudaTensor *total_weight);
+
 TH_API void THNN_CudaSpatialClassNLLCriterion_updateOutput(
           THCState *state,
           THCudaTensor *input,
@@ -316,6 +333,23 @@ TH_API void THNN_CudaSmoothL1Criterion_updateGradInput(
           THCudaTensor *target,
           THCudaTensor *gradInput,
           bool sizeAverage);
+
+TH_API void THNN_CudaWeightedSmoothL1Criterion_updateOutput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *output,
+          bool sizeAverage, 
+          THCudaTensor *weights,
+          THCudaTensor *total_weight);
+TH_API void THNN_CudaWeightedSmoothL1Criterion_updateGradInput(
+          THCState *state,
+          THCudaTensor *input,
+          THCudaTensor *target,
+          THCudaTensor *gradInput,
+          bool sizeAverage, 
+          THCudaTensor *weights,
+          THCudaTensor *total_weight);
 
 TH_API void THNN_CudaSoftMax_updateOutput(
           THCState *state,
