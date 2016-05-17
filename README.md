@@ -50,7 +50,7 @@ require 'cutorch'
 
 local a = torch.CudaTensor(1000):uniform()
 for it=1,1000 do
-  local b = a:add(1)
+  local b = torch.add(a, 1)
 end
 ```
 ... this will allocate one thousand new `CudaTensor`s, one for each call to `a:add(1)`.
@@ -66,8 +66,8 @@ for it=1,1000 do
 end
 ```
 In this form, `b` is allocated only once, before the loop.  Then the `b:add(a,1)` operation will perform
-the add inside the GPU kernel, and immediately store the result into the original `b` `CudaTensor`.  This
-will run noticeably faster, in general.  It's also a lot likely to eat up arbitrary amounts of memory,
+the add inside the GPU kernel, and store the result into the original `b` `CudaTensor`.  This
+will run noticeably faster, in general.  It's also a lot less likely to eat up arbitrary amounts of memory,
 and less likely to need frequent calls to `collectgarbage(); collectgarbage()`.
 
 __Benchmarking__
@@ -79,7 +79,7 @@ require 'cutorch'
 local a = torch.CudaTensor(1000,1000):uniform()
 a:add(1)
 ```
-... the GPU kernel to add 1 will only be scheduled for launch by `a:add(1)`.  It wont have completed yet, or
+... the GPU kernel to add 1 will only be scheduled for launch by `a:add(1)`.  It might not have completed yet, or
 even have reached the GPU, at the time that the `a:add(1)` instructions has completed
 * therefore for running wall-clock timings, you should call `cutorch.synchronize()` before each timecheck
 point:
