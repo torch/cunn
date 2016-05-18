@@ -53,7 +53,7 @@ for it=1,1000 do
   local b = torch.add(a, 1)
 end
 ```
-... this will allocate one thousand new `CudaTensor`s, one for each call to `a:add(1)`.
+... this will allocate one thousand new `CudaTensor`s, one for each call to `torch.add(a, 1)`.
 
 Use instead this form:
 ```lua
