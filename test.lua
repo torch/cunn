@@ -265,7 +265,7 @@ function cunntest.ELU_backward()
 end
 
 function cunntest.ELU_transposed()
-   pointwise_transposed(nn.ELU(), 'ELU')
+   pointwise_transposed(nn.ELU(), 'ELU', 1e-6)
 end
 
 function cunntest.SoftMax_forward()
@@ -627,7 +627,7 @@ end
 
 local function BatchNormalization_forward(moduleName, dim, k)
    local planes = torch.random(1,k)
-   local inputSize = { torch.random(2,32), planes }
+   local inputSize = { torch.random(2,24), planes }
    for i=1,dim do
       table.insert(inputSize, torch.random(1,k))
    end
@@ -1113,8 +1113,8 @@ function cunntest.SpatialConvolutionLocal_forward_single()
    local kj = math.random(3,15)
    local si = math.random(1,3)
    local sj = math.random(1,3)
-   local outi = math.random(1,64)
-   local outj = math.random(1,64)
+   local outi = math.random(1,48)
+   local outj = math.random(1,48)
    local padW = math.random(0,1)
    local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
@@ -1158,8 +1158,8 @@ function cunntest.SpatialConvolutionLocal_forward_batch()
    local kj = math.random(3,15)
    local si = math.random(1,3)
    local sj = math.random(1,3)
-   local outi = math.random(1,64)
-   local outj = math.random(1,64)
+   local outi = math.random(1,48)
+   local outj = math.random(1,48)
    local padW = math.random(0,1)
    local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
@@ -1202,8 +1202,8 @@ function cunntest.SpatialConvolutionLocal_backward_single()
    local kj = math.random(3,15)
    local si = math.random(1,3)
    local sj = math.random(1,3)
-   local outi = math.random(1,64)
-   local outj = math.random(1,64)
+   local outi = math.random(1,48)
+   local outj = math.random(1,48)
    local padW = math.random(0,1)
    local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
@@ -1264,8 +1264,8 @@ function cunntest.SpatialConvolutionLocal_backward_batch()
    local kj = math.random(3,15)
    local si = math.random(1,3)
    local sj = math.random(1,3)
-   local outi = math.random(1,64)
-   local outj = math.random(1,64)
+   local outi = math.random(1,48)
+   local outj = math.random(1,48)
    local padW = math.random(0,1)
    local padH = math.random(0,1)
    local ini = (outi-1)*si+ki-padW*2
@@ -2747,10 +2747,10 @@ end
 
 function cunntest.SpatialAdaptiveMaxPooling_forward_batch()
    local bs = math.random(4,10)
-   local from = math.random(1,64)
+   local from = math.random(1,48)
    local to = from
-   local outi = math.random(2,64)
-   local outj = math.random(2,64)
+   local outi = math.random(2,48)
+   local outj = math.random(2,48)
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
@@ -5098,7 +5098,7 @@ for k,v in pairs(cunntest.__tests) do
 end
 
 local function initSeed(seed)
-   seed = seed or os.time()
+   seed = seed or math.floor((torch.tic() * 1e5) % 1e9)
    -- ensure that you can reproduce a failing test
    print('seed: ', seed)
    math.randomseed(seed)
