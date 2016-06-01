@@ -409,14 +409,13 @@ function test.DataParallelTable_noGradInput()
    local input = torch.Tensor(5):random(10):cuda()
    local output1 = net:forward(input):clone()
    local gradOutput = output1:clone():uniform(-1, 1)
-   local gradInput1 = net:backward(output1, gradOutput):clone()
+   local gradInput1 = net:backward(input, gradOutput):clone()
 
    local output2 = dpt:forward(input)
-   local gradInput2 = dpt:backward(output2, gradOutput)
-   mytester:assert((output1 - output2):abs():max(), precision,
+   local gradInput2 = dpt:backward(input, gradOutput)
+   mytester:assertlt((output1 - output2):abs():max(), precision,
       'forward prop error')
-   mytester:assert(gradInput2:nElement() == 0 and gradInput1:nElement() == 0,
-      'backward prop error')
+   mytester:asserteq(gradInput2:nElement(), gradInput1:nElement())
 end
 
 function test.DataParallelTable_accGradParameters()
