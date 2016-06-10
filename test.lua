@@ -4333,6 +4333,120 @@ function cunntest.VolumetricMaxPooling_backward()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (backward) ')
 end
 
+function cunntest.VolumetricMaxUnpooling_forward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local kt = math.random(3,7)
+   local ki = math.random(3,7)
+   local kj = math.random(3,7)
+   local st, si, sj = kt, ki, kj
+   local outt = math.random(32,128)
+   local outi = math.random(32,128)
+   local outj = math.random(32,128)
+   local padt = math.random(0,kt/2-1)
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local it = ((outt + padt*2 - kt)/st) +1
+   local ii = ((outi + padi*2 - ki)/si) +1
+   local ij = ((outj + padj*2 - kj)/sj) +1
+
+   local tm = {}
+   local title = string.format('VolumetricMaxUnpooling.forward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
+                               bs, from, it, ij, ii, kt, kj, ki, bs, to, outt, outj, outi)
+   times[title] = tm
+
+   local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj)
+   local sunpool = nn.VolumetricMaxUnpooling(pooler)
+
+   local original = torch.randn(bs,from,it,ij,ii)
+   local input = pooler:forward(original)
+   local groundtruth = sunpool:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sunpool:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   original = original:cuda()
+   pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):cuda()
+   local gunpool = nn.VolumetricMaxUnpooling(pooler):cuda()
+
+   input = pooler:forward(original)
+   local rescuda = gunpool:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gunpool:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.VolumetricMaxUnpooling_backward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local kt = math.random(3,7)
+   local ki = math.random(3,7)
+   local kj = math.random(3,7)
+   local st, si, sj = kt, ki, kj
+   local outt = math.random(32,128)
+   local outi = math.random(32,128)
+   local outj = math.random(32,128)
+   local padt = math.random(0,kt/2-1)
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local it = ((outt + padt*2 - kt)/st) +1
+   local ii = ((outi + padi*2 - ki)/si) +1
+   local ij = ((outj + padj*2 - kj)/sj) +1
+
+   local tm = {}
+   local title = string.format('VolumetricMaxUnpooling.backward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
+                               bs, from, it, ij, ii, kt, kj, ki, bs, to, outt, outj, outi)
+   times[title] = tm
+
+   local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj)
+   local sunpool = nn.VolumetricMaxUnpooling(pooler)
+
+   local original = torch.randn(bs,from,it,ij,ii)
+   local input = pooler:forward(original)
+   local gradOutput = torch.randn(original:size())
+   sunpool:forward(input)
+   sunpool:zeroGradParameters()
+   local groundgrad = sunpool:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sunpool:zeroGradParameters()
+      groundgrad = sunpool:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):cuda()
+   local gunpool = nn.VolumetricMaxUnpooling(pooler):cuda()
+
+   original = original:cuda()
+   input = pooler:forward(original)
+   gunpool:forward(input)
+
+   gradOutput = gradOutput:cuda()
+   gunpool:zeroGradParameters()
+   local rescuda = gunpool:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gunpool:zeroGradParameters()
+      rescuda = gunpool:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
 function cunntest.VolumetricAveragePooling_forward()
    local kT = math.random(3, 7)
    local kH = math.random(3, 7)
