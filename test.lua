@@ -180,6 +180,26 @@ function cunntest.Threshold_backward()
   pointwise_backward(nn.Threshold(nil, nil, true), 'Threshold_inplace', precision_backward)
 end
 
+function cunntest.ReLU6_forward()
+  for inplace = 0, 1 do
+    local net = nn.Sequential()
+    -- pointwise_forward uses randn, so add a big constant to make sure some
+    -- of the values saturate.
+    net:add(nn.MulConstant(6))
+    net:add(nn.ReLU6(inplace == 1))
+    pointwise_forward(net, 'ReLU6 inplace ' .. inplace, precision_forward)
+  end
+end
+
+function cunntest.ReLU6_backward()
+  for inplace = 0, 1 do
+    local net = nn.Sequential()
+    net:add(nn.MulConstant(6))
+    net:add(nn.ReLU6(inplace == 1))
+    pointwise_backward(net, 'ReLU6 inplace ' .. inplace, precision_backward)
+  end
+end
+
 function cunntest.LeakyReLU_forward()
    pointwise_forward(nn.LeakyReLU(), 'LeakyReLU', precision_forward)
 end
