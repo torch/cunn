@@ -5220,6 +5220,115 @@ function cunntest.SpatialReplicationPadding_backward()
                      precision_backward, 'error on state (backward) ')
 end
 
+function cunntest.VolumetricReplicationPadding_forward()
+   local batch = math.random(1,3)
+   local plane = math.random(1,3)
+   local sizeZ = math.random(7,16)
+   local sizeY = math.random(7,16)
+   local sizeX = math.random(7,16)
+   local pleft = math.random(-3,3)
+   local pright = math.random(-3,3)
+   local ptop = math.random(-3,3)
+   local pbottom = math.random(-3,3)
+   local pfront = math.random(-3,3)
+   local pback = math.random(-3,3)
+
+   local tm = {}
+   local title =
+      string.format(
+         'VolumetricReplicationPadding.forward %dx%dx%dx%dx%d -> ' ..
+         '%dx%dx%dx%dx%d',
+         batch, plane, sizeZ, sizeY, sizeX,
+         batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
+         sizeX + pleft + pright)
+   times[title] = tm
+
+   local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX)
+   local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                  pfront, pback)
+   local groundtruth = module:forward(input)
+   local a = torch.Timer()
+   for i = 1, nloop do
+      groundtruth = module:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                   pfront, pback):cuda()
+   local rescuda = gmodule:forward(input)
+   a:reset()
+   for i = 1, nloop do
+      rescuda = gmodule:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(),
+                     precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.VolumetricReplicationPadding_backward()
+   local batch = math.random(1,3)
+   local plane = math.random(1,3)
+   local sizeZ = math.random(7,16)
+   local sizeY = math.random(7,16)
+   local sizeX = math.random(7,16)
+   local pleft = math.random(-3,3)
+   local pright = math.random(-3,3)
+   local ptop = math.random(-3,3)
+   local pbottom = math.random(-3,3)
+   local pfront = math.random(-3,3)
+   local pback = math.random(-3,3)
+
+   local tm = {}
+   local title =
+      string.format(
+         'VolumetricReplicationPadding.backward %dx%dx%dx%dx%d -> ' ..
+         '%dx%dx%dx%dx%d',
+         batch, plane, sizeZ, sizeY, sizeX,
+         batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
+         sizeX + pleft + pright)
+   times[title] = tm
+
+   local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX)
+   local gradOutput = torch.rand(
+      batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
+      sizeX + pleft + pright
+   )
+   local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                  pfront, pback)
+   module:forward(input)
+   module:zeroGradParameters()
+   local groundgrad = module:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1, nloop do
+      module:zeroGradParameters()
+      groundgrad = module:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                   pfront, pback):cuda()
+   gmodule:forward(input)
+   gmodule:zeroGradParameters()
+   local rescuda = gmodule:backward(input, gradOutput)
+   a:reset()
+   for i = 1, nloop do
+      gmodule:zeroGradParameters()
+      rescuda = gmodule:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+   mytester:assertlt(error:abs():max(),
+                     precision_backward, 'error on state (backward) ')
+end
+
 local function setUp()
    cutorch.setDevice(1)
 end
