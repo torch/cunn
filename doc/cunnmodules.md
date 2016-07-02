@@ -2,7 +2,8 @@
 # Additional Modules #
 
 The following nn modules are also made available by the cunn package:
- * [DataParallelTable](#nn.DataParallelTable) : A module to parallelize FPROP and BPROP across multiple-GPUs.
+ * [DataParallelTable](#nn.DataParallelTable) : parallelize calls to `forward` and `backward` across multiple-GPUs.
+ * [GPU](https://github.com/torch/nn/blob/master/doc/simple.md#nn.GPU) : decorates a module so that it can be executed on a specific GPU device.
 
 <a name="nn.DataParallelTable"/>
 ## DataParallelTable ##
