@@ -645,13 +645,8 @@ function cunntest.SparseLinear_backward()
     gslin:zeroGradParameters()
 end
 
-local function BatchNormalization_forward(moduleName, dim, k)
-   local planes = torch.random(1,k)
-   local inputSize = { torch.random(2,24), planes }
-   for i=1,dim do
-      table.insert(inputSize, torch.random(1,k))
-   end
-
+local function BatchNormalization_forward(moduleName, inputSize)
+   local planes = inputSize[2]
    local tm = {}
    local title = moduleName .. '.forward ' .. table.concat(inputSize, 'x')
    times[title] = tm
@@ -686,13 +681,8 @@ local function BatchNormalization_forward(moduleName, dim, k)
       precision_forward, 'error on running_var (forward)')
 end
 
-local function BatchNormalization_forward_inference(moduleName, dim, k)
-   local planes = torch.random(1,k)
-   local inputSize = { torch.random(2,32), planes }
-   for i=1,dim do
-      table.insert(inputSize, torch.random(1,k))
-   end
-
+local function BatchNormalization_forward_inference(moduleName, inputSize)
+   local planes = inputSize[2]
    local tm = {}
    local title = moduleName .. '.forward (evaluate) ' .. table.concat(inputSize, 'x')
    times[title] = tm
@@ -728,15 +718,10 @@ local function BatchNormalization_forward_inference(moduleName, dim, k)
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward evaluate)')
 end
 
-local function BatchNormalization_backward(moduleName, mode, dim, k, backwardFn)
+local function BatchNormalization_backward(moduleName, mode, inputSize, backwardFn)
    assert(mode == 'training' or mode == 'evaluation', 'invalid mode')
 
-   local planes = torch.random(1,k)
-   local inputSize = { torch.random(2,32), planes }
-   for i=1,dim do
-      table.insert(inputSize, torch.random(1,k))
-   end
-
+   local planes = inputSize[2]
    local tm = {}
    local title = moduleName .. '.backward ' .. table.concat(inputSize, 'x')
    times[title] = tm
@@ -793,67 +778,43 @@ local function BatchNormalization_backward(moduleName, mode, dim, k, backwardFn)
    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
 
+local function testBatchNormalization(name, dim, k)
+   local function inputSize()
+      local inputSize = { torch.random(2,32), torch.random(1, k) }
+      for i=1,dim do
+         table.insert(inputSize, torch.random(1,k))
+      end
+      return inputSize
+   end
+   local function backward1(m, input, gradOutput)
+      return m:backward(input, gradOutput)
+   end
+   local function backward2(m, input, gradOutput)
+      local gradInput = m:updateGradInput(input, gradOutput)
+      m:accGradParameters(input, gradOutput)
+      return gradInput
+   end
+
+   BatchNormalization_forward(name, inputSize())
+   BatchNormalization_forward_inference(name, inputSize())
+   BatchNormalization_backward(name, 'training', inputSize(), backward1)
+   BatchNormalization_backward(name, 'training', inputSize(), backward2)
+   BatchNormalization_backward(name, 'evaluation', inputSize(), backward1)
+   BatchNormalization_backward(name, 'evaluation', inputSize(), backward2)
+end
+
 function cunntest.BatchNormalization()
-   BatchNormalization_forward('BatchNormalization', 0, 128)
-   BatchNormalization_forward_inference('BatchNormalization', 0, 128)
-   BatchNormalization_backward('BatchNormalization', 'training', 0, 128, function(m, input, gradOutput)
-      return m:backward(input, gradOutput)
-   end)
-   BatchNormalization_backward('BatchNormalization', 'evaluation', 0, 128, function(m, input, gradOutput)
-      return m:backward(input, gradOutput)
-   end)
-   BatchNormalization_backward('BatchNormalization', 'training', 0, 128, function(m, input, gradOutput)
-      local gradInput = m:updateGradInput(input, gradOutput)
-      m:accGradParameters(input, gradOutput)
-      return gradInput
-   end)
-   BatchNormalization_backward('BatchNormalization', 'evaluation', 0, 128, function(m, input, gradOutput)
-      local gradInput = m:updateGradInput(input, gradOutput)
-      m:accGradParameters(input, gradOutput)
-      return gradInput
-   end)
+   testBatchNormalization('BatchNormalization', 0, 128)
 end
 
 function cunntest.SpatialBatchNormalization()
-   BatchNormalization_forward('SpatialBatchNormalization', 2, 64)
-   BatchNormalization_forward_inference('SpatialBatchNormalization', 2, 64)
-   BatchNormalization_backward('SpatialBatchNormalization', 'training', 2, 64, function(m, input, gradOutput)
-      return m:backward(input, gradOutput)
-   end)
-   BatchNormalization_backward('SpatialBatchNormalization', 'evaluation', 2, 64, function(m, input, gradOutput)
-      return m:backward(input, gradOutput)
-   end)
-   BatchNormalization_backward('SpatialBatchNormalization', 'training', 2, 64, function(m, input, gradOutput)
-      local gradInput = m:updateGradInput(input, gradOutput)
-      m:accGradParameters(input, gradOutput)
-      return gradInput
-   end)
-   BatchNormalization_backward('SpatialBatchNormalization', 'evaluation', 2, 64, function(m, input, gradOutput)
-      local gradInput = m:updateGradInput(input, gradOutput)
-      m:accGradParameters(input, gradOutput)
-      return gradInput
-   end)
+   testBatchNormalization('SpatialBatchNormalization', 2, 64)
+   -- check with large image size (32*32 = 1024)
+   BatchNormalization_forward('SpatialBatchNormalization', {2, 2, 32, 32})
 end
 
 function cunntest.VolumetricBatchNormalization()
-   BatchNormalization_forward('VolumetricBatchNormalization', 3, 16)
-   BatchNormalization_forward_inference('VolumetricBatchNormalization', 3, 16)
-   BatchNormalization_backward('VolumetricBatchNormalization', 'training', 3, 16, function(m, input, gradOutput)
-      return m:backward(input, gradOutput)
-   end)
-   BatchNormalization_backward('VolumetricBatchNormalization', 'evaluation', 3, 16, function(m, input, gradOutput)
-      return m:backward(input, gradOutput)
-   end)
-   BatchNormalization_backward('VolumetricBatchNormalization', 'training', 3, 16, function(m, input, gradOutput)
-      local gradInput = m:updateGradInput(input, gradOutput)
-      m:accGradParameters(input, gradOutput)
-      return gradInput
-   end)
-   BatchNormalization_backward('VolumetricBatchNormalization', 'evaluation', 3, 16, function(m, input, gradOutput)
-      local gradInput = m:updateGradInput(input, gradOutput)
-      m:accGradParameters(input, gradOutput)
-      return gradInput
-   end)
+   testBatchNormalization('VolumetricBatchNormalization', 3, 16)
 end
 
 function cunntest.SpatialConvolutionMM_forward_single()
