@@ -1618,8 +1618,8 @@ function cunntest.SpatialDilatedConvolution_forward_single()
    local padH = math.random(0,1)
    local outi = math.random(ki, 64)
    local outj = math.random(kj, 64)
-   local dilationW = math.random(0,10)
-   local dilationH = math.random(0,10)
+   local dilationW = math.random(1,10)
+   local dilationH = math.random(1,10)
    local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
    local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
 
@@ -5107,6 +5107,59 @@ function cunntest.VolumetricFullConvolution()
             end
         end
     end
+end
+
+function cunntest.VolumetricDilatedConvolution()
+   local from = math.random(1,32)
+   local to = math.random(1,8) * 8
+   local ki = math.random(3,15)
+   local kj = math.random(3,15)
+   local kk = math.random(3,15)
+   local si = math.random(1,3)
+   local sj = math.random(1,3)
+   local sk = math.random(1,3)
+   local padW = math.random(0,1)
+   local padH = math.random(0,1)
+   local padT = math.random(0,1)
+   local outi = math.random(ki, 64)
+   local outj = math.random(kj, 64)
+   local outk = math.random(kj, 64)
+   local dilationW = math.random(1,10)
+   local dilationH = math.random(1,10)
+   local dilationT = math.random(1,10)
+   local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
+   local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
+   local ink = (outk - 1) * sk - 2 * padT + dilationT * (kk-1) + 1
+
+   local input = torch.randn(from,ink,inj,ini)
+   local sconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH)
+   local output = sconv:forward(input)
+   local gradOutput = output:clone():normal()
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local groundweight = sconv.gradWeight
+   local groundbias = sconv.gradBias
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH):cuda()
+   gconv.weight = sconv.weight:cuda()
+   gconv.bias = sconv.bias:cuda()
+   local rescuda = gconv:forward(input)
+   gconv:zeroGradParameters()
+   local gradcuda = gconv:backward(input, gradOutput)
+   local weightcuda = gconv.gradWeight
+   local biascuda = gconv.gradBias
+
+   local error = rescuda:float() - output
+   local gerror = gradcuda:float() - groundgrad
+   local werror = weightcuda:float() - groundweight
+   local berror = biascuda:float() - groundbias
+
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+   mytester:assertlt(gerror:abs():max(), precision_backward, 'error on state (backward) ')
+   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
 
 function cunntest.LookupTable_forward()
