@@ -737,6 +737,7 @@ TH_API void THNN_CudaSpatialMaxPooling_updateOutput(
           int kW, int kH,
           int dW, int dH,
           int padW, int padH,
+          int dilationW, int dilationH,
           bool ceil_mode);
 TH_API void THNN_CudaSpatialMaxPooling_updateGradInput(
           THCState *state,
@@ -747,6 +748,7 @@ TH_API void THNN_CudaSpatialMaxPooling_updateGradInput(
           int kW, int kH,
           int dW, int dH,
           int padW, int padH,
+          int dilationW, int dilationH,
           bool ceil_mode);
 
 TH_API void THNN_CudaSpatialMaxUnpooling_updateOutput(
