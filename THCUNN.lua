@@ -25,9 +25,8 @@ local replacements =
 {
    {
       ['THTensor'] = 'THCudaTensor',
-      ['THIndexTensor'] = 'THCudaTensor',
-      ['THIntegerTensor'] = 'THCudaTensor',
-      ['THIndex_t'] = 'float',
+      ['THIndexTensor'] = 'THCudaLongTensor',
+      ['THIndex_t'] = 'long',
       ['THInteger_t'] = 'float'
    }
 }
