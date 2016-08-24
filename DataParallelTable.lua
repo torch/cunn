@@ -18,7 +18,7 @@ local DataParallelTable, parent = torch.class('nn.DataParallelTable', 'nn.Contai
 local Impls = {}
 local BasicImpl = torch.class('nn.DataParallelTable.Basic', Impls)
 local ThreadsImpl = torch.class('nn.DataParallelTable.Threads', Impls)
-
+local unpack = unpack and unpack or table.unpack -- lua52 compatibility
 
 -- NCCL does not work when CUDA_LAUNCH_BLOCKING is set
 local cudaLaunchBlocking = os.getenv('CUDA_LAUNCH_BLOCKING') == '1'
