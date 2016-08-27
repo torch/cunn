@@ -3541,6 +3541,39 @@ function cunntest.SmoothL1()
    end
 end
 
+function cunntest.WeightedSmoothL1Criterion()
+   for sizeAverage = 0, 1 do
+      local size = math.random(3000,5000)
+      local input = torch.randn(size,1,1)
+      local target = torch.randn(size)
+      local weights = torch.rand(size)
+      local mod = nn.WeightedSmoothL1Criterion(sizeAverage == 1)
+
+      local tm = {}
+      local title = string.format('WeightedSmoothL1Criterion sizeAverage %d, %d ', sizeAverage, size)
+      times[title] = tm
+
+      local a = torch.Timer()
+      local fout = mod:forward(input,{target, weights})
+      local fgin = mod:backward(input,{target, weights}):clone()
+      tm.cpu = a:time().real
+
+      local cinput = input:cuda()
+      local ctarget = target:cuda()
+      local cweights = weights:cuda()
+      local cmod = nn.WeightedSmoothL1Criterion(sizeAverage == 1):cuda()
+      a:reset()
+      local cout = cmod:forward(cinput,{ctarget, cweights})
+      local cgin = cmod:backward(cinput,{ctarget, cweights})
+      cutorch.synchronize()
+      tm.gpu = a:time().real
+
+      mytester:assertlt(math.abs(fout-cout), 0.01, 'error  on output')
+      local gerr = cgin:float() - fgin
+      mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+   end
+end
+
 function cunntest.SoftMarginCriterion()
    for sizeAverage = 0, 1 do
       local size = math.random(3000,5000)
@@ -4411,6 +4444,40 @@ function cunntest.ClassNLLCriterionMultipleTargetWeights()
    a:reset()
    local cout = cmod:forward(cinput,ctarget)
    local cgin = cmod:backward(cinput,ctarget)
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   mytester:assertlt(
+       math.abs(fout-cout), precision_forward, 'error on output')
+
+   local gerr = cgin:float() - fgin
+   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+end
+
+function cunntest.WeightedClassNLLCriterionMultipleTargetWeights()
+   local size = math.random(3000,5000)
+   local input = torch.randn(size, size)
+   local target = torch.randperm(size)
+   local weights = torch.rand(size)
+   local mod = nn.WeightedClassNLLCriterion()
+
+   local tm = {}
+   local title = string.format('WeightedClassNLLCriterionMultiTargetWeights %d ',size)
+   times[title] = tm
+
+   local a = torch.Timer()
+   local fout = mod:forward(input, {target, weights})
+   local fgin = mod:backward(input, {target, weights}):clone()
+   tm.cpu = a:time().real
+
+   local cinput = input:cuda()
+   local ctarget = target:cuda()
+   local cweights = weights:cuda()
+
+   local cmod = nn.WeightedClassNLLCriterion():cuda()
+   a:reset()
+   local cout = cmod:forward(cinput, {ctarget, cweights})
+   local cgin = cmod:backward(cinput, {ctarget, cweights})
    cutorch.synchronize()
    tm.gpu = a:time().real
 
