@@ -4,6 +4,13 @@
 This package provides a CUDA implementation for many of the modules in the base nn package: [nn](https://github.com/torch/nn/blob/master/README.md)
  * [Modules](doc/cunnmodules.md#nn.cunnmodules.dok): There are also additional GPU-related modules not found in the nn package.
 
+## Installing from source
+```bash
+git clone https://github.com/torch/cunn
+cd cunn
+luarocks make rocks/cunn-scm-1.rockspec
+```
+
 ## To use
 
 Simply convert your network model to CUDA by calling `:cuda()`:
