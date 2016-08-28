@@ -4773,6 +4773,123 @@ function cunntest.VolumetricMaxPooling_backward()
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (backward) ')
 end
 
+function cunntest.VolumetricDilatedMaxPooling_forward_batch()
+   local bs = math.random(8,16)
+   local from = math.random(8,16)
+   local to = from
+   local kt = math.random(2,4)
+   local ki = math.random(2,4)
+   local kj = math.random(2,4)
+   local st = math.random(2,4)
+   local si = math.random(2,4)
+   local sj = math.random(2,4)
+   local outt = math.random(32,60)
+   local outi = math.random(32,60)
+   local outj = math.random(32,60)
+   local padt = math.random(0,kt/2-1)
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local dilationt = math.random(1,10)
+   local dilationi = math.random(1,10)
+   local dilationj = math.random(1,10)
+   local int = (outt-1)*st+(dilationt*(kt-1)+1)-2*padt
+   local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
+   local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
+   local ceil_mode = math.random(0,1) == 1
+
+   local tm = {}
+   local title = string.format('VolumetricDilatedMaxPooling.forward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
+                               bs, from, int, inj, ini, kt, kj, ki, bs, to, outt, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(bs,from,int,inj,ini)
+   local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj)
+   if ceil_mode then sconv:ceil() end
+   local groundtruth = sconv:forward(input)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      groundtruth = sconv:forward(input)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):cuda()
+   if ceil_mode then gconv:ceil() end
+   local rescuda = gconv:forward(input)
+   a:reset()
+   for i = 1,nloop do
+      rescuda = gconv:forward(input)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundtruth
+   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+end
+
+function cunntest.VolumetricDilatedMaxPooling_backward_batch()
+   local bs = math.random(8,16)
+   local from = math.random(8,16)
+   local to = from
+   local kt = math.random(2,4)
+   local ki = math.random(2,4)
+   local kj = math.random(2,4)
+   local st = math.random(2,4)
+   local si = math.random(2,4)
+   local sj = math.random(2,4)
+   local outt = math.random(32,60)
+   local outi = math.random(32,60)
+   local outj = math.random(32,60)
+   local padt = math.random(0,kt/2-1)
+   local padi = math.random(0,ki/2-1)
+   local padj = math.random(0,kj/2-1)
+   local dilationt = math.random(1,10)
+   local dilationi = math.random(1,10)
+   local dilationj = math.random(1,10)
+   local int = (outt-1)*st+(dilationt*(kt-1)+1)-2*padt
+   local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
+   local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
+   local ceil_mode = math.random(0,1) == 1
+
+   local tm = {}
+   local title = string.format('VolumetricDilatedMaxPooling.forward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
+                               bs, from, int, inj, ini, kt, kj, ki, bs, to, outt, outj, outi)
+   times[title] = tm
+
+   local input = torch.randn(bs,from,int,inj,ini)
+   local gradOutput = torch.randn(bs,to,outt,outj,outi)
+   local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj)
+   if ceil_mode then sconv:ceil() end
+   sconv:forward(input)
+   sconv:zeroGradParameters()
+   local groundgrad = sconv:backward(input, gradOutput)
+   local a = torch.Timer()
+   for i = 1,nloop do
+      sconv:zeroGradParameters()
+      groundgrad = sconv:backward(input, gradOutput)
+   end
+   tm.cpu = a:time().real
+
+   input = input:cuda()
+   gradOutput = gradOutput:cuda()
+   local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):cuda()
+   if ceil_mode then gconv:ceil() end
+   gconv:forward(input)
+   gconv:zeroGradParameters()
+   local rescuda = gconv:backward(input, gradOutput)
+   a:reset()
+   for i = 1,nloop do
+      gconv:zeroGradParameters()
+      rescuda = gconv:backward(input, gradOutput)
+   end
+   cutorch.synchronize()
+   tm.gpu = a:time().real
+
+   local error = rescuda:float() - groundgrad
+
+   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
 function cunntest.VolumetricMaxUnpooling_forward_batch()
    local bs = math.random(4,10)
    local from = math.random(1,64)
