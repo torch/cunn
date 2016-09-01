@@ -3084,6 +3084,40 @@ function cunntest.BCECriterion_forward()
 end
 
 
+function cunntest.BCECriterionWeights_forward()
+  local size = math.random(1,100)
+  local input = torch.Tensor(size):uniform()
+  local target = torch.Tensor(size):uniform():gt(0.5):type(torch.type(input))
+  local weights = torch.Tensor(size):uniform()
+
+  local tm = {}
+  local title = string.format('BCECriterionWeights.forward, Size: %d', size)
+  times[title] = tm
+
+  local crit = nn.BCECriterion(weights)
+  local groundtruth= crit:forward(input, target)
+  local a = torch.Timer()
+  for i = 1,nloop do
+    groundtruth = crit:forward(input, target)
+  end
+  tm.cpu = a:time().real
+
+  input = input:cuda()
+  target = target:cuda()
+  weights = weights:cuda()
+  local g_crit = nn.BCECriterion(weights):cuda()
+  local rescuda = g_crit:forward(input, target)
+  a:reset()
+  for i = 1,nloop do
+    rescuda = g_crit:forward(input, target)
+  end
+  cutorch.synchronize()
+  tm.gpu = a:time().real
+  local errorVal = rescuda - groundtruth
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+end
+
+
 function cunntest.MarginCriterion_forward()
   local size = math.random(1,100)
   local input = (torch.rand(size)-0.5) * 2 -- data spread from -1 to 1
@@ -3309,6 +3343,44 @@ function cunntest.BCECriterion_backward()
    local error = rescuda:float() - groundgrad
 
    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+end
+
+function cunntest.BCECriterionWeights_backward()
+  local size = math.random(1,100)
+
+  local tm = {}
+  local title = string.format('BCECriterionWeights.backward, Size %d', size)
+  times[title] = tm
+
+  local input = torch.Tensor(size):uniform()
+  local target = torch.Tensor(size):uniform():gt(0.5):type(torch.type(input))
+  local weights = torch.Tensor(size):uniform()
+
+  local crit = nn.BCECriterion(weights)
+  crit:forward(input, target)
+  local groundgrad = crit:backward(input, target)
+  local a = torch.Timer()
+  for i = 1,nloop do
+    groundgrad = crit:backward(input, target)
+  end
+  tm.cpu = a:time().real
+
+  input = input:cuda()
+  target = target:cuda()
+  weights = weights:cuda()
+  local g_crit = nn.BCECriterion(weights):cuda()
+  g_crit:forward(input, target)
+  local rescuda = g_crit:backward(input, target)
+  a:reset()
+  for i = 1,nloop do
+    rescuda = g_crit:backward(input, target)
+  end
+  cutorch.synchronize()
+  tm.gpu = a:time().real
+
+  local error = rescuda:float() - groundgrad
+
+  mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.mse()
