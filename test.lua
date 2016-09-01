@@ -73,6 +73,32 @@ local function pointwise_backward(proto_module, name, max_error)
    mytester:assertlt(error:abs():max(), max_error, 'error on state (backward) ')
 end
 
+local function pointwise_backward_inplace(proto_module, name)
+   local size = math.random(1,100)
+
+   local tm = {}
+   local title = string.format(name..'.backward_inplace %d -> %d', size, size)
+   times[title] = tm
+
+   local input = torch.randn(size)
+   if name == 'Sqrt' then input:abs() end
+   local gradOutput = torch.randn(size)
+   local sconv = proto_module
+   local groundgrad = sconv:backward(input, gradOutput)
+   mytester:assertTensorEq(groundgrad:float(),
+                           gradOutput:float(),
+                           0.000001, "inplace not respected")
+
+   local input = torch.randn(size):cuda()
+   if name == 'Sqrt' then input:abs() end
+   local gradOutput = torch.randn(size):cuda()
+   local sconv = proto_module:clone():cuda()
+   local groundgrad = sconv:backward(input, gradOutput)
+   mytester:assertTensorEq(groundgrad:float(),
+                           gradOutput:float(),
+                           0.000001, "cuda inplace not respected")
+end
+
 local function pointwise_transposed(proto_module, name, max_error)
    max_error = max_error or 1e-7
    local tm = {}
@@ -128,6 +154,10 @@ end
 
 function cunntest.HardTanh_backward()
    pointwise_backward(nn.HardTanh(), 'HardTanh', precision_backward)
+end
+
+function cunntest.HardTanh_backward_inplace()
+   pointwise_backward_inplace(nn.HardTanh(nil, nil, true), 'HardTanh')
 end
 
 function cunntest.HardTanh_transposed()
