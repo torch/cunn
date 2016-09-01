@@ -351,6 +351,9 @@ function DataParallelTable:reset(stdv)
 end
 
 function DataParallelTable:type(typeStr)
+   if not typeStr then
+      return self._type
+   end
    assert(typeStr == 'torch.CudaTensor', 'DataParallelTable supports only torch.CudaTensor type')
    for i, m in ipairs(self.modules) do
       m:type(typeStr)
