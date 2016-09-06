@@ -36,11 +36,7 @@ struct bce_functor_weights
 
 void THNN_CudaBCECriterion_updateOutput(THCState *state, THCudaTensor *input, THCudaTensor *target, THCudaTensor *output, bool sizeAverage, THCudaTensor *weights)
 {
-  if (weights) {
-    THCUNN_assertSameGPU(state, 3, input, target, weights);
-  } else {
-    THCUNN_assertSameGPU(state, 2, input, target);
-  }
+  THCUNN_assertSameGPU(state, 3, input, target, weights);
 
   long size = THCudaTensor_nElement(state, input);
 
@@ -120,11 +116,7 @@ struct bce_updateGradInput_functor_weights
 
 void THNN_CudaBCECriterion_updateGradInput(THCState *state, THCudaTensor *input, THCudaTensor *target, THCudaTensor *gradInput, bool sizeAverage, THCudaTensor *weights)
 {
-  if (weights) {
-    THCUNN_assertSameGPU(state, 4, input, target, gradInput, weights);
-  } else {
-    THCUNN_assertSameGPU(state, 3, input, target, gradInput);
-  }
+  THCUNN_assertSameGPU(state, 4, input, target, gradInput, weights);
 
   long size = THCudaTensor_nElement(state, input);
   float norm = (sizeAverage ? 1./size : 1.);
