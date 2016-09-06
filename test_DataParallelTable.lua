@@ -14,7 +14,7 @@ cutorch.reserveStreams(1)
 -- Create an instance of the test framework
 local precision = 1e-5
 local mytester = torch.Tester()
-local test = {}
+local test = torch.TestSuite()
 
 local function copyTable(x)  -- Shallow copy
    local ret = {}
@@ -364,6 +364,28 @@ function test.DataParallelTable_serialize()
 
    output = dpt:forward(input)
    assert(output:sum() == 0, 'weights not zeroed')
+end
+
+
+function test.DataParallelTable_flattenParameters()
+    -- Wrap only a part of a network with data parallel table and
+    -- check if the correct number of parameters have been copied
+    local seq = nn.Sequential()
+    local layer1 = nn.Linear(10, 10):cuda()
+    local layer2 = nn.Linear(10, 5):cuda()
+    local dpt = nn.DataParallelTable(1, true, true):threads():cuda()
+    dpt:add(layer2, torch.range(1, numGpus):totable())
+    seq:add(layer1):add(dpt)
+
+    seq:getParameters()
+    local input = torch.randn(7, 10):cuda()
+    seq:forward(input)
+    -- There are 55 parameters in layer 2 (50 + 5 bias weights)
+    assert(dpt.flattenedParams[1][1]:size(1) == 55, "Incorrect number of " ..
+        "parameters copied")
+    -- Check grad weights
+    assert(dpt.flattenedParams[1][2]:size(1) == 55, "Incorrect number of " ..
+        "parameters copied")
 end
 
 function test.DataParallelTable_misc()

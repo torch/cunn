@@ -113,9 +113,10 @@ function DataParallelTable:flattenParameters()
       end
       if flattened then
          local pp = torch.CudaTensor(p[1]:storage(), p[1]:storageOffset(),
-                    p[#p]:storageOffset()+p[#p]:numel()-1)
+                    p[#p]:storageOffset()+p[#p]:numel()-p[1]:storageOffset())
          local dpp = torch.CudaTensor(dp[1]:storage(), dp[1]:storageOffset(),
-                     dp[#dp]:storageOffset()+dp[#dp]:numel()-1)
+                     dp[#dp]:storageOffset()+dp[#dp]:numel()
+                      - dp[1]:storageOffset())
          return {pp, dpp}
       else
          return { module:getParameters() }
