@@ -3053,7 +3053,7 @@ end
 
 -- Criterion tests
 
-function BCECriterion_forward_truth(buffer, input, target, weights, sizeAverage)
+local function BCECriterion_forward_truth(buffer, input, target, weights, sizeAverage)
 
   local eps = 1e-12
   local output
