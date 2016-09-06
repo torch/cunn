@@ -3052,6 +3052,41 @@ end
 
 
 -- Criterion tests
+
+function BCECriterion_forward_truth(buffer, input, target, weights, sizeAverage)
+
+  local eps = 1e-12
+  local output
+
+  buffer:resizeAs(input)
+
+  if weights ~= nil and target:dim() ~= 1 then
+    weights = weights:view(1, target:size(2)):expandAs(target)
+  end
+
+  -- log(input) * target
+  buffer:add(input, eps):log()
+  if weights ~= nil then buffer:cmul(weights) end
+
+  output = torch.dot(target, buffer)
+
+  -- log(1 - input) * (1 - target)
+  buffer:mul(input, -1):add(1):add(eps):log()
+  if weights ~= nil then buffer:cmul(weights) end
+
+  output = output + torch.sum(buffer)
+  output = output - torch.dot(target, buffer)
+
+  if sizeAverage then
+    output = output / input:nElement()
+  end
+
+  output = - output
+
+  return output
+
+end
+
 function cunntest.BCECriterion_forward()
   local size = math.random(1,100)
   local input = torch.Tensor(size):uniform()
@@ -3062,10 +3097,10 @@ function cunntest.BCECriterion_forward()
   times[title] = tm
 
   local crit = nn.BCECriterion()
-  local groundtruth= crit:forward(input, target)
+  local rescpu = crit:forward(input, target)
   local a = torch.Timer()
   for i = 1,nloop do
-     groundtruth = crit:forward(input, target)
+     rescpu = crit:forward(input, target)
   end
   tm.cpu = a:time().real
 
@@ -3079,7 +3114,18 @@ function cunntest.BCECriterion_forward()
   end
   cutorch.synchronize()
   tm.gpu = a:time().real
-  local errorVal = rescuda - groundtruth
+  local errorVal = rescuda - rescpu
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+
+  -- test vs lua implementation
+  buffer = input.new()
+  local restruth = BCECriterion_forward_truth(buffer, input, target, nil, true)
+  for i = 1,nloop do
+    local restruth = BCECriterion_forward_truth(buffer, input, target, nil, true)
+  end
+  errorVal = rescpu - restruth
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+  errorVal = rescuda - restruth
   mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
 end
 
@@ -3095,10 +3141,10 @@ function cunntest.BCECriterionWeights_forward()
   times[title] = tm
 
   local crit = nn.BCECriterion(weights)
-  local groundtruth= crit:forward(input, target)
+  local rescpu = crit:forward(input, target)
   local a = torch.Timer()
   for i = 1,nloop do
-    groundtruth = crit:forward(input, target)
+    rescpu = crit:forward(input, target)
   end
   tm.cpu = a:time().real
 
@@ -3113,7 +3159,18 @@ function cunntest.BCECriterionWeights_forward()
   end
   cutorch.synchronize()
   tm.gpu = a:time().real
-  local errorVal = rescuda - groundtruth
+  local errorVal = rescuda - rescpu
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+
+  -- test vs lua implementation
+  buffer = input.new()
+  local restruth = BCECriterion_forward_truth(buffer, input, target, weights, true)
+  for i = 1,nloop do
+    local restruth = BCECriterion_forward_truth(buffer, input, target, weights, true)
+  end
+  errorVal = rescpu - restruth
+  mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
+  errorVal = rescuda - restruth
   mytester:assertlt(errorVal, precision_forward, 'error on state (forward) ')
 end
 
