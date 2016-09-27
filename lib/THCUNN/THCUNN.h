@@ -4,6 +4,10 @@
 #define THIndexTensor THCudaLongTensor
 #define THIndexTensor_(NAME) THCudaLongTensor_ ## NAME
 
+#define THNN_(NAME) TH_CONCAT_3(THNN_, CReal, NAME)
+#define THIndexTensor_(NAME) THCudaLongTensor_ ## NAME
+#define THIntegerTensor_(NAME) THCudaIntTensor_ ## NAME
+
 TH_API void THNN_CudaAbs_updateOutput(
           THCState *state,
           THCudaTensor *input,
@@ -1080,3 +1084,6 @@ TH_API void THNN_CudaVolumetricReplicationPadding_updateGradInput(
           int pleft, int pright,
           int ptop, int pbottom,
           int pfront, int pback);
+
+#include "generic/THCUNN.h"
+#include "THCGenerateAllTypes.h"
