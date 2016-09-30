@@ -1,6 +1,6 @@
 #include "THCUNN.h"
 #include "THCHalf.h"
-#include "HalfAutoNumerics.cuh"
+#include "THCHalfAutoNumerics.cuh"
 
 template <typename T>
 struct softPlusupdateOutput_functor

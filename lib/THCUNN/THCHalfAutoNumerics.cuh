@@ -1,5 +1,5 @@
-#ifndef HALF_AUTO_NUMERICS_INC
-#define HALF_AUTO_NUMERICS_INC
+#ifndef THC_HALF_AUTO_NUMERICS_INC
+#define THC_HALF_AUTO_NUMERICS_INC
 
 #include "THCHalf.h"
 #include "THCNumerics.cuh"
