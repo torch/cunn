@@ -26,6 +26,8 @@ local THCUNN_generic_h = require 'cunn.THCUNN_generic_h'
 THCUNN_generic_h = THCUNN_generic_h:gsub("\n#[^\n]*", "")
 THCUNN_generic_h = THCUNN_generic_h:gsub("^#[^\n]*\n", "")
 
+ffi.cdef("half THC_float2half(float a);")
+
 local preprocessed = string.gsub(THCUNN_h, 'TH_API ', '')
 local preprocessed_generic = string.gsub(THCUNN_generic_h, 'TH_API void THNN_%(([%a%d_]+)%)', 'void THNN_TYPE%1')
 
@@ -116,14 +118,26 @@ end
 
 THNN.kernels['torch.CudaTensor'] = THNN.bind(THCUNN.C, function_names, 'Cuda', THCUNN.getState)
 torch.getmetatable('torch.CudaTensor').THNN = THNN.kernels['torch.CudaTensor']
--- fixme loop here
-for i=1,#replacements_generic do
-    local r = replacements_generic[i]
-    if (r['TYPE'] ~= 'Cuda') then
-      local lt = cct2lt[r['THCTensor']]
-      THNN.kernels[lt] = THNN.bind(THCUNN.C, function_names_generic, r['TYPE'], THCUNN.getState)
-      torch.getmetatable(lt).THNN = THNN.kernels[lt]
+
+THNN.kernels['torch.CudaDoubleTensor'] = THNN.bind(THCUNN.C, function_names_generic, 'CudaDouble', THCUNN.getState)
+torch.getmetatable('torch.CudaDoubleTensor').THNN = THNN.kernels['torch.CudaDoubleTensor']
+
+-- in order to call 'half' functions from lua, convert number arguments from
+-- float to half
+local transform_args_to_half = function(t)
+    for k,v in pairs(t) do
+        if torch.type(v) == 'number' then
+          t[k] = ffi.C.THC_float2half(t[k])
+        end
     end
+    return t
 end
+
+local raw_half_functions = THNN.bind(THCUNN.C, function_names_generic, 'CudaHalf', THCUNN.getState)
+for k,v in pairs(raw_half_functions) do
+    raw_half_functions[k] = function(...) v(unpack(transform_args_to_half({...}))) end
+end
+THNN.kernels['torch.CudaHalfTensor'] = raw_half_functions
+torch.getmetatable('torch.CudaHalfTensor').THNN = THNN.kernels['torch.CudaHalfTensor']
 
 return THCUNN
