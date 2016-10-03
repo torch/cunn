@@ -24,11 +24,20 @@ local function checkHalf()
    end
 end
 
+-- half has additional error on top of double/float
 local function precision_forward_type(tensor_type)
    if (tensor_type == 'torch.CudaHalfTensor') then
-      return 1e-2;
+      return 1e-2 + precision_forward;
    else
       return precision_forward
+   end
+end
+
+local function precision_backward_type(tensor_type)
+   if (tensor_type == 'torch.CudaHalfTensor') then
+      return 1e-2 + precision_backward;
+   else
+      return precision_backward
    end
 end
 
@@ -4163,8 +4172,7 @@ function cunntest.SoftPlus_backward()
       tm.gpu = a:time().real
 
       local error = rescuda:double() - groundgrad:double()
-
-      mytester:assertlt(error:abs():max(), precision_backward,
+      mytester:assertlt(error:abs():max(), precision_backward_type(typename),
           string.format('error on state (backward) with %s', typename))
     end
 end
