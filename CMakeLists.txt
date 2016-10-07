@@ -14,6 +14,11 @@ FILE(WRITE THCUNN_h.lua "return [[")
 FILE(APPEND THCUNN_h.lua ${THCUNN_headers})
 FILE(APPEND THCUNN_h.lua "]]")
 
+FILE(STRINGS lib/THCUNN/generic/THCUNN.h THCUNN_generic_headers NEWLINE_CONSUME)
+FILE(WRITE THCUNN_generic_h.lua "return [[")
+FILE(APPEND THCUNN_generic_h.lua ${THCUNN_generic_headers})
+FILE(APPEND THCUNN_generic_h.lua "]]")
+
 FILE(GLOB luasrc *.lua)
 
 ADD_SUBDIRECTORY(lib)
