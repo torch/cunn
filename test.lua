@@ -4670,33 +4670,30 @@ function cunntest.SpatialClassNLLCriterion()
    local input = torch.randn(batchSize, classes, h, w)
    local target = torch.Tensor(batchSize, h, w)
    target:apply(function() return math.random(1, classes) end)
-   local mod = nn.SpatialClassNLLCriterion()
 
-   local tm = {}
-   local title = string.format('SpatialClassNLLCriterion %dx%dx%dx%d ',
-         batchSize, classes, h, w)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local mod = nn.SpatialClassNLLCriterion():type(ctype)
+      local fout = mod:forward(input, target)
+      local fgin = mod:backward(input, target):clone()
 
-   local a = torch.Timer()
-   local fout = mod:forward(input, target)
-   local fgin = mod:backward(input, target):clone()
-   tm.cpu = a:time().real
+      local cinput = input:type(typename)
+      local ctarget = target:type(typename)
 
-   local cinput = input:cuda()
-   local ctarget = target:cuda()
+      local cmod = nn.SpatialClassNLLCriterion():type(typename)
+      local cout = cmod:forward(cinput,ctarget)
+      local cgin = cmod:backward(cinput,ctarget)
+      cutorch.synchronize()
 
-   local cmod = nn.SpatialClassNLLCriterion():cuda()
-   a:reset()
-   local cout = cmod:forward(cinput,ctarget)
-   local cgin = cmod:backward(cinput,ctarget)
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      mytester:assertlt(
+        math.abs(fout-cout), precision_forward_type(precision_forward, typename),
+          string.format('error on output with %s', typename))
 
-   mytester:assertlt(
-       math.abs(fout-cout), precision_forward, 'error on output')
-
-   local gerr = cgin:float() - fgin
-   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+      local gerr = cgin:double() - fgin:double()
+      mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error  on gradInput with %s', typename))
+    end
 end
 
 function cunntest.ClassNLLCriterionMultipleTargetWeights()
