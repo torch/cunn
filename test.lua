@@ -25,19 +25,19 @@ local function checkHalf()
 end
 
 -- half has additional error on top of double/float
-local function precision_forward_type(tensor_type)
+local function precision_forward_type(precision_f, tensor_type)
    if (tensor_type == 'torch.CudaHalfTensor') then
-      return 1e-2 + precision_forward;
+      return 1e-2 + precision_f
    else
-      return precision_forward
+      return precision_f
    end
 end
 
-local function precision_backward_type(tensor_type)
+local function precision_backward_type(precision_b, tensor_type)
    if (tensor_type == 'torch.CudaHalfTensor') then
-      return 1e-2 + precision_backward;
+      return 1e-2 + precision_b
    else
-      return precision_backward
+      return precision_b
    end
 end
 
@@ -465,32 +465,23 @@ function cunntest.SpatialLogSoftMax_forward()
    local size = math.random(1,256)
    local ini = math.random(8,32)
    local inj = math.random(8,32)
-
-   local tm = {}
-   local title = string.format('SpatialLogSoftMax forward %d x %d x %d', size, inj, ini)
-   times[title] = tm
-
    local input = torch.randn(size, inj, ini)
-   local sconv = nn.SpatialLogSoftMax()
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
-   end
-   tm.cpu = a:time().real
 
-   input = input:cuda()
-   local gconv = nn.SpatialLogSoftMax():cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local sconv = nn.SpatialLogSoftMax():type(ctype)
+      local groundtruth = sconv:forward(input):type(ctype)
 
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward*25, 'error on state (forward) ')
+      input = input:type(typename)
+      local gconv = nn.SpatialLogSoftMax():type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(),
+          precision_forward_type(precision_forward*25, typename),
+          string.format('error on state (forward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialLogSoftMax_backward()
@@ -498,36 +489,28 @@ function cunntest.SpatialLogSoftMax_backward()
    local ini = math.random(8,32)
    local inj = math.random(8,32)
 
-   local tm = {}
-   local title = string.format('SpatialLogSoftMax.backward %d x %d x %d', size, inj, ini)
-   times[title] = tm
-
    local input = torch.randn(size, inj, ini)
    local gradOutput = torch.randn(size, inj, ini)
-   local sconv = nn.SpatialLogSoftMax()
-   sconv:forward(input)
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = sconv:clone():cuda()
-   gconv:forward(input)
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialLogSoftMax():type(ctype)
+      sconv:forward(input)
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   local error = rescuda:float() - groundgrad
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = sconv:clone():type(typename)
+      gconv:forward(input)
+      local rescuda = gconv:backward(input, gradOutput)
 
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialLogSoftMax_forward_batch()
@@ -536,31 +519,23 @@ function cunntest.SpatialLogSoftMax_forward_batch()
    local ini = math.random(8,32)
    local inj = math.random(8,32)
 
-   local tm = {}
-   local title = string.format('SpatialLogSoftMax forward batch %d x %d x %d x %d', bs, size, inj, ini)
-   times[title] = tm
-
    local input = torch.randn(bs, size, inj, ini)
-   local sconv = nn.SpatialLogSoftMax()
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
-   end
-   tm.cpu = a:time().real
 
-   input = input:cuda()
-   local gconv = nn.SpatialLogSoftMax():cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local sconv = nn.SpatialLogSoftMax():type(ctype)
+      local groundtruth = sconv:forward(input)
 
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward*25, 'error on state (forward) ')
+      input = input:type(typename)
+      local gconv = nn.SpatialLogSoftMax():type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(),
+          precision_forward_type(precision_forward*25, typename),
+          string.format('error on state (forward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialLogSoftMax_backward_batch()
@@ -569,36 +544,28 @@ function cunntest.SpatialLogSoftMax_backward_batch()
    local ini = math.random(8,32)
    local inj = math.random(8,32)
 
-   local tm = {}
-   local title = string.format('SpatialLogSoftMax.backward batch %d x %d x %d x %d', bs, size, inj, ini)
-   times[title] = tm
-
    local input = torch.randn(bs, size, inj, ini)
    local gradOutput = torch.randn(bs, size, inj, ini)
-   local sconv = nn.SpatialLogSoftMax()
-   sconv:forward(input)
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = sconv:clone():cuda()
-   gconv:forward(input)
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialLogSoftMax():type(ctype)
+      sconv:forward(input)
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   local error = rescuda:float() - groundgrad
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = sconv:clone():type(typename)
+      gconv:forward(input)
+      local rescuda = gconv:backward(input, gradOutput)
 
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+    end
 end
 
 
@@ -4273,7 +4240,7 @@ function cunntest.SoftPlus_forward()
       tm.gpu = a:time().real
 
       local error = rescuda:double() - groundtruth:double()
-      mytester:assertlt(error:abs():max(), precision_forward_type(typename),
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
           string.format('error on state (forward) with %s', typename))
     end
 end
@@ -4313,7 +4280,7 @@ function cunntest.SoftPlus_backward()
       tm.gpu = a:time().real
 
       local error = rescuda:double() - groundgrad:double()
-      mytester:assertlt(error:abs():max(), precision_backward_type(typename),
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
           string.format('error on state (backward) with %s', typename))
     end
 end
