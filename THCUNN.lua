@@ -26,8 +26,6 @@ local THCUNN_generic_h = require 'cunn.THCUNN_generic_h'
 THCUNN_generic_h = THCUNN_generic_h:gsub("\n#[^\n]*", "")
 THCUNN_generic_h = THCUNN_generic_h:gsub("^#[^\n]*\n", "")
 
-ffi.cdef("half THC_float2half(float a);")
-
 local preprocessed = string.gsub(THCUNN_h, 'TH_API ', '')
 local preprocessed_generic = string.gsub(THCUNN_generic_h, 'TH_API void THNN_%(([%a%d_]+)%)', 'void THNN_TYPE%1')
 
@@ -63,6 +61,7 @@ local replacements_generic =
 }
 
 if cutorch.hasHalf then
+  ffi.cdef("half THC_float2half(float a);")
   cct2lt['THCudaHalfTensor'] = 'torch.CudaHalfTensor'
   local half_replacement = {
     ['THCTensor'] = 'THCudaHalfTensor',

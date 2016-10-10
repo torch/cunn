@@ -55,30 +55,15 @@ local function pointwise_forward(proto_module, name, max_error)
    local input = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format(name..'.forward (%s) %d -> %d', typename, size, size)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       if name == 'Sqrt' then input:abs() end
       local sconv = proto_module:type(ctype)
       local groundtruth = sconv:forward(input)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundtruth = sconv:forward(input)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       local gconv = proto_module:clone():type(typename)
       local rescuda = gconv:forward(input)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:forward(input)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundtruth:double()
       mytester:assertlt(error:abs():max(), precision_forward_type(max_error, typename),
@@ -92,10 +77,6 @@ local function pointwise_backward(proto_module, name, max_error)
    local gradOutput = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format(name..'.backward (%s) %d -> %d', typename, size, size)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local gradOutput = gradOutput:type(ctype)
@@ -103,23 +84,12 @@ local function pointwise_backward(proto_module, name, max_error)
       local sconv = proto_module:type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundgrad = sconv:backward(input, gradOutput)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       gradOutput = gradOutput:type(typename)
       local gconv = proto_module:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:backward(input, gradOutput)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundgrad:double()
 
@@ -132,10 +102,6 @@ local function pointwise_backward_inplace(proto_module, name)
    local size = math.random(1,100)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format(name..'.backward_inplace (%s) %d -> %d', typename, size, size)
-      times[title] = tm
-
       local input = torch.randn(size)
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
@@ -167,10 +133,6 @@ local function pointwise_transposed(proto_module, name, max_error)
    max_error = max_error or 1e-7
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format(name .. '.transposed %s', typename)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = torch.Tensor(11, 19):uniform(-1, 1)
       input = input:type(ctype)
@@ -440,29 +402,14 @@ function cunntest.LogSoftMax_forward_batch()
    local input = torch.randn(bs, size)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format('LogSoftMax forward batch (%s) %d x %d -> %d x %d', typename, bs, size, bs, size)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local sconv = nn.LogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundtruth = sconv:forward(input)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       local gconv = nn.LogSoftMax():type(typename)
       local rescuda = gconv:forward(input)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:forward(input)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundtruth:double()
       mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward*10, typename),
@@ -477,33 +424,18 @@ function cunntest.LogSoftMax_backward_batch()
    local gradOutput = torch.randn(bs, size)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format('LogSoftMax.backward batch (%s) %d x %d -> %d x %d', typename, bs, size, bs, size)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local gradOutput = gradOutput:type(ctype)
       local sconv = nn.LogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundgrad = sconv:backward(input, gradOutput)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       gradOutput = gradOutput:type(typename)
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:backward(input, gradOutput)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundgrad:double()
 
@@ -4266,29 +4198,14 @@ function cunntest.SoftPlus_forward()
    local input = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format('SoftPlus (%s) forward %d -> %d', typename, size, size)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local sconv = nn.SoftPlus():type(ctype)
       local groundtruth = sconv:forward(input)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundtruth = sconv:forward(input)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       local gconv = nn.SoftPlus():type(typename)
       local rescuda = gconv:forward(input)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:forward(input)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundtruth:double()
       mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward,typename),
@@ -4302,33 +4219,18 @@ function cunntest.SoftPlus_backward()
    local gradOutput = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format('SoftPlus.backward (%s) %d -> %d', typename, size, size)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local gradOutput = gradOutput:type(ctype)
       local sconv = nn.SoftPlus():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundgrad = sconv:backward(input, gradOutput)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       gradOutput = gradOutput:type(typename)
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:backward(input, gradOutput)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundgrad:double()
       mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
@@ -5591,29 +5493,14 @@ function cunntest.PReLU_forward()
     local input = torch.randn(nOutputPlane,h,w)
 
     for k, typename in ipairs(typenames) do
-      local tm = {}
-      local title = string.format('PReLU forward (%s) %d x %d', typename, w, h)
-      times[title] = tm
-
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local sconv = nn.PReLU(nOutputPlane):type(ctype)
       local groundtruth = sconv:forward(input)
-      local a = torch.Timer()
-      for i = 1,nloop do
-        groundtruth = sconv:forward(input)
-      end
-      tm.cpu = a:time().real
 
       input = input:type(typename)
       local gconv = sconv:type(typename)
       local rescuda = gconv:forward(input)
-      a:reset()
-      for i = 1,nloop do
-        rescuda = gconv:forward(input)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
 
       local error = rescuda:double() - groundtruth:double()
       mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
@@ -5629,10 +5516,6 @@ function cunntest.PReLU_backward()
     local gradOutput = torch.randn(#input)
 
     for k, typename in ipairs(typenames) do
-        local tm = {}
-        local title = string.format('PReLU backward (%s) %d x %d', typename, w, h)
-        times[title] = tm
-
         local ctype = t2cpu[typename]
         local input = input:type(ctype)
         local gradOutput = gradOutput:type(ctype)
@@ -5642,23 +5525,12 @@ function cunntest.PReLU_backward()
         sconv:forward(input)
         sconv:zeroGradParameters()
         local groundgrad = sconv:backward(input, gradOutput)
-        local a = torch.Timer()
-        for i = 1,nloop do
-            groundgrad = sconv:backward(input, gradOutput)
-        end
-        tm.cpu = a:time().real
 
         input = input:type(typename)
         gradOutput = gradOutput:type(typename)
         gconv:forward(input)
         gconv:zeroGradParameters()
         local rescuda = gconv:backward(input, gradOutput)
-        a:reset()
-        for i = 1,nloop do
-            rescuda = gconv:backward(input, gradOutput)
-        end
-        cutorch.synchronize()
-        tm.gpu = a:time().real
 
         local err = rescuda:double() - groundgrad:double()
         local weightGradError = gconv.gradWeight:double() - sconv.gradWeight:double()
@@ -5679,11 +5551,6 @@ function cunntest.RReLU_forward()
     for k, typename in ipairs(typenames) do
        for _,train in ipairs({true,false}) do
           for _,inplace in ipairs({false,true}) do
-              local tm = {}
-              local title = string.format('RReLU forward (%s) %d x %d (inplace: %s, train: %s)',
-                  typename, w, h, tostring(inplace), tostring(train))
-              times[title] = tm
-
               local input = torch.randn(nOutputPlane, h, w) - 0.5
               local ctype = t2cpu[typename]
               local input = input:type(ctype)
@@ -5692,21 +5559,10 @@ function cunntest.RReLU_forward()
                   sconv:evaluate()
               end
               local groundtruth = sconv:forward(input:clone())
-              local a = torch.Timer()
-              for i = 1,nloop do
-                  groundtruth = sconv:forward(input:clone())
-              end
-              tm.cpu = a:time().real
 
               input = input:type(typename)
               local gconv = sconv:type(typename)
               local rescuda = gconv:forward(input:clone())
-              a:reset()
-              for i = 1,nloop do
-                rescuda = gconv:forward(input:clone())
-              end
-              cutorch.synchronize()
-              tm.gpu = a:time().real
 
               if not train then
                   local error = rescuda:double() - groundtruth:double()
@@ -5725,53 +5581,37 @@ function cunntest.RReLU_backward()
 
     for k, typename in ipairs(typenames) do
         for _,train in ipairs({true,false}) do
-        for _,inplace in ipairs({false,true}) do
-            local tm = {}
-            local title = string.format('RReLU backward (%s) %d x %d (inplace: %s, train: %s)',
-              typename, w, h, tostring(inplace), tostring(train))
-            times[title] = tm
+            for _,inplace in ipairs({false,true}) do
+                local ctype = t2cpu[typename]
+                local input = torch.randn(nOutputPlane, h, w)
+                local gradOutput = torch.randn(#input) - 0.5
+                input = input:type(ctype)
+                gradOutput = gradOutput:type(ctype)
+                local sconv = nn.RReLU(1/8, 1/3, inplace):type(ctype)
+                if not train then
+                  sconv:evaluate()
+                end
 
-            local ctype = t2cpu[typename]
-            local input = torch.randn(nOutputPlane, h, w)
-            local gradOutput = torch.randn(#input) - 0.5
-            input = input:type(ctype)
-            gradOutput = gradOutput:type(ctype)
-            local sconv = nn.RReLU(1/8, 1/3, inplace):type(ctype)
-            if not train then
-              sconv:evaluate()
-            end
+                sconv:forward(input:clone())
+                local groundgrad = sconv:backward(input, gradOutput:clone())
 
-            sconv:forward(input:clone())
-            local groundgrad = sconv:backward(input, gradOutput:clone())
-            local a = torch.Timer()
-            for i = 1,nloop do
-              groundgrad = sconv:backward(input, gradOutput:clone())
-            end
-            tm.cpu = a:time().real
+                local gconv = sconv:clone():type(typename)
+                input = input:type(typename)
+                gradOutput = gradOutput:type(typename)
+                gconv:forward(input:clone())
+                local rescuda = gconv:backward(input, gradOutput:clone())
 
-            local gconv = sconv:clone():type(typename)
-            input = input:type(typename)
-            gradOutput = gradOutput:type(typename)
-            gconv:forward(input:clone())
-            local rescuda = gconv:backward(input, gradOutput:clone())
-            a:reset()
-            for i = 1,nloop do
-              rescuda = gconv:backward(input, gradOutput:clone())
-            end
-            cutorch.synchronize()
-            tm.gpu = a:time().real
+                if not train then
+                  local err = rescuda:double() - groundgrad:double()
+                  mytester:assertlt(err:abs():max(), precision_backward_type(precision_backward, typename),
+                    string.format('error on state', typename))
+                end
 
-            if not train then
-              local err = rescuda:double() - groundgrad:double()
-              mytester:assertlt(err:abs():max(), precision_backward_type(precision_backward, typename),
-                  string.format('error on state', typename))
-            end
-
-            input = -torch.rand(1000):type(typename)
-            gconv:forward(input) -- fill internal noise tensor
-            local g = gconv:backward(input, torch.ones(1000):type(typename))
-            local err = math.abs(g[input:le(0)]:mean()-(gconv.lower+gconv.upper)/2)
-            mytester:assertlt(err, 0.05, 'mean deviation of gradient for negative inputs')
+                input = -torch.rand(1000):type(typename)
+                gconv:forward(input) -- fill internal noise tensor
+                local g = gconv:backward(input, torch.ones(1000):type(typename))
+                local err = math.abs(g[input:le(0)]:mean()-(gconv.lower+gconv.upper)/2)
+                mytester:assertlt(err, 0.05, 'mean deviation of gradient for negative inputs')
           end
        end
     end
