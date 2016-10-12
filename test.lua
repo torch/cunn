@@ -2206,36 +2206,27 @@ function cunntest.SpatialMaxPooling_forward()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialMaxPooling.forward %dx%dx%d o %dx%d -> %dx%dx%d',
-                               from, inj, ini, kj, ki, to, outj, outi)
-   times[title] = tm
-
    local input = torch.randn(from,inj,ini)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
-   end
-   tm.cpu = a:time().real
 
-   input = input:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      local groundtruth = sconv:forward(input)
 
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   local error_ind = gconv.indices:float() - sconv.indices:float()
-   mytester:asserteq(error_ind:max(), 0, 'error on indices (forward) ')
+      input = input:type(typename)
+      local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+      local error_ind = gconv.indices:float() - sconv.indices:float()
+      mytester:asserteq(error_ind:max(), 0,
+          string.format('error on indices (forward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialMaxPooling_forward_batch()
@@ -2254,34 +2245,24 @@ function cunntest.SpatialMaxPooling_forward_batch()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialMaxPooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
-   times[title] = tm
-
    local input = torch.randn(bs,from,inj,ini)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
-   end
-   tm.cpu = a:time().real
 
-   input = input:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      local groundtruth = sconv:forward(input)
 
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+      input = input:type(typename)
+      local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialMaxUnpooling_forward_batch()
@@ -2301,11 +2282,6 @@ function cunntest.SpatialMaxUnpooling_forward_batch()
    local ini = fun((outi + padi*2 - ki)/si) +1
    local inj = fun((outj + padj*2 - kj)/sj) +1
 
-   local tm = {}
-   local title = string.format('SpatialMaxUnpooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
-   times[title] = tm
-
    local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
    if ceil_mode then pooler:ceil() end
    local sunpool = nn.SpatialMaxUnpooling(pooler)
@@ -2313,11 +2289,6 @@ function cunntest.SpatialMaxUnpooling_forward_batch()
    local original = torch.randn(bs,from,outj,outi)
    local input = pooler:forward(original)
    local groundtruth = sunpool:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sunpool:forward(input)
-   end
-   tm.cpu = a:time().real
 
    original = original:cuda()
    pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
@@ -2326,12 +2297,6 @@ function cunntest.SpatialMaxUnpooling_forward_batch()
 
    input = pooler:forward(original)
    local rescuda = gunpool:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gunpool:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
 
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
@@ -2350,45 +2315,35 @@ function cunntest.SpatialMaxPooling_backward()
    local padj = math.random(0,kj/2-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
-   local ceil_mode = math.random(0,1) == 1
-
-   local tm = {}
-   local title = string.format('SpatialMaxPooling.backward %dx%dx%d o %dx%d -> %dx%dx%d',
-                               from, inj, ini, kj, ki, to, outj, outi)
-   times[title] = tm
+   local ceil_mode = true--math.random(0,1) == 1
 
    local input = torch.randn(from,inj,ini)
    local gradOutput = torch.randn(to,outj,outi)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local gradOutput = gradOutput:type(ctype)
+
+      local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local rescuda = gconv:backward(input, gradOutput)
 
-   local error = rescuda:float() - groundgrad
+      local error = rescuda:double() - groundgrad:double()
 
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialMaxPooling_backward_batch()
@@ -2407,43 +2362,32 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialMaxPooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
-   times[title] = tm
-
    local input = torch.randn(bs,from,inj,ini)
    local gradOutput = torch.randn(bs,to,outj,outi)
-   local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local input = input:type(ctype)
+      local gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local rescuda = gconv:backward(input, gradOutput)
 
-   local error = rescuda:float() - groundgrad
+      local error = rescuda:double() - groundgrad:double()
 
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialMaxUnpooling_backward_batch()
