@@ -2278,24 +2278,29 @@ function cunntest.SpatialMaxUnpooling_forward_batch()
    local ini = fun((outi + padi*2 - ki)/si) +1
    local inj = fun((outj + padj*2 - kj)/sj) +1
 
-   local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then pooler:ceil() end
-   local sunpool = nn.SpatialMaxUnpooling(pooler)
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then pooler:ceil() end
+      local sunpool = nn.SpatialMaxUnpooling(pooler):type(ctype)
 
-   local original = torch.randn(bs,from,outj,outi)
-   local input = pooler:forward(original)
-   local groundtruth = sunpool:forward(input)
+      local original = torch.randn(bs,from,outj,outi):type(typename)
+      original = original:type(ctype)
+      local input = pooler:forward(original)
+      local groundtruth = sunpool:forward(input)
 
-   original = original:cuda()
-   pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then pooler:ceil() end
-   local gunpool = nn.SpatialMaxUnpooling(pooler):cuda()
+      original = original:type(typename)
+      pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then pooler:ceil() end
+      local gunpool = nn.SpatialMaxUnpooling(pooler):type(typename)
 
-   input = pooler:forward(original)
-   local rescuda = gunpool:forward(input)
+      input = pooler:forward(original)
+      local rescuda = gunpool:forward(input)
 
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialMaxPooling_backward()
@@ -2401,50 +2406,38 @@ function cunntest.SpatialMaxUnpooling_backward_batch()
    local ini = fun((outi + padi*2 - ki)/si) +1
    local inj = fun((outj + padj*2 - kj)/sj) +1
 
-   local tm = {}
-   local title = string.format('SpatialMaxUnpooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then pooler:ceil() end
+      local sunpool = nn.SpatialMaxUnpooling(pooler):type(ctype)
 
-   local pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then pooler:ceil() end
-   local sunpool = nn.SpatialMaxUnpooling(pooler)
-
-   local original = torch.randn(bs,from,outj,outi)
-   local input = pooler:forward(original)
-   local gradOutput = torch.randn(original:size())
-   sunpool:forward(input)
-   sunpool:zeroGradParameters()
-   local groundgrad = sunpool:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local original = torch.randn(bs,from,outj,outi):type(typename)
+      original = original:type(ctype)
+      local input = pooler:forward(original)
+      local gradOutput = torch.randn(original:size()):type(typename)
+      gradOutput = gradOutput:type(ctype)
+      sunpool:forward(input)
       sunpool:zeroGradParameters()
-      groundgrad = sunpool:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sunpool:backward(input, gradOutput)
 
-   pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then pooler:ceil() end
-   local gunpool = nn.SpatialMaxUnpooling(pooler):cuda()
+      pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then pooler:ceil() end
+      local gunpool = nn.SpatialMaxUnpooling(pooler):type(typename)
 
-   original = original:cuda()
-   input = pooler:forward(original)
-   gunpool:forward(input)
+      original = original:type(typename)
+      input = pooler:forward(original)
+      gunpool:forward(input)
 
-   gradOutput = gradOutput:cuda()
-   gunpool:zeroGradParameters()
-   local rescuda = gunpool:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      gradOutput = gradOutput:type(typename)
       gunpool:zeroGradParameters()
-      rescuda = gunpool:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local rescuda = gunpool:backward(input, gradOutput)
 
-   local error = rescuda:float() - groundgrad
+      local error = rescuda:double() - groundgrad:double()
 
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialDilatedMaxPooling_forward()
