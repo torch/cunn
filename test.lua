@@ -5915,6 +5915,154 @@ function cunntest.ModuleConversionFunctions()
    end
 end
 
+function cunntest.IndexLinear()
+   isize = 500E3
+   osize = 250
+   weightDecay = 0.01
+   nnzMin = 1000
+   nnzMax = 1500
+   idxMin = 1
+   idxMax = isize
+   batchSize = 128
+   lr = 0.01
+   ntests = 1
+
+   local errNorm = function(a, b)
+      return torch.Tensor(1):fill(torch.cdiv((a - b):abs(), a:abs()):max())
+   end
+
+   local ilc = nn.IndexLinear(isize, osize):float()
+   local ilg = nn.IndexLinear(isize, osize):float():cuda()
+
+   local tot = 0
+   local samples = 0
+   local batchILCPU = {{}, {}}
+   local batchILGPU = {{}, {}}
+   for i=1,batchSize do
+      local n = torch.random(nnzMin, nnzMax)
+      local indices = idxMin + torch.LongTensor():randperm(idxMax - idxMin)
+      batchILCPU[1][i] = indices[{{1,n}}]
+      batchILCPU[2][i] = torch.FloatTensor(n):uniform()
+      batchILGPU[1][i] = torch.CudaLongTensor(n):copy(batchILCPU[1][i])
+      batchILGPU[2][i] = torch.CudaTensor(n):copy(batchILCPU[2][i])
+      tot = tot + n
+   end
+
+   local inputSize = #batchILCPU[1]
+   local gradOutsILCPU = torch.FloatTensor(inputSize, osize):uniform()
+   local gradOutsILGPU = torch.CudaTensor(inputSize, osize):copy(gradOutsILCPU)
+
+   ilc.weightDecay = weightDecay
+   ilg.weightDecay = weightDecay
+
+   ilc.weight:uniform()
+   ilc.bias:fill(1)
+
+   ilg.weight:copy(ilc.weight)
+   ilg.bias:copy(ilc.bias)
+
+   ilc:zeroGradParameters()
+   outILCPU = ilc:forward(batchILCPU)
+   ilc:backward(batchILCPU, gradOutsILCPU);
+   ilc:updateParameters(lr)
+
+   ilg:zeroGradParameters()
+   outILGPU = ilg:forward(batchILGPU)
+   ilg:backward(batchILGPU, gradOutsILGPU);
+   ilg:updateParameters(lr)
+
+   mytester:assertTensorEq(errNorm(outILCPU, outILGPU:float()),
+                           torch.Tensor(1):fill(0),
+                           1E-5, "cunn.IndexLinear:forward failed for output")
+
+   mytester:assertTensorEq(ilc.bias,
+                           ilg.bias:float(),
+                           1E-5, "cunn.IndexLinear:backward+update failed for bias")
+
+   mytester:assertTensorEq(ilc.weight,
+                           ilg.weight:float(),
+                           1E-5, "cunn.IndexLinear:backward+update failed for weight")
+
+   ilc.weight:uniform()
+   ilc.bias:fill(1)
+
+   ilg.weight:copy(ilc.weight)
+   ilg.bias:copy(ilc.bias)
+
+   outILCPU = ilc:forward(batchILCPU)
+   ilc:backwardUpdate(batchILCPU, gradOutsILCPU, lr);
+
+   outILGPU = ilg:forward(batchILGPU)
+   ilg:backwardUpdate(batchILGPU, gradOutsILGPU, lr);
+
+   mytester:assertTensorEq(errNorm(outILCPU, outILGPU:float()),
+                           torch.Tensor(1):fill(0),
+                           1E-5, "cunn.IndexLinear:forward failed for output")
+
+   mytester:assertTensorEq(ilc.bias,
+                           ilg.bias:float(),
+                           1E-5, "cunn.IndexLinear:backwardUpdate failed for bias")
+
+   mytester:assertTensorEq(ilc.bias,
+                           ilg.bias:float(),
+                           1E-5, "cunn.IndexLinear:backwardUpdate failed for weight")
+end
+
+function cunntest.IndexLinearMaxNorm()
+   isize = 500E3
+   osize = 250
+   weightDecay = 0
+   nnzMin = 1000
+   nnzMax = 1500
+   idxMin = 1
+   idxMax = isize
+   batchSize = 128
+   lr = 0.01
+   ntests = 1
+
+   local errNorm = function(a, b)
+      return torch.Tensor(1):fill(torch.cdiv((a - b):abs(), a:abs()):max())
+   end
+
+   local ilc = nn.IndexLinear(isize, osize, nil, nil, nil, nil, 1):float()
+   local ilg = nn.IndexLinear(isize, osize, nil, nil, nil, nil, 1):float():cuda()
+
+   local tot = 0
+   local samples = 0
+   local batchILCPU = {{}, {}}
+   local batchILGPU = {{}, {}}
+   for i=1,batchSize do
+      local n = torch.random(nnzMin, nnzMax)
+      local indices = idxMin + torch.LongTensor():randperm(idxMax - idxMin)
+      batchILCPU[1][i] = indices[{{1,n}}]
+      batchILCPU[2][i] = torch.FloatTensor(n):uniform()
+      batchILGPU[1][i] = torch.CudaLongTensor(n):copy(batchILCPU[1][i])
+      batchILGPU[2][i] = torch.CudaTensor(n):copy(batchILCPU[2][i])
+      tot = tot + n
+   end
+
+   local inputSize = #batchILCPU[1]
+   local gradOutsILCPU = torch.FloatTensor(inputSize, osize):uniform()
+   local gradOutsILGPU = torch.CudaTensor(inputSize, osize):copy(gradOutsILCPU)
+
+   ilc.weightDecay = weightDecay
+   ilg.weightDecay = weightDecay
+
+   ilc.weight:uniform()
+   ilc.weight:narrow(2,2,1):fill(1.0):cdiv(ilc.weight:narrow(2,1,1))
+   ilc.bias:fill(1)
+
+   ilg.weight:copy(ilc.weight)
+   ilg.bias:copy(ilc.bias)
+
+   outILCPU = ilc:forward(batchILCPU)
+   outILGPU = ilg:forward(batchILGPU)
+
+   mytester:assertTensorEq(errNorm(outILCPU, outILGPU:float()),
+                           torch.Tensor(1):fill(0),
+                           1E-5, "cunn.IndexLinear:forward failed for output")
+end
+
 function cunntest.GPU()
    local ndevice = cutorch.getDeviceCount()
    if ndevice < 2 then
