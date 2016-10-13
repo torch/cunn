@@ -33,7 +33,7 @@ local replacements =
 {
    {
       ['THTensor'] = 'THCudaTensor',
-      ['THIndexTensor'] = 'THCudaLongTensor',
+      ['THCIndexTensor'] = 'THCudaLongTensor',
       ['THIndex_t'] = 'long',
       ['THInteger_t'] = 'float'
    }
@@ -48,13 +48,13 @@ local replacements_generic =
 {
   {
     ['THCTensor'] = 'THCudaTensor',
-    ['THIndexTensor'] = 'THCudaLongTensor',
+    ['THCIndexTensor'] = 'THCudaLongTensor',
     ['TYPE'] = 'Cuda',
     ['real'] = 'float'
   },
   {
     ['THCTensor'] = 'THCudaDoubleTensor',
-    ['THIndexTensor'] = 'THCudaLongTensor',
+    ['THCIndexTensor'] = 'THCudaLongTensor',
     ['TYPE'] = 'CudaDouble',
     ['real'] = 'double',
    }
@@ -65,7 +65,7 @@ if cutorch.hasHalf then
   cct2lt['THCudaHalfTensor'] = 'torch.CudaHalfTensor'
   local half_replacement = {
     ['THCTensor'] = 'THCudaHalfTensor',
-    ['THIndexTensor'] = 'THCudaLongTensor',
+    ['THCIndexTensor'] = 'THCudaLongTensor',
     ['TYPE'] = 'CudaHalf',
     ['real'] = 'half'
   }

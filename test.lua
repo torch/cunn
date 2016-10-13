@@ -2220,7 +2220,7 @@ function cunntest.SpatialMaxPooling_forward()
       local error = rescuda:double() - groundtruth:double()
       mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
           string.format('error on state (forward) with %s', typename))
-      local error_ind = gconv.indices:float() - sconv.indices:float()
+      local error_ind = gconv.indices:long() - sconv.indices
       mytester:asserteq(error_ind:max(), 0,
           string.format('error on indices (forward) with %s', typename))
     end
@@ -2473,7 +2473,7 @@ function cunntest.SpatialDilatedMaxPooling_forward()
       local error = rescuda:double() - groundtruth:double()
       mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
           string.format('error on state (forward) with %s', typename))
-      local error_ind = gconv.indices:double() - sconv.indices:double()
+      local error_ind = gconv.indices:long() - sconv.indices
       mytester:asserteq(error_ind:max(), 0,
           string.format('error on indices (forward) with %s', typename))
     end
@@ -2681,7 +2681,7 @@ function cunntest.SpatialFractionalMaxPooling_forward()
 
     local error = rescuda:float() - groundtruth
     mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-    local error_ind = gmodule.indices:float() - module.indices
+    local error_ind = gmodule.indices:long() - module.indices
     mytester:asserteq(error_ind:abs():max(), 0, 'error on indices (forward) ')
 end
 
@@ -3019,7 +3019,7 @@ function cunntest.SpatialAdaptiveMaxPooling_forward()
 
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   local error_ind = gconv.indices:float() - sconv.indices:float()
+   local error_ind = gconv.indices:long() - sconv.indices
    mytester:asserteq(error_ind:max(), 0, 'error on indices (forward) ')
 end
 
@@ -3058,7 +3058,7 @@ function cunntest.SpatialAdaptiveMaxPooling_forward_noncontig()
 
    local error = rescuda:float() - groundtruth
    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   local error_ind = gconv.indices:float() - sconv.indices:float()
+   local error_ind = gconv.indices:long() - sconv.indices
    mytester:asserteq(error_ind:max(), 0, 'error on indices (forward) ')
 end
 
