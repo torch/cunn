@@ -52,9 +52,9 @@ end
 
 local function pointwise_forward(proto_module, name, max_error)
    local size = math.random(1,100)
-   local input = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       if name == 'Sqrt' then input:abs() end
@@ -73,13 +73,14 @@ end
 
 local function pointwise_backward(proto_module, name, max_error)
    local size = math.random(1,100)
-   local input = torch.randn(size)
-   local gradOutput = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(size):type(typename)
+      local gradOutput = torch.randn(size):type(typename)
+
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       if name == 'Sqrt' then input:abs() end
       local sconv = proto_module:type(ctype)
       sconv:forward(input)
@@ -102,9 +103,9 @@ local function pointwise_backward_inplace(proto_module, name)
    local size = math.random(1,100)
 
    for k, typename in ipairs(typenames) do
-      local input = torch.randn(size)
+      local input = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       if name == 'Sqrt' then input:abs() end
       local gradOutput = torch.randn(size)
       gradOutput = gradOutput:type(ctype)
@@ -134,7 +135,7 @@ local function pointwise_transposed(proto_module, name, max_error)
 
    for k, typename in ipairs(typenames) do
       local ctype = t2cpu[typename]
-      local input = torch.Tensor(11, 19):uniform(-1, 1)
+      local input = torch.Tensor(11, 19):uniform(-1, 1):type(typename)
       input = input:type(ctype)
       local proto_module = proto_module:type(ctype)
       if name == 'Sqrt' then
@@ -399,11 +400,11 @@ end
 function cunntest.LogSoftMax_forward_batch()
    local size = math.random(1,256)
    local bs = math.random(32,256)
-   local input = torch.randn(bs, size)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs, size):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.LogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input)
 
@@ -420,13 +421,13 @@ end
 function cunntest.LogSoftMax_backward_batch()
    local size = math.random(1,256)
    local bs = math.random(32,256)
-   local input = torch.randn(bs, size)
-   local gradOutput = torch.randn(bs, size)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs, size):type(typename)
+      local gradOutput = torch.randn(bs, size):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       local sconv = nn.LogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
@@ -448,11 +449,11 @@ function cunntest.SpatialLogSoftMax_forward()
    local size = math.random(1,256)
    local ini = math.random(8,32)
    local inj = math.random(8,32)
-   local input = torch.randn(size, inj, ini)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input):type(ctype)
 
@@ -472,13 +473,12 @@ function cunntest.SpatialLogSoftMax_backward()
    local ini = math.random(8,32)
    local inj = math.random(8,32)
 
-   local input = torch.randn(size, inj, ini)
-   local gradOutput = torch.randn(size, inj, ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(size, inj, ini):type(typename)
+      local gradOutput = torch.randn(size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
@@ -502,11 +502,10 @@ function cunntest.SpatialLogSoftMax_forward_batch()
    local ini = math.random(8,32)
    local inj = math.random(8,32)
 
-   local input = torch.randn(bs, size, inj, ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs, size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input)
 
@@ -527,13 +526,12 @@ function cunntest.SpatialLogSoftMax_backward_batch()
    local ini = math.random(8,32)
    local inj = math.random(8,32)
 
-   local input = torch.randn(bs, size, inj, ini)
-   local gradOutput = torch.randn(bs, size, inj, ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs, size, inj, ini):type(typename)
+      local gradOutput = torch.randn(bs, size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
@@ -2206,11 +2204,10 @@ function cunntest.SpatialMaxPooling_forward()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(from,inj,ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
@@ -2245,11 +2242,10 @@ function cunntest.SpatialMaxPooling_forward_batch()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(bs,from,inj,ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
@@ -2317,13 +2313,12 @@ function cunntest.SpatialMaxPooling_backward()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = true--math.random(0,1) == 1
 
-   local input = torch.randn(from,inj,ini)
-   local gradOutput = torch.randn(to,outj,outi)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
 
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
@@ -2362,10 +2357,9 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(bs,from,inj,ini)
-   local gradOutput = torch.randn(bs,to,outj,outi)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local gradOutput = gradOutput:type(ctype)
@@ -2470,11 +2464,10 @@ function cunntest.SpatialDilatedMaxPooling_forward()
    local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(from,inj,ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
@@ -2511,11 +2504,10 @@ function cunntest.SpatialDilatedMaxPooling_forward_batch()
    local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(bs,from,inj,ini)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
@@ -2548,13 +2540,12 @@ function cunntest.SpatialDilatedMaxPooling_backward()
    local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(from,inj,ini)
-   local gradOutput = torch.randn(to,outj,outi)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       sconv:forward(input)
@@ -2594,13 +2585,12 @@ function cunntest.SpatialDilatedMaxPooling_backward_batch()
    local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
    local ceil_mode = math.random(0,1) == 1
 
-   local input = torch.randn(bs,from,inj,ini)
-   local gradOutput = torch.randn(bs,to,outj,outi)
-
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       sconv:forward(input)
@@ -4098,11 +4088,11 @@ end
 
 function cunntest.SoftPlus_forward()
    local size = math.random(1,100)
-   local input = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local sconv = nn.SoftPlus():type(ctype)
       local groundtruth = sconv:forward(input)
 
@@ -4118,13 +4108,13 @@ end
 
 function cunntest.SoftPlus_backward()
    local size = math.random(1,100)
-   local input = torch.randn(size)
-   local gradOutput = torch.randn(size)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(size):type(typename)
+      local gradOutput = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
       local sconv = nn.SoftPlus():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
@@ -4570,13 +4560,13 @@ function cunntest.SpatialClassNLLCriterion()
    local h = math.random(300, 500)
    local w = math.random(300, 800)
    local classes = math.random(10,30)
-   local input = torch.randn(batchSize, classes, h, w)
-   local target = torch.Tensor(batchSize, h, w)
-   target:apply(function() return math.random(1, classes) end)
 
    for k, typename in ipairs(typenames) do
+      local input = torch.randn(batchSize, classes, h, w):type(typename)
+      local target = torch.Tensor(batchSize, h, w)
+      target:apply(function() return math.random(1, classes) end)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = input:type(ctype)
       local mod = nn.SpatialClassNLLCriterion():type(ctype)
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
@@ -5412,13 +5402,13 @@ function cunntest.PReLU_backward()
     local nOutputPlane = 8
     local w = math.random(1,10)
     local h = math.random(1,10)
-    local input = torch.randn(nOutputPlane, h, w)
-    local gradOutput = torch.randn(#input)
 
     for k, typename in ipairs(typenames) do
+        local input = torch.randn(nOutputPlane, h, w):type(typename)
+        local gradOutput = torch.randn(#input):type(typename)
         local ctype = t2cpu[typename]
-        local input = input:type(ctype)
-        local gradOutput = gradOutput:type(ctype)
+        input = input:type(ctype)
+        gradOutput = gradOutput:type(ctype)
         local sconv = nn.PReLU(nOutputPlane):type(ctype)
         local gconv = sconv:clone():type(typename)
 
@@ -5451,9 +5441,9 @@ function cunntest.RReLU_forward()
     for k, typename in ipairs(typenames) do
        for _,train in ipairs({true,false}) do
           for _,inplace in ipairs({false,true}) do
-              local input = torch.randn(nOutputPlane, h, w) - 0.5
+              local input = torch.randn(nOutputPlane, h, w):type(typename) - 0.5
               local ctype = t2cpu[typename]
-              local input = input:type(ctype)
+              input = input:type(ctype)
               local sconv = nn.RReLU(1/8, 1/3, inplace):type(ctype)
               if not train then
                   sconv:evaluate()
@@ -5483,8 +5473,8 @@ function cunntest.RReLU_backward()
         for _,train in ipairs({true,false}) do
             for _,inplace in ipairs({false,true}) do
                 local ctype = t2cpu[typename]
-                local input = torch.randn(nOutputPlane, h, w)
-                local gradOutput = torch.randn(#input) - 0.5
+                local input = torch.randn(nOutputPlane, h, w):type(typename)
+                local gradOutput = torch.randn(#input):type(typename) - 0.5
                 input = input:type(ctype)
                 gradOutput = gradOutput:type(ctype)
                 local sconv = nn.RReLU(1/8, 1/3, inplace):type(ctype)
