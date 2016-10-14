@@ -2993,34 +2993,24 @@ function cunntest.SpatialAdaptiveMaxPooling_forward()
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
-   local tm = {}
-   local title = string.format('SpatialAdaptiveMaxPooling.forward %dx%dx%d -> %dx%dx%d',
-                               from, inj, ini, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input):type(ctype)
 
-   local input = torch.randn(from,inj,ini)
-   local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      input = input:type(typename)
+      local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+      local error_ind = gconv.indices:long() - sconv.indices
+      mytester:asserteq(error_ind:max(), 0,
+          string.format('error on indices (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   local error_ind = gconv.indices:long() - sconv.indices
-   mytester:asserteq(error_ind:max(), 0, 'error on indices (forward) ')
 end
 
 function cunntest.SpatialAdaptiveMaxPooling_forward_noncontig()
@@ -3031,35 +3021,24 @@ function cunntest.SpatialAdaptiveMaxPooling_forward_noncontig()
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
-   local tm = {}
-   local title = string.format('SpatialAdaptiveMaxPooling.forward %s %dx%dx%d -> %dx%dx%d',
-                               'non-contiguous',from, inj, ini, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input0 = torch.randn(from,ini,inj):type(typename)
+      local ctype = t2cpu[typename]
+      local input = input0:type(ctype):transpose(2,3)
+      local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input)
 
-   local input0 = torch.randn(from,ini,inj)
-   local input = input0:transpose(2,3)
-   local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      input = input0:type(typename):transpose(2,3)
+      local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+      local error_ind = gconv.indices:long() - sconv.indices
+      mytester:asserteq(error_ind:max(), 0,
+          string.format('error on indices (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input0:cuda():transpose(2,3)
-   local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   local error_ind = gconv.indices:long() - sconv.indices
-   mytester:asserteq(error_ind:max(), 0, 'error on indices (forward) ')
 end
 
 function cunntest.SpatialAdaptiveMaxPooling_forward_batch()
@@ -3071,32 +3050,21 @@ function cunntest.SpatialAdaptiveMaxPooling_forward_batch()
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
-   local tm = {}
-   local title = string.format('SpatialAdaptiveMaxPooling.forward %dx%dx%dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, bs, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input)
 
-   local input = torch.randn(bs,from,inj,ini)
-   local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      input = input:type(typename)
+      local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.SpatialAdaptiveMaxPooling_backward()
@@ -3107,41 +3075,29 @@ function cunntest.SpatialAdaptiveMaxPooling_backward()
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
-   local tm = {}
-   local title = string.format('SpatialAdaptiveMaxPooling.backward %dx%dx%d -> %dx%dx%d',
-                               from, inj, ini, to, outj, outi)
-   times[title] = tm
-
-   local input = torch.randn(from,inj,ini)
-   local gradOutput = torch.randn(to,outj,outi)
-   local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj)
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):cuda()
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.SpatialAdaptiveMaxPooling_backward_noncontig()
@@ -3152,42 +3108,29 @@ function cunntest.SpatialAdaptiveMaxPooling_backward_noncontig()
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
-   local tm = {}
-   local title = string.format('SpatialAdaptiveMaxPooling.backward %s %dx%dx%d -> %dx%dx%d',
-                               'non-contiguous', from, inj, ini, to, outj, outi)
-   times[title] = tm
-
-   local input0 = torch.randn(from,ini,inj)
-   local input = input0:transpose(2,3)
-   local gradOutput = torch.randn(to,outj,outi)
-   local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj)
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+   for k, typename in ipairs(typenames) do
+      local input0 = torch.randn(from,ini,inj):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      local input = input0:type(ctype):transpose(2,3)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input0:cuda():transpose(2,3)
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):cuda()
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input0:type(typename):transpose(2,3)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.SpatialAdaptiveMaxPooling_backward_batch()
@@ -3199,41 +3142,29 @@ function cunntest.SpatialAdaptiveMaxPooling_backward_batch()
    local ini = math.random(10,256)
    local inj = math.random(10,256)
 
-   local tm = {}
-   local title = string.format('SpatialAdaptiveMaxPooling.backward %dx%dx%dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, bs, to, outj, outi)
-   times[title] = tm
-
-   local input = torch.randn(bs,from,inj,ini)
-   local gradOutput = torch.randn(bs,to,outj,outi)
-   local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj)
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):cuda()
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.SpatialLPPooling_forward()
