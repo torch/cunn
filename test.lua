@@ -2755,22 +2755,24 @@ function cunntest.SpatialFractionalMaxPooling_backward()
 end
 
 function cunntest.SpatialAveragePooling_includepad()
-   local net = nn.SpatialAveragePooling(2, 2, 1, 1, 1, 1):cuda()
-   local net_no_include_pad = net:clone()
-   net_no_include_pad:setCountExcludePad()
-   local net_include_pad = net:clone()
-   net_include_pad:setCountIncludePad()
+   for k, typename in ipairs(typenames) do
+      local net = nn.SpatialAveragePooling(2, 2, 1, 1, 1, 1):type(typename)
+      local net_no_include_pad = net:clone()
+      net_no_include_pad:setCountExcludePad()
+      local net_include_pad = net:clone()
+      net_include_pad:setCountIncludePad()
 
-   local input = torch.FloatTensor(1, 1, 1, 1):cuda()
-   input[1][1][1][1] = 3
-   local out_noinclude = net_no_include_pad:forward(input)
-   local out_include = net_include_pad:forward(input)
+      local input = torch.FloatTensor(1, 1, 1, 1):type(typename)
+      input[1][1][1][1] = 3
+      local out_noinclude = net_no_include_pad:forward(input)
+      local out_include = net_include_pad:forward(input)
 
-   local noinc_out = out_noinclude[1][1][1][1]
-   local inc_out = out_include[1][1][1][1]
-   mytester:assertne(noinc_out, inc_out)
-   mytester:asserteq(3, noinc_out)
-   mytester:asserteq(3/4, inc_out)
+      local noinc_out = out_noinclude[1][1][1][1]
+      local inc_out = out_include[1][1][1][1]
+      mytester:assertne(noinc_out, inc_out)
+      mytester:asserteq(3, noinc_out)
+      mytester:asserteq(3/4, inc_out)
+   end
 end
 
 function cunntest.SpatialAveragePooling_forward()
@@ -2789,36 +2791,26 @@ function cunntest.SpatialAveragePooling_forward()
    local ceil_mode = math.random(0,1) == 1
    local count_exclude_pad = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialAveragePooling.forward %dx%dx%d o %dx%d -> %dx%dx%d',
-                               from, inj, ini, kj, ki, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
 
-   local input = torch.randn(from,inj,ini)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   if count_exclude_pad then sconv:setCountExcludePad() end
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      if count_exclude_pad then sconv:setCountExcludePad() end
+      local groundtruth = sconv:forward(input)
+
+      input = input:type(typename)
+      local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      if count_exclude_pad then gconv:setCountExcludePad() end
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   if count_exclude_pad then gconv:setCountExcludePad() end
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.SpatialAveragePooling_forward_batch()
@@ -2838,36 +2830,26 @@ function cunntest.SpatialAveragePooling_forward_batch()
    local ceil_mode = math.random(0,1) == 1
    local count_exclude_pad = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialAveragePooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
 
-   local input = torch.randn(bs,from,inj,ini)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   if count_exclude_pad then sconv:setCountExcludePad() end
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      input = input:type(ctype)
+      local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      if count_exclude_pad then sconv:setCountExcludePad() end
+      local groundtruth = sconv:forward(input)
+
+      input = input:type(typename)
+      local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      if count_exclude_pad then gconv:setCountExcludePad() end
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   if count_exclude_pad then gconv:setCountExcludePad() end
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.SpatialAveragePooling_backward()
@@ -2886,45 +2868,34 @@ function cunntest.SpatialAveragePooling_backward()
    local ceil_mode = math.random(0,1) == 1
    local count_exclude_pad = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialAveragePooling.backward %dx%dx%d o %dx%d -> %dx%dx%d',
-                               from, inj, ini, kj, ki, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
 
-   local input = torch.randn(from,inj,ini)
-   local gradOutput = torch.randn(to,outj,outi)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   if count_exclude_pad then sconv:setCountExcludePad() end
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      if count_exclude_pad then sconv:setCountExcludePad() end
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   if count_exclude_pad then gconv:setCountExcludePad() end
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      if count_exclude_pad then gconv:setCountExcludePad() end
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.SpatialAveragePooling_backward_batch()
@@ -2944,45 +2915,34 @@ function cunntest.SpatialAveragePooling_backward_batch()
    local ceil_mode = math.random(0,1) == 1
    local count_exclude_pad = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('SpatialAveragePooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
 
-   local input = torch.randn(bs,from,inj,ini)
-   local gradOutput = torch.randn(bs,to,outj,outi)
-   local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj)
-   if ceil_mode then sconv:ceil() end
-   if count_exclude_pad then sconv:setCountExcludePad() end
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      if count_exclude_pad then sconv:setCountExcludePad() end
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):cuda()
-   if ceil_mode then gconv:ceil() end
-   if count_exclude_pad then gconv:setCountExcludePad() end
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      if count_exclude_pad then gconv:setCountExcludePad() end
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.SpatialAdaptiveMaxPooling_forward()
