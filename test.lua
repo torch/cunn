@@ -1010,44 +1010,34 @@ function cunntest.SpatialConvolutionMM_forward_single()
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
-   local tm = {}
-   local title = string.format('SpatialConvolutionMM.forward %dx%dx%d o %dx%d -> %dx%dx%d [s: %dx%d] [p: %dx%d]',
-                               from, inj, ini, kj, ki, to, outj, outi, sj, si, padH, padW)
-   times[title] = tm
-
    local function jacTests(noBias)
       noBias = noBias or false
-      local input = torch.randn(from,inj,ini)
-      local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH)
-      if noBias then
-         sconv:noBias()
-      end
-      local groundtruth = sconv:forward(input)
-      local a = torch.Timer()
-      for i = 1,nloop do
-         groundtruth = sconv:forward(input)
-      end
-      tm.cpu = a:time().real
+      for k, typename in ipairs(typenames) do
+         local input = torch.randn(from,inj,ini):type(typename)
 
-      input = input:cuda()
-      local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):cuda()
-      if noBias then
-         gconv:noBias()
-      end
-      gconv.weight = sconv.weight:cuda()
-      if gconv.bias then
-         gconv.bias = sconv.bias:cuda()
-      end
-      local rescuda = gconv:forward(input)
-      a:reset()
-      for i = 1,nloop do
-         rescuda = gconv:forward(input)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
+         local ctype = t2cpu[typename]
+         input = input:type(ctype)
+         local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
+         if noBias then
+            sconv:noBias()
+         end
+         local groundtruth = sconv:forward(input)
 
-      local error = rescuda:float() - groundtruth
-      mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+         input = input:type(typename)
+         local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
+         if noBias then
+            gconv:noBias()
+         end
+         gconv.weight = sconv.weight:type(typename)
+         if gconv.bias then
+            gconv.bias = sconv.bias:type(typename)
+         end
+         local rescuda = gconv:forward(input)
+
+         local error = rescuda:double() - groundtruth:double()
+         mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+            string.format('error on state (forward) with %s', typename))
+      end
    end
 
    jacTests(false)
@@ -1069,44 +1059,34 @@ function cunntest.SpatialConvolutionMM_forward_batch()
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
-   local tm = {}
-   local title = string.format('SpatialConvolutionMM.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d] [p: %dx%d]',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi, sj, si, padH, padW)
-   times[title] = tm
-
    local function jacTests(noBias)
       noBias = noBias or false
-      local input = torch.randn(bs,from,inj,ini)
-      local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH)
-      if noBias then
-         sconv:noBias()
-      end
-      local groundtruth = sconv:forward(input)
-      local a = torch.Timer()
-      for i = 1,nloop do
-         groundtruth = sconv:forward(input)
-      end
-      tm.cpu = a:time().real
+      for k, typename in ipairs(typenames) do
+         local input = torch.randn(bs,from,inj,ini):type(typename)
 
-      input = input:cuda()
-      local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):cuda()
-      if noBias then
-         gconv:noBias()
-      end
-      gconv.weight = sconv.weight:cuda()
-      if gconv.bias then
-         gconv.bias = sconv.bias:cuda()
-      end
-      local rescuda = gconv:forward(input)
-      a:reset()
-      for i = 1,nloop do
-         rescuda = gconv:forward(input)
-      end
-      cutorch.synchronize()
-      tm.gpu = a:time().real
+         local ctype = t2cpu[typename]
+         input = input:type(ctype)
+         local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
+         if noBias then
+            sconv:noBias()
+         end
+         local groundtruth = sconv:forward(input)
 
-      local error = rescuda:float() - groundtruth
-      mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
+         input = input:type(typename)
+         local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
+         if noBias then
+            gconv:noBias()
+         end
+         gconv.weight = sconv.weight:type(typename)
+         if gconv.bias then
+            gconv.bias = sconv.bias:type(typename)
+         end
+         local rescuda = gconv:forward(input)
+
+         local error = rescuda:double() - groundtruth:double()
+         mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+            string.format('error on state (forward) with %s', typename))
+      end
    end
 
 
@@ -1126,62 +1106,54 @@ function cunntest.SpatialConvolutionMM_backward_single()
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
-   local tm = {}
-   local title = string.format('SpatialConvolutionMM.backward %dx%dx%d o %dx%d -> %dx%dx%d [s: %dx%d] [p: %dx%d]',
-                               from, inj, ini, kj, ki, to, outj, outi, sj, si, padH, padW)
-   times[title] = tm
-
    local function jacTests(noBias)
       noBias = noBias or false
-      local input = torch.randn(from,inj,ini)
-      local gradOutput = torch.randn(to,outj,outi)
-      local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH)
-      if noBias then
-         sconv:noBias()
-      end
-      sconv:forward(input)
-      sconv:zeroGradParameters()
-      local groundgrad = sconv:backward(input, gradOutput)
-      local a = torch.Timer()
-      for i = 1,nloop do
+
+      for k, typename in ipairs(typenames) do
+         local input = torch.randn(from,inj,ini):type(typename)
+         local gradOutput = torch.randn(to,outj,outi):type(typename)
+
+         local ctype = t2cpu[typename]
+         input = input:type(ctype)
+         gradOutput = gradOutput:type(ctype)
+         local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
+         if noBias then
+            sconv:noBias()
+         end
+         sconv:forward(input)
          sconv:zeroGradParameters()
-         groundgrad = sconv:backward(input, gradOutput)
-      end
-      local groundweight = sconv.gradWeight
-      local groundbias = sconv.gradBias
-      tm.cpu = a:time().real
+         local groundgrad = sconv:backward(input, gradOutput)
+         local groundweight = sconv.gradWeight
+         local groundbias = sconv.gradBias
 
-      input = input:cuda()
-      gradOutput = gradOutput:cuda()
-      local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):cuda()
-      if noBias then
-         gconv:noBias()
-      end
-      gconv.weight = sconv.weight:cuda()
-      if gconv.bias then
-         gconv.bias = sconv.bias:cuda()
-      end
-      gconv:forward(input)
-      gconv:zeroGradParameters()
-      local rescuda = gconv:backward(input, gradOutput)
-      a:reset()
-      for i = 1,nloop do
+         input = input:type(typename)
+         gradOutput = gradOutput:type(typename)
+         local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
+         if noBias then
+            gconv:noBias()
+         end
+         gconv.weight = sconv.weight:type(typename)
+         if gconv.bias then
+            gconv.bias = sconv.bias:type(typename)
+         end
+         gconv:forward(input)
          gconv:zeroGradParameters()
-         rescuda = gconv:backward(input, gradOutput)
-      end
-      local weightcuda = gconv.gradWeight
-      cutorch.synchronize()
-      tm.gpu = a:time().real
+         local rescuda = gconv:backward(input, gradOutput)
+         local weightcuda = gconv.gradWeight
 
-      local error = rescuda:float() - groundgrad
-      local werror = weightcuda:float() - groundweight
+         local error = rescuda:double() - groundgrad:double()
+         local werror = weightcuda:double() - groundweight:double()
 
-      mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
-      mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
+         mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+            string.format('error on state (backward) with %s', typename))
+         mytester:assertlt(werror:abs():max(), precision_backward_type(precision_backward, typename),
+            string.format('error on weight (backward) with %s', typename))
 
-      if gconv.bias then
-         local berror = gconv.gradBias:float() - groundbias
-         mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+         if gconv.bias then
+            local berror = gconv.gradBias:double() - groundbias:double()
+            mytester:assertlt(berror:abs():max(), precision_backward_type(precision_backward, typename),
+                string.format('error on bias (backward) with %s', typename))
+         end
       end
    end
 
@@ -1204,61 +1176,53 @@ function cunntest.SpatialConvolutionMM_backward_batch()
    local ini = (outi-1)*si+ki-padW*2
    local inj = (outj-1)*sj+kj-padH*2
 
-   local tm = {}
-   local title = string.format('SpatialConvolutionMM.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d [s: %dx%d] [p: %dx%d]',
-                               bs, from, inj, ini, kj, ki, bs, to, outj, outi, sj, si, padH, padW)
-   times[title] = tm
-
    local function jacTests(noBias)
       noBias = noBias or false
-      local input = torch.randn(bs,from,inj,ini)
-      local gradOutput = torch.randn(bs,to,outj,outi)
-      local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH)
-      if noBias then
-         sconv:noBias()
-      end
-      sconv:forward(input)
-      sconv:zeroGradParameters()
-      local groundgrad = sconv:backward(input, gradOutput)
-      local a = torch.Timer()
-      for i = 1,nloop do
+
+      for k, typename in ipairs(typenames) do
+         local input = torch.randn(bs,from,inj,ini)
+         local gradOutput = torch.randn(bs,to,outj,outi)
+
+         local ctype = t2cpu[typename]
+         input = input:type(ctype)
+         gradOutput = gradOutput:type(ctype)
+         local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
+         if noBias then
+            sconv:noBias()
+         end
+         sconv:forward(input)
          sconv:zeroGradParameters()
-         groundgrad = sconv:backward(input, gradOutput)
-      end
-      local groundweight = sconv.gradWeight
-      local groundbias = sconv.gradBias
-      tm.cpu = a:time().real
+         local groundgrad = sconv:backward(input, gradOutput)
+         local groundweight = sconv.gradWeight
+         local groundbias = sconv.gradBias
 
-      input = input:cuda()
-      gradOutput = gradOutput:cuda()
-      local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):cuda()
-      if noBias then
-         gconv:noBias()
-      end
-      gconv.weight = sconv.weight:cuda()
-      if gconv.bias then
-         gconv.bias = sconv.bias:cuda()
-      end
-      gconv:forward(input)
-      gconv:zeroGradParameters()
-      local rescuda = gconv:backward(input, gradOutput)
-      a:reset()
-      for i = 1,nloop do
+         input = input:type(typename)
+         gradOutput = gradOutput:type(typename)
+         local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
+         if noBias then
+            gconv:noBias()
+         end
+         gconv.weight = sconv.weight:type(typename)
+         if gconv.bias then
+            gconv.bias = sconv.bias:type(typename)
+         end
+         gconv:forward(input)
          gconv:zeroGradParameters()
-         rescuda = gconv:backward(input, gradOutput)
-      end
-      local weightcuda = gconv.gradWeight
-      cutorch.synchronize()
-      tm.gpu = a:time().real
+         local rescuda = gconv:backward(input, gradOutput)
+         local weightcuda = gconv.gradWeight
 
-      local error = rescuda:float() - groundgrad
-      local werror = weightcuda:float() - groundweight
+         local error = rescuda:double() - groundgrad:double()
+         local werror = weightcuda:double() - groundweight:double()
 
-      mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
-      mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
-      if gconv.bias then
-         local berror = gconv.gradBias:float() - groundbias
-         mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+         mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+            string.format('error on state (backward) with %s', typename))
+         mytester:assertlt(werror:abs():max(), precision_backward_type(precision_backward, typename),
+            string.format('error on weight (backward) with %s', typename))
+         if gconv.bias then
+            local berror = gconv.gradBias:double() - groundbias:double()
+            mytester:assertlt(berror:abs():max(), precision_backward_type(precision_backward, typename),
+                string.format('error on bias (backward) with %s', typename))
+         end
       end
    end
 
