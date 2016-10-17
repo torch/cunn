@@ -5640,36 +5640,23 @@ function cunntest.SpatialReflectionPadding_forward()
    local padT = math.random(-3,3)
    local padB = math.random(-3,3)
 
-   local tm = {}
-   local title =
-      string.format(
-         'SpatialReflectionPadding.forward %dx%dx%dx%d -> %dx%dx%dx%d',
-         batch, plane, sizeY, sizeX,
-         batch, plane, sizeY + padT + padB, sizeX + padL + padR)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.rand(batch, plane, sizeY, sizeX):type(typename)
 
-   local input = torch.rand(batch, plane, sizeY, sizeX)
-   local module = nn.SpatialReflectionPadding(padL, padR, padT, padB)
-   local groundtruth = module:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = module:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local module = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(ctype)
+      local groundtruth = module:forward(input)
+
+      input = input:type(typename)
+      local gmodule = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(typename)
+      local rescuda = gmodule:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(),
+                        precision_forward_type(precision_forward, typename),
+                        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gmodule = nn.SpatialReflectionPadding(padL, padR, padT, padB):cuda()
-   local rescuda = gmodule:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gmodule:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(),
-                     precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.SpatialReflectionPadding_backward()
@@ -5682,46 +5669,32 @@ function cunntest.SpatialReflectionPadding_backward()
    local padT = math.random(-3,3)
    local padB = math.random(-3,3)
 
-   local tm = {}
-   local title =
-      string.format(
-         'SpatialReflectionPadding.backward %dx%dx%dx%d -> %dx%dx%dx%d',
-         batch, plane, sizeY, sizeX,
-         batch, plane, sizeY + padT + padB, sizeX + padL + padR)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.rand(batch, plane, sizeY, sizeX):type(typename)
+      local gradOutput = torch.rand(
+          batch, plane, sizeY + padT + padB, sizeX + padL + padR
+       ):type(typename)
 
-   local input = torch.rand(batch, plane, sizeY, sizeX)
-   local gradOutput = torch.rand(
-      batch, plane, sizeY + padT + padB, sizeX + padL + padR
-   )
-   local module = nn.SpatialReflectionPadding(padL, padR, padT, padB)
-   module:forward(input)
-   module:zeroGradParameters()
-   local groundgrad = module:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      module:zeroGradParameters()
-      groundgrad = module:backward(input, gradOutput)
+       local ctype = t2cpu[typename]
+       input = input:type(ctype)
+       gradOutput = gradOutput:type(ctype)
+       local module = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(ctype)
+       module:forward(input)
+       module:zeroGradParameters()
+       local groundgrad = module:backward(input, gradOutput)
+
+       input = input:type(typename)
+       gradOutput = gradOutput:type(typename)
+       local gmodule = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(typename)
+       gmodule:forward(input)
+       gmodule:zeroGradParameters()
+       local rescuda = gmodule:backward(input, gradOutput)
+
+       local error = rescuda:double() - groundgrad:double()
+       mytester:assertlt(error:abs():max(),
+                         precision_backward_type(precision_backward, type),
+                         string.format('error on state (backward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gmodule = nn.SpatialReflectionPadding(padL, padR, padT, padB):cuda()
-   gmodule:forward(input)
-   gmodule:zeroGradParameters()
-   local rescuda = gmodule:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
-      gmodule:zeroGradParameters()
-      rescuda = gmodule:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-   mytester:assertlt(error:abs():max(),
-                     precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.SpatialReplicationPadding_forward()
