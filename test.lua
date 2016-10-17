@@ -3426,31 +3426,22 @@ function cunntest.SpatialCrossMapLRN_forward_batch()
    local beta  = math.random(0,100)/100
    local k = math.random(1,3)
 
-   local tm = {}
-   local title = string.format('SpatialCrossMapLRN.forward')
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.rand(bs, nbfeatures, inputSize, inputSize):type(typename)
 
-   local input = torch.rand(bs, nbfeatures, inputSize, inputSize)
-   local sconv = nn.SpatialCrossMapLRN(size, alpha, beta, k)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = input:type(typename)
+      local gconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.SpatialCrossMapLRN_backward_batch()
@@ -3462,40 +3453,30 @@ function cunntest.SpatialCrossMapLRN_backward_batch()
    local beta  = math.random(0,100)/100
    local k = math.random(1,3)
 
-   local tm = {}
-   local title = string.format('SpatialCrossMapLRN.backward')
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.rand(bs, nbfeatures, inputSize, inputSize):type(typename)
+      local gradOutput = torch.rand(input:size()):type(typename)
 
-   local input = torch.rand(bs, nbfeatures, inputSize, inputSize)
-   local gradOutput = torch.rand(input:size())
-   local sconv = nn.SpatialCrossMapLRN(size, alpha, beta, k)
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(ctype)
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):cuda()
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local gconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(ctype)
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward),
+          string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.MarginCriterion_backward()
