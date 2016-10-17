@@ -2527,66 +2527,55 @@ function cunntest.SpatialFractionalMaxPooling_forward()
     local ratioW = outW / inW
     local ratioH = outH / inH
 
-    local tm = {}
-    local title =
-        string.format('SpatialFractionalMaxPooling.forward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                      batch, plane, inH, inW, poolSizeH, poolSizeW, batch, plane, outH, outW)
-    times[title] = tm
+    for k, typename in ipairs(typenames) do
+        local input = nil
+        if batch == 1 then
+            input = torch.Tensor(plane, inH, inW):uniform():type(typename)
+        else
+            input = torch.Tensor(batch, plane, inH, inW):uniform():type(typename)
+        end
 
-    local input = nil
-    if batch == 1 then
-        input = torch.Tensor(plane, inH, inW):uniform()
-    else
-        input = torch.Tensor(batch, plane, inH, inW):uniform()
+        local ctype = t2cpu[typename]
+        input = input:type(ctype)
+        local module = nil
+        if useRatio then
+            module =
+                nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, ratioW, ratioH):type(ctype)
+        else
+            module =
+                nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH):type(ctype)
+        end
+
+        module:fixPoolingRegions()
+
+        local groundtruth = module:forward(input)
+
+        input = input:type(typename)
+
+        local gmodule = nil
+        if useRatio then
+            gmodule =
+                nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, ratioW, ratioH)
+        else
+            gmodule =
+                nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
+        end
+
+        gmodule = gmodule:fixPoolingRegions():type(typename)
+
+        -- For comparison purposes, make sure we are using the same random pooling regions
+        -- as the CPU
+        gmodule.randomSamples = module.randomSamples:type(typename)
+
+        local rescuda = gmodule:forward(input)
+
+        local error = rescuda:double() - groundtruth:double()
+        mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+            string.format('error on state (forward) with %s', typename))
+        local error_ind = gmodule.indices:long() - module.indices
+        mytester:asserteq(error_ind:abs():max(), 0,
+            string.format('error on indices (forward) with %s', typename))
     end
-
-    local module = nil
-    if useRatio then
-        module =
-            nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, ratioW, ratioH)
-    else
-        module =
-            nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
-    end
-
-    module:fixPoolingRegions()
-
-    local groundtruth = module:forward(input)
-    local a = torch.Timer()
-    for i = 1,nloop do
-        groundtruth = module:forward(input)
-    end
-    tm.cpu = a:time().real
-
-    input = input:cuda()
-
-    local gmodule = nil
-    if useRatio then
-        gmodule =
-            nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, ratioW, ratioH)
-    else
-        gmodule =
-            nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
-    end
-
-    gmodule = gmodule:fixPoolingRegions():cuda()
-
-    -- For comparison purposes, make sure we are using the same random pooling regions
-    -- as the CPU
-    gmodule.randomSamples = module.randomSamples:cuda()
-
-    local rescuda = gmodule:forward(input)
-    a:reset()
-    for i = 1,nloop do
-        rescuda = gmodule:forward(input)
-    end
-    cutorch.synchronize()
-    tm.gpu = a:time().real
-
-    local error = rescuda:float() - groundtruth
-    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-    local error_ind = gmodule.indices:long() - module.indices
-    mytester:asserteq(error_ind:abs():max(), 0, 'error on indices (forward) ')
 end
 
 function cunntest.SpatialFractionalMaxPooling_backward()
@@ -2603,59 +2592,46 @@ function cunntest.SpatialFractionalMaxPooling_backward()
     local inW = math.random(minInW, minInW + 6)
     local inH = math.random(minInH, minInH + 6)
 
-    local tm = {}
-    local title =
-        string.format('SpatialFractionalMaxPooling.backward %dx%dx%dx%d o %dx%d -> %dx%dx%dx%d',
-                      batch, plane, inH, inW, poolSizeH, poolSizeW, batch, plane, outH, outW)
-    times[title] = tm
+    for k, typename in ipairs(typenames) do
+        local input = nil
+        local gradOutput = nil
+        if batch == 1 then
+            input = torch.Tensor(plane, inH, inW):uniform():type(typename)
+            gradOutput = torch.Tensor(plane, outH, outW):uniform():type(typename)
+        else
+            input = torch.Tensor(batch, plane, inH, inW):uniform():type(typename)
+            gradOutput = torch.Tensor(batch, plane, outH, outW):uniform():type(typename)
+        end
 
-    local input = nil
-    local gradOutput = nil
-    if batch == 1 then
-        input = torch.Tensor(plane, inH, inW):uniform()
-        gradOutput = torch.Tensor(plane, outH, outW):uniform()
-    else
-        input = torch.Tensor(batch, plane, inH, inW):uniform()
-        gradOutput = torch.Tensor(batch, plane, outH, outW):uniform()
-    end
+        local ctype = t2cpu[typename]
+        input = input:type(ctype)
+        gradOutput = gradOutput:type(ctype)
+        local module =
+            nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
+            :fixPoolingRegions():type(ctype)
 
-    local module =
-        nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
-        :fixPoolingRegions()
-
-    module:forward(input)
-    module:zeroGradParameters()
-    local groundgrad = module:backward(input, gradOutput)
-    local a = torch.Timer()
-    for i = 1,nloop do
+        module:forward(input)
         module:zeroGradParameters()
-        groundgrad = module:backward(input, gradOutput)
-    end
-    tm.cpu = a:time().real
+        local groundgrad = module:backward(input, gradOutput)
 
-    input = input:cuda()
-    gradOutput = gradOutput:cuda()
+        input = input:type(typename)
+        gradOutput = gradOutput:type(typename)
 
-    local gmodule =
-        nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
-        :fixPoolingRegions():cuda()
-    -- For comparison purposes, make sure we are using the same random pooling regions
-    -- as the CPU
-    gmodule.randomSamples = module.randomSamples:cuda()
+        local gmodule =
+            nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
+            :fixPoolingRegions():type(typename)
+        -- For comparison purposes, make sure we are using the same random pooling regions
+        -- as the CPU
+        gmodule.randomSamples = module.randomSamples:type(typename)
 
-    gmodule:forward(input)
-    gmodule:zeroGradParameters()
-    local rescuda = gmodule:backward(input, gradOutput)
-    a:reset()
-    for i = 1,nloop do
+        gmodule:forward(input)
         gmodule:zeroGradParameters()
-        rescuda = gmodule:backward(input, gradOutput)
-    end
-    cutorch.synchronize()
-    tm.gpu = a:time().real
+        local rescuda = gmodule:backward(input, gradOutput)
 
-    local error = rescuda:float() - groundgrad
-    mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
+        local error = rescuda:double() - groundgrad:double()
+        mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+            string.format('error on state (backward) with %s', typename))
+    end
 end
 
 function cunntest.SpatialAveragePooling_includepad()
