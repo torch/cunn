@@ -62,6 +62,7 @@ local replacements_generic =
 
 if cutorch.hasHalf then
   ffi.cdef("half THC_float2half(float a);")
+  ffi.cdef("float THC_half2float(half a);")
   cct2lt['THCudaHalfTensor'] = 'torch.CudaHalfTensor'
   local half_replacement = {
     ['THCTensor'] = 'THCudaHalfTensor',
