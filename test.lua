@@ -3437,32 +3437,30 @@ end
 
 function cunntest.SoftMarginCriterion()
    for sizeAverage = 0, 1 do
-      local size = math.random(3000,5000)
-      local input = torch.randn(size,1,1)
-      local target = torch.randn(size)
-      local mod = nn.SoftMarginCriterion(sizeAverage == 1)
+      for k, typename in ipairs(typenames) do
+         local size = math.random(3000,5000)
+         local input = torch.randn(size,1,1):type(typename)
+         local target = torch.randn(size):type(typename)
 
-      local tm = {}
-      local title = string.format('SoftMarginCriterion sizeAverage %d, %d ', sizeAverage, size)
-      times[title] = tm
+         local ctype = t2cpu[typename]
+         input = input:type(ctype)
+         target = target:type(ctype)
+         local mod = nn.SoftMarginCriterion(sizeAverage == 1):type(ctype)
 
-      local a = torch.Timer()
-      local fout = mod:forward(input,target)
-      local fgin = mod:backward(input,target):clone()
-      tm.cpu = a:time().real
+         local fout = mod:forward(input,target)
+         local fgin = mod:backward(input,target):clone()
 
-      local cinput = input:cuda()
-      local ctarget = target:cuda()
-      local cmod = nn.SoftMarginCriterion(sizeAverage == 1):cuda()
-      a:reset()
-      local cout = cmod:forward(cinput,ctarget)
-      local cgin = cmod:backward(cinput,ctarget)
-      cutorch.synchronize()
-      tm.gpu = a:time().real
+         local cinput = input:type(typename)
+         local ctarget = target:type(typename)
+         local cmod = nn.SoftMarginCriterion(sizeAverage == 1):type(typename)
+         local cout = cmod:forward(cinput,ctarget)
+         local cgin = cmod:backward(cinput,ctarget)
 
-      mytester:assertlt(math.abs(fout-cout), 0.01, 'error  on output')
-      local gerr = cgin:float() - fgin
-      mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+        mytester:assertlt(math.abs(fout-cout), 0.01, 'error  on output')
+        local gerr = cgin:double() - fgin:double()
+        mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+           string.format('error  on gradInput with %s', typename))
+      end
    end
 end
 
