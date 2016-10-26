@@ -724,44 +724,35 @@ function cunntest.SparseLinear_forward()
     local ini = math.random(50,100)
     local inj = math.random(5,10)
 
-    local module = nn.SparseLinear(ini,inj)
-    local sslin = module
-    local gslin = module:clone():cuda()
+    for k, typename in ipairs(typenames) do
+        if typename ~= "torch.CudaHalfTensor" then
+            local ctype = t2cpu[typename]
+            local module = nn.SparseLinear(ini,inj):type(ctype)
+            local sslin = module
+            local gslin = module:clone():type(typename)
 
-    -- Create a random sparse vector
-    local input = {}
-    for i=1,inb do
-        local nnz = math.random(5, 10)
-        local inds = torch.randperm(ini)[{{1,nnz}}]
-        input[i] = torch.Tensor(nnz, 2)
-        input[i]:select(2,1):copy(inds)
-        input[i]:select(2,2):copy(torch.rand(nnz))
+            -- Create a random sparse vector
+            local input = {}
+            for i=1,inb do
+                local nnz = math.random(5, 10)
+                local inds = torch.randperm(ini)[{{1,nnz}}]
+                input[i] = torch.Tensor(nnz, 2):type(ctype)
+                input[i]:select(2,1):copy(inds)
+                input[i]:select(2,2):copy(torch.rand(nnz):type(typename):type(ctype))
+            end
+
+            local groundtruth = sslin:forward(input)
+            sslin:zeroGradParameters()
+
+            for i,v in ipairs(input) do input[i] = input[i]:type(typename) end
+            local rescuda = gslin:forward(input)
+            gslin:zeroGradParameters()
+
+            local error = rescuda:double() - groundtruth:double()
+            mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+                string.format('error on state (forward) with %s', typename))
+        end
     end
-
-    local tm = {}
-    local title = string.format('SparseLinear forward %d -> %d', ini, inj)
-    times[title] = tm
-
-    local groundtruth = sslin:forward(input)
-    sslin:zeroGradParameters()
-    local a = torch.Timer()
-    for i = 1,nloop do
-        groundtruth = sslin:forward(input)
-    end
-    tm.cpu = a:time().real
-
-    for i,v in ipairs(input) do input[i] = input[i]:cuda() end
-    local rescuda = gslin:forward(input)
-    gslin:zeroGradParameters()
-    a:reset()
-    for i = 1,nloop do
-        rescuda = gslin:forward(input)
-    end
-    cutorch.synchronize()
-    tm.gpu = a:time().real
-
-    local error = rescuda:float() - groundtruth
-    mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.SparseLinear_backward()
@@ -769,68 +760,62 @@ function cunntest.SparseLinear_backward()
     local ini = math.random(50,100)
     local inj = math.random(5,10)
 
-    local gslin = nn.SparseLinear(ini,inj):cuda()
-    local sslin = nn.Linear(ini,inj)
-    gslin.weight = sslin.weight:clone():cuda()
-    gslin.bias = sslin.bias:clone():cuda()
+    for k, typename in ipairs(typenames) do
+        if typename ~= "torch.CudaHalfTensor" then
+            local ctype = t2cpu[typename]
+            local gslin = nn.SparseLinear(ini,inj):type(typename)
+            local sslin = nn.Linear(ini,inj):type(ctype)
+            gslin.weight = sslin.weight:clone():type(typename)
+            gslin.bias = sslin.bias:clone():type(typename)
 
-    -- Create a random sparse vector
-    local input = {}
-    local nonsparse = torch.zeros(inb, ini)
-    for i=1,inb do
-        local nnz = math.random(3, 5)
-        local inds = torch.randperm(ini)[{{1,nnz}}]
-        input[i] = torch.Tensor(nnz, 2)
-        input[i]:select(2,1):copy(inds)
-        input[i]:select(2,2):copy(torch.rand(nnz))
-        nonsparse[i]:scatter(1, input[i]:select(2,1):long(), input[i]:select(2,2))
+            -- Create a random sparse vector
+            local input = {}
+            local nonsparse = torch.zeros(inb, ini):type(ctype)
+            for i=1,inb do
+                local nnz = math.random(3, 5)
+                local inds = torch.randperm(ini)[{{1,nnz}}]
+                input[i] = torch.Tensor(nnz, 2):type(ctype)
+                input[i]:select(2,1):copy(inds)
+                input[i]:select(2,2):copy(torch.rand(nnz):type(typename):type(ctype))
+                nonsparse[i]:scatter(1, input[i]:select(2,1):long(), input[i]:select(2,2))
+            end
+
+            local gradOutput = torch.randn(inb, inj):type(typename):type(ctype)
+            sslin:forward(nonsparse)
+            local groundgrad = sslin:backward(nonsparse, gradOutput)
+            sslin:zeroGradParameters()
+            local groundweight = sslin.gradWeight
+            local groundbias = sslin.gradBias
+
+            for i,v in ipairs(input) do input[i] = input[i]:type(typename) end
+            gradOutput = gradOutput:type(typename)
+            gslin:forward(input)
+            local rescuda = gslin:backward(input, gradOutput)
+            gslin:zeroGradParameters()
+            local weightcuda = gslin.gradWeight
+            local biascuda = gslin.gradBias
+
+            local werror = weightcuda:double() - groundweight:double()
+            local berror = biascuda:double() - groundbias:double()
+
+            mytester:assertlt(werror:abs():max(), precision_backward_type(precision_backward, typename),
+                string.format('error on weight (backward) with %s', typename))
+            mytester:assertlt(berror:abs():max(), precision_backward_type(precision_backward, typename),
+                string.format('error on bias (backward) with %s', typename))
+
+            gslin:updateParameters(.1)
+            sslin:updateParameters(.1)
+            werror = gslin.weight:double() - sslin.weight:double()
+            berror = gslin.bias:double() - sslin.bias:double()
+
+            mytester:assertlt(werror:abs():max(), precision_backward_type(precision_backward, typename),
+                string.format('error on weight (update) with %s', typename))
+            mytester:assertlt(berror:abs():max(), precision_backward_type(precision_backward, typename),
+                string.format('error on bias (update) with %s', typename))
+
+            gslin:zeroGradParameters()
+        end
     end
-
-    local tm = {}
-    local title = string.format('SparseLinear backward %d <- %d', ini, inj)
-    times[title] = tm
-
-    local gradOutput = torch.randn(inb, inj)
-    sslin:forward(nonsparse)
-    local groundgrad = sslin:backward(nonsparse, gradOutput)
-    sslin:zeroGradParameters()
-    local a = torch.Timer()
-    for i = 1,nloop do
-        sslin:backward(nonsparse, gradOutput)
-    end
-    tm.cpu = a:time().real
-    local groundweight = sslin.gradWeight
-    local groundbias = sslin.gradBias
-
-    for i,v in ipairs(input) do input[i] = input[i]:cuda() end
-    gradOutput = gradOutput:cuda()
-    gslin:forward(input)
-    local rescuda = gslin:backward(input, gradOutput)
-    gslin:zeroGradParameters()
-    a:reset()
-    for i = 1,nloop do
-        gslin:backward(input, gradOutput)
-    end
-    local weightcuda = gslin.gradWeight
-    local biascuda = gslin.gradBias
-    cutorch.synchronize()
-    tm.gpu = a:time().real
-
-    local werror = weightcuda:float() - groundweight
-    local berror = biascuda:float() - groundbias
-
-    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
-    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
-
-    gslin:updateParameters(.1)
-    sslin:updateParameters(.1)
-    werror = gslin.weight:float() - sslin.weight
-    berror = gslin.bias:float() - sslin.bias
-
-    mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (update) ')
-    mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (update) ')
-
-    gslin:zeroGradParameters()
 end
 
 local function BatchNormalization_forward(moduleName, inputSize)
