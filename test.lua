@@ -4022,96 +4022,94 @@ end
 
 function cunntest.ClassNLLCriterionSingleTarget()
    local size = math.random(3000,5000)
-   local input = torch.randn(size)
-   local target = 1
-   local mod = nn.ClassNLLCriterion()
 
-   local tm = {}
-   local title = string.format('ClassNLLCriterionSingleTarget %d ',size)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(size):type(typename)
+      local target = 1
 
-   local a = torch.Timer()
-   local fout = mod:forward(input, target)
-   local fgin = mod:backward(input, target):clone()
-   tm.cpu = a:time().real
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local mod = nn.ClassNLLCriterion():type(ctype)
 
-   local cinput = input:cuda()
-   local ctarget = torch.CudaTensor(1):fill(target)
-   local cmod = nn.ClassNLLCriterion():cuda()
-   a:reset()
-   local cout = cmod:forward(cinput,ctarget)
-   local cgin = cmod:backward(cinput,ctarget)
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local fout = mod:forward(input, target)
+      local fgin = mod:backward(input, target):clone()
 
-   mytester:assertlt(
-       math.abs(fout-cout), precision_forward, 'error  on output')
-   local gerr = cgin:float() - fgin
-   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+      local cinput = input:type(typename)
+      local ctarget = torch.CudaTensor(1):fill(target)
+      local cmod = nn.ClassNLLCriterion():type(typename)
+      local cout = cmod:forward(cinput,ctarget)
+      local cgin = cmod:backward(cinput,ctarget)
+
+      mytester:assertlt(
+         math.abs(fout-cout), precision_forward_type(precision_forward, typename),
+            string.format('error  on output with %s', typename))
+      local gerr = cgin:double() - fgin:double()
+      mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+         string.format('error  on gradInput with %s', typename))
+   end
 end
 
 function cunntest.ClassNLLCriterionSingleTargetWeights()
    local size = math.random(3000,5000)
-   local input = torch.randn(size)
-   local target = 1
-   local weights = torch.rand(size)
-   local mod = nn.ClassNLLCriterion(weights)
 
-   local tm = {}
-   local title = string.format('ClassNLLCriterionSingleTargetWeights %d ',size)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(size):type(typename)
+      local target = 1
+      local weights = torch.rand(size):type(typename)
 
-   local a = torch.Timer()
-   local fout = mod:forward(input, target)
-   local fgin = mod:backward(input, target):clone()
-   tm.cpu = a:time().real
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      weights = weights:type(ctype)
+      local mod = nn.ClassNLLCriterion(weights):type(ctype)
 
-   local cinput = input:cuda()
-   local cweights = weights:cuda()
-   local ctarget = torch.CudaTensor(1):fill(target)
-   local cmod = nn.ClassNLLCriterion(cweights):cuda()
-   a:reset()
-   local cout = cmod:forward(cinput,ctarget)
-   local cgin = cmod:backward(cinput,ctarget)
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local fout = mod:forward(input, target)
+      local fgin = mod:backward(input, target):clone()
 
-   mytester:assertlt(
-       math.abs(fout-cout), precision_forward, 'error  on output')
-   local gerr = cgin:float() - fgin
-   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+      local cinput = input:type(typename)
+      local cweights = weights:type(typename)
+      local ctarget = torch.CudaTensor(1):fill(target)
+      local cmod = nn.ClassNLLCriterion(cweights):type(typename)
+      local cout = cmod:forward(cinput,ctarget)
+      local cgin = cmod:backward(cinput,ctarget)
+
+      mytester:assertlt(
+         math.abs(fout-cout), precision_forward_type(precision_forward, typename),
+            string.format('error  on output with %s', typename))
+      local gerr = cgin:double() - fgin:double()
+      mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+         string.format('error  on gradInput with %s', typename))
+   end
 end
 
 function cunntest.ClassNLLCriterionMultipleTarget()
    local size = math.random(3000,5000)
-   local input = torch.randn(size, size)
-   local target = torch.randperm(size)
-   local mod = nn.ClassNLLCriterion()
 
-   local tm = {}
-   local title = string.format('ClassNLLCriterionMultiTarget %d ',size)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(size, size):type(typename)
+      local target = torch.randperm(size)
 
-   local a = torch.Timer()
-   local fout = mod:forward(input, target)
-   local fgin = mod:backward(input, target):clone()
-   tm.cpu = a:time().real
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local mod = nn.ClassNLLCriterion():type(ctype)
 
-   local cinput = input:cuda()
-   local ctarget = target:cuda()
+      local fout = mod:forward(input, target)
+      local fgin = mod:backward(input, target):clone()
 
-   local cmod = nn.ClassNLLCriterion():cuda()
-   a:reset()
-   local cout = cmod:forward(cinput,ctarget)
-   local cgin = cmod:backward(cinput,ctarget)
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local cinput = input:type(typename)
+      local ctarget = target:cuda()
 
-   mytester:assertlt(
-       math.abs(fout-cout), precision_forward, 'error on output')
+      local cmod = nn.ClassNLLCriterion():type(typename)
+      local cout = cmod:forward(cinput,ctarget)
+      local cgin = cmod:backward(cinput,ctarget)
 
-   local gerr = cgin:float() - fgin
-   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+      mytester:assertlt(
+        math.abs(fout-cout), precision_forward_type(precision_forward, typename),
+          string.format('error on output with %s', typename))
+
+      local gerr = cgin:double() - fgin:double()
+      mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error  on gradInput with %s', typename))
+   end
 end
 
 function cunntest.SpatialClassNLLCriterion()
@@ -4150,36 +4148,36 @@ end
 
 function cunntest.ClassNLLCriterionMultipleTargetWeights()
    local size = math.random(3000,5000)
-   local input = torch.randn(size, size)
-   local target = torch.randperm(size)
-   local weights = torch.rand(size)
-   local mod = nn.ClassNLLCriterion(weights)
 
-   local tm = {}
-   local title = string.format('ClassNLLCriterionMultiTargetWeights %d ',size)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(size, size):type(typename)
+      local target = torch.randperm(size)
+      local weights = torch.rand(size):type(typename)
 
-   local a = torch.Timer()
-   local fout = mod:forward(input, target)
-   local fgin = mod:backward(input, target):clone()
-   tm.cpu = a:time().real
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      weights = weights:type(ctype)
+      local mod = nn.ClassNLLCriterion(weights):type(ctype)
 
-   local cinput = input:cuda()
-   local ctarget = target:cuda()
-   local cweights = weights:cuda()
+      local fout = mod:forward(input, target)
+      local fgin = mod:backward(input, target):clone()
 
-   local cmod = nn.ClassNLLCriterion(cweights):cuda()
-   a:reset()
-   local cout = cmod:forward(cinput,ctarget)
-   local cgin = cmod:backward(cinput,ctarget)
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local cinput = input:type(typename)
+      local ctarget = target:cuda()
+      local cweights = weights:type(typename)
 
-   mytester:assertlt(
-       math.abs(fout-cout), precision_forward, 'error on output')
+      local cmod = nn.ClassNLLCriterion(cweights):type(typename)
+      local cout = cmod:forward(cinput,ctarget)
+      local cgin = cmod:backward(cinput,ctarget)
 
-   local gerr = cgin:float() - fgin
-   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+      mytester:assertlt(
+        math.abs(fout-cout), precision_forward_type(precision_forward, typename),
+          string.format('error on output with %s', typename))
+
+      local gerr = cgin:double() - fgin:double()
+      mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error  on gradInput with %s', typename))
+   end
 end
 
 function cunntest.TemporalMaxPooling()
