@@ -177,7 +177,8 @@ end
 
 local raw_half_functions = THNN.bind(THCUNN.C, function_names_generic, 'CudaHalf', THCUNN.getState)
 for k,v in pairs(raw_half_functions) do
-    raw_half_functions[k] = function(...) v(unpack(transform_reals_to_half(k, real_args, ...)))
+    -- select required in case there are trailing nils
+    raw_half_functions[k] = function(...) v(unpack(transform_reals_to_half(k, real_args, ...), 1, select("#",...)))
 end
 end
 THNN.kernels['torch.CudaHalfTensor'] = raw_half_functions
