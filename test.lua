@@ -3979,29 +3979,31 @@ end
 
 function cunntest.l1cost()
    local size = math.random(300,500)
-   local input = torch.randn(size)
-   local mod = nn.L1Cost()
 
-   local tm = {}
-   local title = string.format('L1Cost %d ',size)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+     local input = torch.randn(size):type(typename)
 
-   local a = torch.Timer()
-   local fout = mod:forward(input)
-   local fgin = mod:backward(input):clone()
-   tm.cpu = a:time().real
+     local ctype = t2cpu[typename]
+     input = input:type(ctype)
+     local mod = nn.L1Cost():type(ctype)
 
-   local cinput = input:cuda()
-   local cmod = nn.L1Cost():cuda()
-   a:reset()
-   local cout = cmod:forward(cinput)
-   local cgin = cmod:backward(cinput)
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+     local fout = mod:forward(input)
+     local fgin = mod:backward(input):clone()
 
-   mytester:assertlt(math.abs(fout-cout), precision_forward, 'error  on output')
-   local gerr = cgin:float() - fgin
-   mytester:assertlt(gerr:abs():max(), precision_forward, 'error  on gradInput')
+     local cinput = input:type(typename)
+     local cmod = nn.L1Cost():type(typename)
+     local cout = cmod:forward(cinput)
+     local cgin = cmod:backward(cinput)
+
+     if (typename == 'torch.CudaHalfTensor') then
+        fout = ffi.C.THC_half2float(ffi.C.THC_float2half(fout))
+     end
+     mytester:assertlt(math.abs(fout-cout), precision_forward_type(precision_forward, typename),
+        string.format('error  on output with %s', typename))
+     local gerr = cgin:double() - fgin:double()
+     mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error  on gradInput with %s', typename))
+   end
 end
 
 
