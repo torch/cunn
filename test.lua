@@ -5367,40 +5367,25 @@ function cunntest.VolumetricReplicationPadding_forward()
    local pfront = math.random(-3,3)
    local pback = math.random(-3,3)
 
-   local tm = {}
-   local title =
-      string.format(
-         'VolumetricReplicationPadding.forward %dx%dx%dx%dx%d -> ' ..
-         '%dx%dx%dx%dx%d',
-         batch, plane, sizeZ, sizeY, sizeX,
-         batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
-         sizeX + pleft + pright)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX):type(typename)
 
-   local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX)
-   local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
-                                                  pfront, pback)
-   local groundtruth = module:forward(input)
-   local a = torch.Timer()
-   for i = 1, nloop do
-      groundtruth = module:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                     pfront, pback):type(ctype)
+      local groundtruth = module:forward(input)
+
+      input = input:type(typename)
+      local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                      pfront, pback):type(typename)
+      local rescuda = gmodule:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(),
+                        precision_forward_type(precision_forward, typename),
+                        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
-                                                   pfront, pback):cuda()
-   local rescuda = gmodule:forward(input)
-   a:reset()
-   for i = 1, nloop do
-      rescuda = gmodule:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(),
-                     precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.VolumetricReplicationPadding_backward()
@@ -5416,51 +5401,35 @@ function cunntest.VolumetricReplicationPadding_backward()
    local pfront = math.random(-3,3)
    local pback = math.random(-3,3)
 
-   local tm = {}
-   local title =
-      string.format(
-         'VolumetricReplicationPadding.backward %dx%dx%dx%dx%d -> ' ..
-         '%dx%dx%dx%dx%d',
-         batch, plane, sizeZ, sizeY, sizeX,
-         batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
-         sizeX + pleft + pright)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX):type(typename)
+      local gradOutput = torch.rand(
+        batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
+        sizeX + pleft + pright
+      ):type(typename)
 
-   local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX)
-   local gradOutput = torch.rand(
-      batch, plane, sizeZ + pfront + pback, sizeY + ptop + pbottom,
-      sizeX + pleft + pright
-   )
-   local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
-                                                  pfront, pback)
-   module:forward(input)
-   module:zeroGradParameters()
-   local groundgrad = module:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1, nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                     pfront, pback):type(ctype)
+      module:forward(input)
       module:zeroGradParameters()
-      groundgrad = module:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = module:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
-                                                   pfront, pback):cuda()
-   gmodule:forward(input)
-   gmodule:zeroGradParameters()
-   local rescuda = gmodule:backward(input, gradOutput)
-   a:reset()
-   for i = 1, nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
+                                                      pfront, pback):type(typename)
+      gmodule:forward(input)
       gmodule:zeroGradParameters()
-      rescuda = gmodule:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
+      local rescuda = gmodule:backward(input, gradOutput)
 
-   local error = rescuda:float() - groundgrad
-   mytester:assertlt(error:abs():max(),
-                     precision_backward, 'error on state (backward) ')
+      local error = rescuda:double() - groundgrad:double()
+      mytester:assertlt(error:abs():max(),
+                        precision_backward_type(precision_backward, typename),
+                        string.format('error on state (backward) with %s', typename))
+   end
 end
 
 function cunntest.GPU()
