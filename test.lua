@@ -4146,36 +4146,34 @@ function cunntest.ClassNLLCriterionMultipleTargetWeights()
 end
 
 function cunntest.TemporalMaxPooling()
-   local input = torch.rand(16, 18, 3)
    local settings = {{2, 2}, {3, 3}, {4, 2}, {2, 4}, {3, 5}}
 
    for i, setting in ipairs(settings) do
-      local mod = nn.TemporalMaxPooling(setting[1], setting[2])
+      for k, typename in ipairs(typenames) do
+        local input = torch.rand(16, 18, 3):type(typename)
 
-      local tm = {}
-      local title = 'TemporalMaxPooling '..setting[1]..' '..setting[2]
-      times[title] = tm
+        local ctype = t2cpu[typename]
+        input = input:type(ctype)
+        local mod = nn.TemporalMaxPooling(setting[1], setting[2]):type(ctype)
 
-      local a = torch.Timer()
-      local fout = mod:forward(input)
-      local fgout = torch.rand(fout:size())
-      local fgin = mod:backward(input, fgout):clone()
-      tm.cpu = a:time().real
+        local fout = mod:forward(input)
+        local fgout = torch.rand(fout:size()):type(typename):type(ctype)
+        local fgin = mod:backward(input, fgout):clone()
 
-      local cinput = input:cuda()
-      local cgout = fgout:cuda()
-      local cmod = nn.TemporalMaxPooling(setting[1], setting[2]):cuda()
-      a:reset()
-      local cout = cmod:forward(cinput)
-      local cgin = cmod:backward(cinput, cgout)
-      cutorch.synchronize()
-      tm.gpu = a:time().real
+        local cinput = input:type(typename)
+        local cgout = fgout:type(typename)
+        local cmod = nn.TemporalMaxPooling(setting[1], setting[2]):type(typename)
+        local cout = cmod:forward(cinput)
+        local cgin = cmod:backward(cinput, cgout)
 
-      local outerror = cout:float() - fout
-      mytester:assertlt(outerror:abs():max(), precision_forward, 'error on output')
+        local outerror = cout:double() - fout:double()
+        mytester:assertlt(outerror:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on output with %s', typename))
 
-      local ginerror = cgin:float() - fgin
-      mytester:assertlt(ginerror:abs():max(), precision_backward, 'error on gradInput')
+        local ginerror = cgin:double() - fgin:double()
+        mytester:assertlt(ginerror:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on gradInput with %s', typename))
+      end
    end
 end
 
