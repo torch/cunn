@@ -4675,32 +4675,22 @@ function cunntest.VolumetricAveragePooling_forward()
    local iH = (oH - 1) * dH + kH
    local iW = (oW - 1) * dW + kW
 
-   local tm = {}
-   local title = string.format('VolumetricAveragePooling.forward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
-                               iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
-   local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricAveragePooling(kT, kW, kH, dT, dW, dH):float()
-   local output = layer:forward(input)
-   local timer = torch.Timer()
-   for i = 1,nloop do
-      output = layer:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local layer = nn.VolumetricAveragePooling(kT, kW, kH, dT, dW, dH):type(ctype)
+      local output = layer:forward(input)
+
+      local inputCUDA = input:type(typename)
+      local layerCUDA = layer:clone():type(typename)
+      local outputCUDA = layerCUDA:forward(inputCUDA)
+
+      local error = outputCUDA:double() - output:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = timer:time().real
-
-   local inputCUDA = input:cuda()
-   local layerCUDA = layer:clone():cuda()
-   local outputCUDA = layerCUDA:forward(inputCUDA)
-   timer:reset()
-   for i = 1,nloop do
-      outputCUDA = layerCUDA:forward(inputCUDA)
-   end
-   cutorch.synchronize()
-   tm.gpu = timer:time().real
-
-   local error = outputCUDA:float() - output
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.VolumetricAveragePooling_backward()
@@ -4718,36 +4708,25 @@ function cunntest.VolumetricAveragePooling_backward()
    local iH = (oH - 1) * dH + kH
    local iW = (oW - 1) * dW + kW
 
-   local tm = {}
-   local title = string.format('VolumetricAveragePooling.backward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
-                           iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
-   local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricAveragePooling(kT, kW, kH, dT, dW, dH):float()
-   local output = layer:forward(input)
-   local gradOutput = output:clone():uniform(-1, 1)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local layer = nn.VolumetricAveragePooling(kT, kW, kH, dT, dW, dH):type(ctype)
+      local output = layer:forward(input)
+      local gradOutput = output:clone():uniform(-1, 1)
 
-   local gradInput = layer:backward(input, gradOutput)
-   local timer = torch.Timer()
-   for i = 1,nloop do
-      gradInput = layer:backward(input, gradOutput)
+      local gradInput = layer:backward(input, gradOutput)
+
+      local inputCUDA = input:type(typename)  local layerCUDA = layer:clone():type(typename)
+      local outputCUDA = layerCUDA:forward(inputCUDA)   local gradOutputCUDA = gradOutput:type(typename)
+      local gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
+
+      local error = gradInputCUDA:double() - gradInput:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (backward) with %s', typename))
    end
-   tm.cpu = timer:time().real
-
-   local inputCUDA = input:cuda()  local layerCUDA = layer:clone():cuda()
-   local outputCUDA = layerCUDA:forward(inputCUDA)   local gradOutputCUDA = gradOutput:cuda()
-   local gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
-
-   timer:reset()
-   for i = 1,nloop do
-      gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
-   end
-   cutorch.synchronize()
-   tm.gpu = timer:time().real
-
-   local error = gradInputCUDA:float() - gradInput
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (backward) ')
 end
 
 function cunntest.CMul_forward_batch()
