@@ -4415,32 +4415,22 @@ function cunntest.VolumetricMaxPooling_forward()
    local oH = math.floor((iH - kH + 2*padH) / dH + 1)
    local oW = math.floor((iW - kW + 2*padW) / dW + 1)
 
-   local tm = {}
-   local title = string.format('VolumetricMaxPooling.forward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d)-> %dx%dx%dx%d',
-                           iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
-   local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):float()
-   local output = layer:forward(input)
-   local timer = torch.Timer()
-   for i = 1,nloop do
-      output = layer:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):type(ctype)
+      local output = layer:forward(input)
+
+      local inputCUDA = input:type(typename)
+      local layerCUDA = layer:clone():type(typename)
+      local outputCUDA = layerCUDA:forward(inputCUDA)
+
+      local error = outputCUDA:double() - output:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = timer:time().real
-
-   local inputCUDA = input:cuda()
-   local layerCUDA = layer:clone():cuda()
-   local outputCUDA = layerCUDA:forward(inputCUDA)
-   timer:reset()
-   for i = 1,nloop do
-      outputCUDA = layerCUDA:forward(inputCUDA)
-   end
-   cutorch.synchronize()
-   tm.gpu = timer:time().real
-
-   local error = outputCUDA:float() - output
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.VolumetricMaxPooling_backward()
@@ -4461,38 +4451,27 @@ function cunntest.VolumetricMaxPooling_backward()
    local oH = math.floor((iH - kH + 2*padH) / dH + 1)
    local oW = math.floor((iW - kW + 2*padW) / dW + 1)
 
-   local tm = {}
-   local title = string.format('VolumetricMaxPooling.backward %dx%dx%dx%d o %dx%dx%d (%dx%dx%d) -> %dx%dx%dx%d',
-                               iF, iT, iH, iW, kT, kH, kW, dT, dH, dW, iF, oT, oH, oW)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
-   local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1)
-   local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):float()
-   local output = layer:forward(input)
-   local gradOutput = output:clone():uniform(-1, 1)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):type(ctype)
+      local output = layer:forward(input)
+      local gradOutput = output:clone():uniform(-1, 1)
 
-   local gradInput = layer:backward(input, gradOutput)
-   local timer = torch.Timer()
-   for i = 1,nloop do
-      gradInput = layer:backward(input, gradOutput)
+      local gradInput = layer:backward(input, gradOutput)
+
+      local inputCUDA = input:type(typename)
+      local layerCUDA = layer:clone():type(typename)
+      local outputCUDA = layerCUDA:forward(inputCUDA)
+      local gradOutputCUDA = gradOutput:type(typename)
+      local gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
+
+      local error = gradInputCUDA:double() - gradInput:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (backward) with %s', typename))
    end
-   tm.cpu = timer:time().real
-
-   local inputCUDA = input:cuda()
-   local layerCUDA = layer:clone():cuda()
-   local outputCUDA = layerCUDA:forward(inputCUDA)
-   local gradOutputCUDA = gradOutput:cuda()
-   local gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
-
-   timer:reset()
-   for i = 1,nloop do
-      gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
-   end
-   cutorch.synchronize()
-   tm.gpu = timer:time().real
-
-   local error = gradInputCUDA:float() - gradInput
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (backward) ')
 end
 
 function cunntest.VolumetricDilatedMaxPooling_forward_batch()
@@ -4519,34 +4498,24 @@ function cunntest.VolumetricDilatedMaxPooling_forward_batch()
    local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
    local ceil_mode = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('VolumetricDilatedMaxPooling.forward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
-                               bs, from, int, inj, ini, kt, kj, ki, bs, to, outt, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,int,inj,ini):type(typename)
 
-   local input = torch.randn(bs,from,int,inj,ini)
-   local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj)
-   if ceil_mode then sconv:ceil() end
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      local groundtruth = sconv:forward(input)
+
+      input = input:type(typename)
+      local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):cuda()
-   if ceil_mode then gconv:ceil() end
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.VolumetricDilatedMaxPooling_backward_batch()
@@ -4573,43 +4542,32 @@ function cunntest.VolumetricDilatedMaxPooling_backward_batch()
    local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
    local ceil_mode = math.random(0,1) == 1
 
-   local tm = {}
-   local title = string.format('VolumetricDilatedMaxPooling.forward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
-                               bs, from, int, inj, ini, kt, kj, ki, bs, to, outt, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,int,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outt,outj,outi):type(typename)
 
-   local input = torch.randn(bs,from,int,inj,ini)
-   local gradOutput = torch.randn(bs,to,outt,outj,outi)
-   local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj)
-   if ceil_mode then sconv:ceil() end
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(ctype)
+      if ceil_mode then sconv:ceil() end
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):cuda()
-   if ceil_mode then gconv:ceil() end
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(typename)
+      if ceil_mode then gconv:ceil() end
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.VolumetricMaxUnpooling_forward_batch()
@@ -4630,38 +4588,27 @@ function cunntest.VolumetricMaxUnpooling_forward_batch()
    local ii = ((outi + padi*2 - ki)/si) +1
    local ij = ((outj + padj*2 - kj)/sj) +1
 
-   local tm = {}
-   local title = string.format('VolumetricMaxUnpooling.forward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
-                               bs, from, it, ij, ii, kt, kj, ki, bs, to, outt, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
 
-   local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj)
-   local sunpool = nn.VolumetricMaxUnpooling(pooler)
+      local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(ctype)
+      local sunpool = nn.VolumetricMaxUnpooling(pooler):type(ctype)
 
-   local original = torch.randn(bs,from,it,ij,ii)
-   local input = pooler:forward(original)
-   local groundtruth = sunpool:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sunpool:forward(input)
+      local original = torch.randn(bs,from,it,ij,ii):type(typename):type(ctype)
+      local input = pooler:forward(original)
+      local groundtruth = sunpool:forward(input)
+
+      original = original:type(typename)
+      pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(typename)
+      local gunpool = nn.VolumetricMaxUnpooling(pooler):type(typename)
+
+      input = pooler:forward(original)
+      local rescuda = gunpool:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   original = original:cuda()
-   pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):cuda()
-   local gunpool = nn.VolumetricMaxUnpooling(pooler):cuda()
-
-   input = pooler:forward(original)
-   local rescuda = gunpool:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gunpool:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.VolumetricMaxUnpooling_backward_batch()
@@ -4682,48 +4629,35 @@ function cunntest.VolumetricMaxUnpooling_backward_batch()
    local ii = ((outi + padi*2 - ki)/si) +1
    local ij = ((outj + padj*2 - kj)/sj) +1
 
-   local tm = {}
-   local title = string.format('VolumetricMaxUnpooling.backward %dx%dx%dx%dx%d o %dx%dx%d -> %d%dx%dx%dx%d',
-                               bs, from, it, ij, ii, kt, kj, ki, bs, to, outt, outj, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
 
-   local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj)
-   local sunpool = nn.VolumetricMaxUnpooling(pooler)
+      local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(ctype)
+      local sunpool = nn.VolumetricMaxUnpooling(pooler):type(ctype)
 
-   local original = torch.randn(bs,from,it,ij,ii)
-   local input = pooler:forward(original)
-   local gradOutput = torch.randn(original:size())
-   sunpool:forward(input)
-   sunpool:zeroGradParameters()
-   local groundgrad = sunpool:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local original = torch.randn(bs,from,it,ij,ii):type(typename):type(ctype)
+      local input = pooler:forward(original)
+      local gradOutput = torch.randn(original:size()):type(typename):type(ctype)
+      sunpool:forward(input)
       sunpool:zeroGradParameters()
-      groundgrad = sunpool:backward(input, gradOutput)
-   end
-   tm.cpu = a:time().real
+      local groundgrad = sunpool:backward(input, gradOutput)
 
-   pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):cuda()
-   local gunpool = nn.VolumetricMaxUnpooling(pooler):cuda()
+      pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(typename)
+      local gunpool = nn.VolumetricMaxUnpooling(pooler):type(typename)
 
-   original = original:cuda()
-   input = pooler:forward(original)
-   gunpool:forward(input)
+      original = original:type(typename)
+      input = pooler:forward(original)
+      gunpool:forward(input)
 
-   gradOutput = gradOutput:cuda()
-   gunpool:zeroGradParameters()
-   local rescuda = gunpool:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      gradOutput = gradOutput:type(typename)
       gunpool:zeroGradParameters()
-      rescuda = gunpool:backward(input, gradOutput)
+      local rescuda = gunpool:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) with %s', typename))
    end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
 end
 
 function cunntest.VolumetricAveragePooling_forward()
