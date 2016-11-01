@@ -5040,31 +5040,21 @@ function cunntest.LookupTable_forward()
    local nDim = 100
    local nInput = 1000
 
-   local tm = {}
-   local title = string.format('LookupTable forward %d x %d', nVocab, nDim)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.LongTensor(nInput):random(nVocab)
 
-   local input = torch.LongTensor(nInput):random(nVocab)
-   local sconv = nn.LookupTable(nVocab, nDim)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-       groundtruth = sconv:forward(input)
+      local ctype = t2cpu[typename]
+      local sconv = nn.LookupTable(nVocab, nDim):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = input:cuda()
+      local gconv = sconv:type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = sconv:cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-       rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state')
 end
 
 function cunntest.LookupTable_backward()
@@ -5084,73 +5074,68 @@ function cunntest.LookupTable_backward()
          s[k] = v[torch.random(#v)]
       end
 
-      local input, gradOutput
-      if s.batch then
-         input = torch.LongTensor(s.nInput, 5):random(s.nVocab)
-         gradOutput = torch.randn(s.nInput, 5, s.nDim)
-      else
-         input = torch.LongTensor(s.nInput):random(s.nVocab)
-         gradOutput = torch.randn(s.nInput, s.nDim)
+      for k, typename in ipairs(typenames) do
+          local ctype = t2cpu[typename]
+          local input, gradOutput
+          if s.batch then
+              input = torch.LongTensor(s.nInput, 5):random(s.nVocab)
+              gradOutput = torch.randn(s.nInput, 5, s.nDim):type(ctype)
+          else
+              input = torch.LongTensor(s.nInput):random(s.nVocab)
+              gradOutput = torch.randn(s.nInput, s.nDim):type(ctype)
+          end
+
+          local sconv = nn.LookupTable(s.nVocab, s.nDim, s.paddingValue):type(ctype)
+          local gconv = sconv:clone():type(typename)
+          if s.scaleGradByFreq then
+              sconv = sconv:scaleGradByFreq()
+              gconv = gconv:scaleGradByFreq()
+          end
+
+          sconv:forward(input)
+          sconv:backward(input, gradOutput)
+
+          input = input:cuda()
+          gradOutput = gradOutput:type(typename)
+          gconv:forward(input)
+          gconv:backward(input, gradOutput)
+
+          local weightGradError = gconv.gradWeight:double() - sconv.gradWeight:double()
+          mytester:assertlt(weightGradError:abs():max(), precision_backward_type(precision_backward, typename),
+              'error on weight for size ' .. tostring(s.nInput) ..
+              ' nVocab: ' .. tostring(s.nVocab) ..
+              ' nDim ' .. tostring(s.nDim) ..
+              ' scaleGradByFreq: ' .. tostring(s.scaleGradByFreq) ..
+              ' batch: ' .. tostring(s.batch) ..
+              ' paddingValue: ' .. tostring(s.paddingValue) ..
+              ' type:' .. typename)
       end
-
-      local sconv = nn.LookupTable(s.nVocab, s.nDim, s.paddingValue)
-      local gconv = sconv:clone():cuda()
-      if s.scaleGradByFreq then
-         sconv = sconv:scaleGradByFreq()
-         gconv = gconv:scaleGradByFreq()
-      end
-
-      sconv:forward(input)
-      sconv:backward(input, gradOutput)
-
-      input = input:cuda()
-      gradOutput = gradOutput:cuda()
-      gconv:forward(input)
-      gconv:backward(input, gradOutput)
-
-      local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
-      mytester:assertlt(weightGradError:abs():max(), precision_backward,
-         'error on weight for size ' .. tostring(s.nInput) ..
-          ' nVocab: ' .. tostring(s.nVocab) ..
-          ' nDim ' .. tostring(s.nDim) ..
-          ' scaleGradByFreq: ' .. tostring(s.scaleGradByFreq) ..
-          ' batch: ' .. tostring(s.batch) ..
-          ' paddingValue: ' .. tostring(s.paddingValue))
    end
 
    local nVocab = 10000
    local nDim = 128
    local nInput = 1000
-   local tm = {}
-   local title = string.format('LookupTable backward %d x %d', nVocab, nDim, nInput)
-   times[title] = tm
 
-   local input = torch.LongTensor(nInput):random(nVocab)
-   local gradOutput = torch.randn(nInput, nDim)
-   local sconv = nn.LookupTable(nVocab, nDim)
-   local gconv = sconv:clone():cuda()
+   for k, typename in ipairs(typenames) do
+      local input = torch.LongTensor(nInput):random(nVocab)
 
-   sconv:forward(input)
-   sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
-       sconv:backward(input, gradOutput)
+      local ctype = t2cpu[typename]
+      local gradOutput = torch.randn(nInput, nDim):type(ctype)
+      local sconv = nn.LookupTable(nVocab, nDim):type(ctype)
+      local gconv = sconv:clone():type(typename)
+
+      sconv:forward(input)
+      sconv:backward(input, gradOutput)
+
+      input = input:cuda()
+      gradOutput = gradOutput:type(typename)
+      gconv:forward(input)
+      gconv:backward(input, gradOutput)
+
+      local weightGradError = gconv.gradWeight:double() - sconv.gradWeight:double()
+      mytester:assertlt(weightGradError:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on weight with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   gconv:forward(input)
-   gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
-       gconv:backward(input, gradOutput)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local weightGradError = gconv.gradWeight:float() - sconv.gradWeight
-   mytester:assertlt(weightGradError:abs():max(), precision_backward, 'error on weight')
 end
 
 function cunntest.getParameters()
