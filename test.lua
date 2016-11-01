@@ -3453,34 +3453,24 @@ function cunntest.TemporalConvolution_forward()
    local outi = math.random(1,256) -- nOutputFrame
    local ini = (outi-1)*si+ki -- nInputFrame
 
-   local tm = {}
-   local title = string.format('TemporalConvolution.forward %dx%d o %d -> %dx%d [s: %d]',
-                               from, ini, ki, to, outi, si)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(ini,from):type(typename)
 
-   local input = torch.randn(ini,from)
-   local sconv = nn.TemporalConvolution(from,to,ki,si)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = input:type(typename)
+      local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
+      gconv.weight = sconv.weight:type(typename)
+      gconv.bias = sconv.bias:type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.TemporalConvolution(from,to,ki,si):cuda()
-   gconv.weight = sconv.weight:cuda()
-   gconv.bias = sconv.bias:cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.TemporalConvolution_forward_batch()
@@ -3492,34 +3482,24 @@ function cunntest.TemporalConvolution_forward_batch()
    local outi = math.random(1,256)
    local ini = (outi-1)*si+ki
 
-   local tm = {}
-   local title = string.format('TemporalConvolution.forward %dx%dx%d o %d -> %dx%dx%d [s: %d]',
-                               bs, from, ini, ki, bs, to, outi, si)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,ini,from):type(typename)
 
-   local input = torch.randn(bs,ini,from)
-   local sconv = nn.TemporalConvolution(from,to,ki,si)
-   local groundtruth = sconv:forward(input)
-   local a = torch.Timer()
-   for i = 1,nloop do
-      groundtruth = sconv:forward(input)
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = input:type(typename)
+      local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
+      gconv.weight = sconv.weight:type(typename)
+      gconv.bias = sconv.bias:type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
    end
-   tm.cpu = a:time().real
-
-   input = input:cuda()
-   local gconv = nn.TemporalConvolution(from,to,ki,si):cuda()
-   gconv.weight = sconv.weight:cuda()
-   gconv.bias = sconv.bias:cuda()
-   local rescuda = gconv:forward(input)
-   a:reset()
-   for i = 1,nloop do
-      rescuda = gconv:forward(input)
-   end
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundtruth
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
 end
 
 function cunntest.TemporalConvolution_backward()
@@ -3530,52 +3510,42 @@ function cunntest.TemporalConvolution_backward()
    local outi = math.random(1,256)
    local ini = (outi-1)*si+ki
 
-   local tm = {}
-   local title = string.format('TemporalConvolution.backward %dx%d o %d -> %dx%d',
-                               from, ini, ki, to, outi)
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(ini,from):type(typename)
+      local gradOutput = torch.randn(outi,to):type(typename)
 
-   times[title] = tm
-
-   local input = torch.randn(ini,from)
-   local gradOutput = torch.randn(outi,to)
-   local sconv = nn.TemporalConvolution(from,to,ki,si)
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   local groundweight = sconv.gradWeight
-   local groundbias = sconv.gradBias
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
+      local groundweight = sconv.gradWeight
+      local groundbias = sconv.gradBias
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.TemporalConvolution(from,to,ki,si):cuda()
-   gconv.weight = sconv.weight:cuda()
-   gconv.bias = sconv.bias:cuda()
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
+      gconv.weight = sconv.weight:type(typename)
+      gconv.bias = sconv.bias:type(typename)
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+      local weightcuda = gconv.gradWeight
+      local biascuda = gconv.gradBias
+
+      local error = rescuda:double() - groundgrad:double()
+      local werror = weightcuda:double() - groundweight:double()
+      local berror = biascuda:double() - groundbias:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) with %s', typename))
+      mytester:assertlt(werror:abs():max(), precision_backward_conv_weightbias(precision_backward, typename),
+        string.format('error on weight (backward) with %s', typename))
+      mytester:assertlt(berror:abs():max(), precision_backward_conv_weightbias(precision_backward, typename),
+        string.format('error on bias (backward) with %s', typename))
    end
-   local weightcuda = gconv.gradWeight
-   local biascuda = gconv.gradBias
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-   local werror = weightcuda:float() - groundweight
-   local berror = biascuda:float() - groundbias
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
-   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
-   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
 
 function cunntest.TemporalConvolution_backward_batch()
@@ -3587,51 +3557,42 @@ function cunntest.TemporalConvolution_backward_batch()
    local outi = math.random(1,256)
    local ini = (outi-1)*si+ki
 
-   local tm = {}
-   local title = string.format('TemporalConvolution.backward %dx%dx%d o %d -> %dx%dx%d',
-                               bs, from, ini, ki, bs, to, outi)
-   times[title] = tm
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,ini,from):type(typename)
+      local gradOutput = torch.randn(bs,outi,to):type(typename)
 
-   local input = torch.randn(bs,ini,from)
-   local gradOutput = torch.randn(bs,outi,to)
-   local sconv = nn.TemporalConvolution(from,to,ki,si)
-   sconv:forward(input)
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local a = torch.Timer()
-   for i = 1,nloop do
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      gradOutput = gradOutput:type(ctype)
+      local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
+      sconv:forward(input)
       sconv:zeroGradParameters()
-      groundgrad = sconv:backward(input, gradOutput)
-   end
-   local groundweight = sconv.gradWeight
-   local groundbias = sconv.gradBias
-   tm.cpu = a:time().real
+      local groundgrad = sconv:backward(input, gradOutput)
+      local groundweight = sconv.gradWeight
+      local groundbias = sconv.gradBias
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.TemporalConvolution(from,to,ki,si):cuda()
-   gconv.weight = sconv.weight:cuda()
-   gconv.bias = sconv.bias:cuda()
-   gconv:forward(input)
-   gconv:zeroGradParameters()
-   local rescuda = gconv:backward(input, gradOutput)
-   a:reset()
-   for i = 1,nloop do
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
+      gconv.weight = sconv.weight:type(typename)
+      gconv.bias = sconv.bias:type(typename)
+      gconv:forward(input)
       gconv:zeroGradParameters()
-      rescuda = gconv:backward(input, gradOutput)
+      local rescuda = gconv:backward(input, gradOutput)
+      local weightcuda = gconv.gradWeight
+      local biascuda = gconv.gradBias
+
+      local error = rescuda:double() - groundgrad:double()
+      local werror = weightcuda:double() - groundweight:double()
+      local berror = biascuda:double() - groundbias:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) with %s', typename))
+      mytester:assertlt(werror:abs():max(), precision_backward_conv_weightbias(precision_backward, typename),
+        string.format('error on weight (backward) with %s', typename))
+      mytester:assertlt(berror:abs():max(), precision_backward_conv_weightbias(precision_backward, typename),
+        string.format('error on bias (backward) with %s', typename))
    end
-   local weightcuda = gconv.gradWeight
-   local biascuda = gconv.gradBias
-   cutorch.synchronize()
-   tm.gpu = a:time().real
-
-   local error = rescuda:float() - groundgrad
-   local werror = weightcuda:float() - groundweight
-   local berror = biascuda:float() - groundbias
-
-   mytester:assertlt(error:abs():max(), precision_backward, 'error on state (backward) ')
-   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
-   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
 end
 
 function cunntest.Dropout()
