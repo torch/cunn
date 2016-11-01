@@ -8,8 +8,8 @@ local times = {}
 --e.g.: th -lcunn -e "nn.testcuda{'Sigmoid_forward'}"
 
 local typenames = {
-  'torch.CudaTensor',
-  'torch.CudaDoubleTensor',
+  --'torch.CudaTensor',
+  --'torch.CudaDoubleTensor',
 }
 
 local t2cpu = {
@@ -4921,79 +4921,91 @@ function cunntest.VolumetricFullConvolution_pair_test()
     local inChan = math.random(1,32)
     local outChan = math.random(1,32)
 
-    local module = nn.VolumetricFullConvolution(inChan, outChan, kT, kH, kW,
-                                          dT, dH, dW, pT, pH, pW);
-    module.weight:fill(1);
-    module.bias:fill(0.1);
+    for k, typename in ipairs(typenames) do
+      local ctype = t2cpu[typename]
+      local module = nn.VolumetricFullConvolution(inChan, outChan, kT, kH, kW,
+                                                  dT, dH, dW, pT, pH, pW):type(ctype);
+      module.weight:fill(1);
+      module.bias:fill(0.1);
+      module.weight = module.weight:type(typename):type(ctype)
+      module.bias = module.bias:type(typename):type(ctype)
 
-    local bs = math.random(8,32)
-    local inD = math.random(8,32)
-    local inH = math.random(8,32)
-    local inW = math.random(8,32)
-    local outD = (inD - 1) * dT - 2 * pT + kT
-    local outH = (inH - 1) * dH - 2 * pH + kH
-    local outW = (inW - 1) * dW - 2 * pW + kW
-    local input = torch.Tensor(bs, inChan, inD, inH, inW):fill(1);
-    local gradOut = torch.randn(bs, outChan, outD, outH, outW)
+      local bs = math.random(8,32)
+      local inD = math.random(8,32)
+      local inH = math.random(8,32)
+      local inW = math.random(8,32)
+      local outD = (inD - 1) * dT - 2 * pT + kT
+      local outH = (inH - 1) * dH - 2 * pH + kH
+      local outW = (inW - 1) * dW - 2 * pW + kW
+      local input = torch.Tensor(bs, inChan, inD, inH, inW):fill(1):type(typename):type(ctype)
+      local gradOut = torch.randn(bs, outChan, outD, outH, outW):type(typename):type(ctype)
 
-    local outcpu = module:forward(input)
-    local gradcpu = module:backward(input, gradOut)
-    module:cuda()
-    local outgpu = module:forward(input:cuda())
-    local gradgpu = module:backward(input:cuda(), gradOut:cuda())
+      local outcpu = module:forward(input)
+      local gradcpu = module:backward(input, gradOut)
+      module:type(typename)
+      local outgpu = module:forward(input:type(typename))
+      local gradgpu = module:backward(input:type(typename), gradOut:type(typename))
 
-    local error = outgpu:float() - outcpu
-    mytester:assertlt(error:abs():max(), precision_forward,
-                      'error on state (forward) ')
+      local error = outgpu:type(typename) - outcpu:type(typename)
+      mytester:assertlt(error:abs():max(),
+                        precision_forward_type(precision_forward, typename, outgpu:abs():max()),
+                        string.format('error on state (forward) with %s', typename))
 
-    local error = gradgpu:float() - gradcpu
-    mytester:assertlt(error:abs():max(), precision_backward,
-                      'error on state (backward) ')
+      local error = gradgpu:type(typename) - gradcpu:type(typename)
+      mytester:assertlt(error:abs():max(),
+                        precision_backward_type(precision_backward, typename),
+                        string.format('error on state (backward) with %s', typename))
+    end
 end
 
 function cunntest.VolumetricFullConvolution()
-    local module = nn.VolumetricFullConvolution(3, 1, 3, 3, 3, 3, 3, 3);
-    module.weight:fill(1);
-    module.bias:fill(0.1);
-    module:cuda();
+    for k, typename in ipairs(typenames) do
+        local ctype = t2cpu[typename]
+        local module = nn.VolumetricFullConvolution(3, 1, 3, 3, 3, 3, 3, 3):type(ctype);
+        module.weight:fill(1);
+        module.bias:fill(0.1);
+        module:type(typename);
 
-    local input = torch.Tensor(1, 3, 2, 2, 2):zero();
-    for c = 1,3 do
-        input[1][c][1][1][1] = 1
-    end
-    local output = module:forward(input:cuda())
-    for t = 1,6 do
-        for h = 1,6 do
-            for w = 1,6 do
-                if t <= 3 and h <= 3 and w <= 3 then
-                    mytester:assertlt(output[1][1][t][h][w] - 3.1, precision_forward, 'error on forward ')
-                else
-                    mytester:assertlt(output[1][1][t][h][w] - 0.1, precision_forward, 'error on forward ')
+        local input = torch.Tensor(1, 3, 2, 2, 2):zero();
+        for c = 1,3 do
+            input[1][c][1][1][1] = 1
+        end
+        local output = module:forward(input:type(typename))
+        for t = 1,6 do
+            for h = 1,6 do
+                for w = 1,6 do
+                    if t <= 3 and h <= 3 and w <= 3 then
+                        mytester:assertlt(output[1][1][t][h][w] - 3.1, precision_forward_type(precision_forward, typename),
+                          string.format('error on forward with %s', typename))
+                    else
+                        mytester:assertlt(output[1][1][t][h][w] - 0.1, precision_forward_type(precision_forward, typename),
+                          string.format('error on forward with %s', typename))
+                    end
                 end
             end
         end
-    end
 
-    module:zeroGradParameters()
-    local gradOut = torch.Tensor(1, 1, 6, 6, 6):fill(0.1);
-    local gradIn = module:backward(input:cuda(), gradOut:cuda())
-    for t = 1,2 do
-        for h = 1,2 do
-            for w = 1,2 do
-                mytester:assertlt(gradIn[1][1][t][h][w] - 2.7, precision_backward,
-                                  'error on backward input gradients ')
+        module:zeroGradParameters()
+        local gradOut = torch.Tensor(1, 1, 6, 6, 6):fill(0.1);
+        local gradIn = module:backward(input:type(typename), gradOut:type(typename))
+        for t = 1,2 do
+            for h = 1,2 do
+                for w = 1,2 do
+                    mytester:assertlt(gradIn[1][1][t][h][w] - 2.7, precision_backward_type(precision_backward, typename),
+                                      string.format('error on backward input gradients with %s', typename))
+                end
             end
         end
-    end
 
-    mytester:assertlt(module.gradBias[1] - 21.6, precision_backward,
-                      'error on backward gradBias ')
-    for c = 1,3 do
-        for t = 1,3 do
-            for h = 1,3 do
-                for w = 1,3 do
-                    mytester:assertlt(module.gradWeight[c][1][t][h][w] - 0.1, precision_backward,
-                                      'error on backward weight gradients ')
+        mytester:assertlt(module.gradBias[1] - 21.6, precision_backward_type(precision_backward, typename),
+                          string.format('error on backward gradBias with %s', typename))
+        for c = 1,3 do
+            for t = 1,3 do
+                for h = 1,3 do
+                    for w = 1,3 do
+                        mytester:assertlt(module.gradWeight[c][1][t][h][w] - 0.1, precision_backward_type(precision_backward, typename),
+                                          string.format('error on backward weight gradients with %s', typename))
+                    end
                 end
             end
         end
@@ -5022,35 +5034,44 @@ function cunntest.VolumetricDilatedConvolution()
    local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
    local ink = (outk - 1) * sk - 2 * padT + dilationT * (kk-1) + 1
 
-   local input = torch.randn(from,ink,inj,ini)
-   local sconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH)
-   local output = sconv:forward(input)
-   local gradOutput = output:clone():normal()
-   sconv:zeroGradParameters()
-   local groundgrad = sconv:backward(input, gradOutput)
-   local groundweight = sconv.gradWeight
-   local groundbias = sconv.gradBias
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,ink,inj,ini):type(typename)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
-   local gconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH):cuda()
-   gconv.weight = sconv.weight:cuda()
-   gconv.bias = sconv.bias:cuda()
-   local rescuda = gconv:forward(input)
-   gconv:zeroGradParameters()
-   local gradcuda = gconv:backward(input, gradOutput)
-   local weightcuda = gconv.gradWeight
-   local biascuda = gconv.gradBias
+      local ctype = t2cpu[typename]
+      input = input:type(ctype)
+      local sconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH):type(ctype)
+      local output = sconv:forward(input)
+      local gradOutput = output:clone():normal()
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+      local groundweight = sconv.gradWeight
+      local groundbias = sconv.gradBias
 
-   local error = rescuda:float() - output
-   local gerror = gradcuda:float() - groundgrad
-   local werror = weightcuda:float() - groundweight
-   local berror = biascuda:float() - groundbias
+      input = input:type(typename)
+      gradOutput = gradOutput:type(typename)
+      local gconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH):type(typename)
+      gconv.weight = sconv.weight:type(typename)
+      gconv.bias = sconv.bias:type(typename)
+      local rescuda = gconv:forward(input)
+      gconv:zeroGradParameters()
+      local gradcuda = gconv:backward(input, gradOutput)
+      local weightcuda = gconv.gradWeight
+      local biascuda = gconv.gradBias
 
-   mytester:assertlt(error:abs():max(), precision_forward, 'error on state (forward) ')
-   mytester:assertlt(gerror:abs():max(), precision_backward, 'error on state (backward) ')
-   mytester:assertlt(werror:abs():max(), precision_backward, 'error on weight (backward) ')
-   mytester:assertlt(berror:abs():max(), precision_backward, 'error on bias (backward) ')
+      local error = rescuda:double() - output:double()
+      local gerror = gradcuda:double() - groundgrad:double()
+      local werror = weightcuda:double() - groundweight:double()
+      local berror = biascuda:double() - groundbias:double()
+
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
+      mytester:assertlt(gerror:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) with %s', typename))
+      mytester:assertlt(werror:abs():max(), precision_backward_conv_weightbias(precision_backward, typename),
+        string.format('error on weight (backward) with %s', typename))
+      mytester:assertlt(berror:abs():max(), precision_backward_conv_weightbias(precision_backward, typename),
+        string.format('error on bias (backward) with %s', typename))
+   end
 end
 
 function cunntest.LookupTable_forward()
@@ -5640,7 +5661,7 @@ function nn.testcuda(tests, print_timing, n_loop, seed)
    local oldtype = torch.getdefaulttensortype()
    torch.setdefaulttensortype('torch.FloatTensor')
    checkHalf()
-   initSeed(seed)
+   initSeed(159243067)
    mytester = torch.Tester()
    mytester:add(cunntest)
    mytester:run(tests)
