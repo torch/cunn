@@ -1664,8 +1664,8 @@ function cunntest.SpatialDilatedConvolution_forward_batch()
    local padH = math.random(0,1)
    local outi = math.random(ki, 64)
    local outj = math.random(kj, 64)
-   local dilationW = math.random(0,10)
-   local dilationH = math.random(0,10)
+   local dilationW = math.random(1,10)
+   local dilationH = math.random(1,10)
    local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
    local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
 
@@ -1700,8 +1700,8 @@ function cunntest.SpatialDilatedConvolution_backward_single()
    local padH = math.random(0,1)
    local outi = math.random(ki, 64)
    local outj = math.random(kj, 64)
-   local dilationW = math.random(0,10)
-   local dilationH = math.random(0,10)
+   local dilationW = math.random(1,10)
+   local dilationH = math.random(1,10)
    local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
    local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
 
@@ -1754,8 +1754,8 @@ function cunntest.SpatialDilatedConvolution_backward_batch()
    local padH = math.random(0,1)
    local outi = math.random(ki, 64)
    local outj = math.random(kj, 64)
-   local dilationW = math.random(0,10)
-   local dilationH = math.random(0,10)
+   local dilationW = math.random(1,10)
+   local dilationH = math.random(1,10)
    local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
    local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
 
