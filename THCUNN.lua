@@ -12,13 +12,6 @@ function THCUNN.getState()
    return THCState_ptr(cutorch.getState());
 end
 
-local THCUNN_h = require 'cunn.THCUNN_h'
--- strip all lines starting with #
--- to remove preprocessor directives originally present
--- in THNN.h
-THCUNN_h = THCUNN_h:gsub("\n#[^\n]*", "")
-THCUNN_h = THCUNN_h:gsub("^#[^\n]*\n", "")
-
 local THCUNN_generic_h = require 'cunn.THCUNN_generic_h'
 -- strip all lines starting with #
 -- to remove preprocessor directives originally present
@@ -26,7 +19,6 @@ local THCUNN_generic_h = require 'cunn.THCUNN_generic_h'
 THCUNN_generic_h = THCUNN_generic_h:gsub("\n#[^\n]*", "")
 THCUNN_generic_h = THCUNN_generic_h:gsub("^#[^\n]*\n", "")
 
-local preprocessed = string.gsub(THCUNN_h, 'TH_API ', '')
 local preprocessed_generic = string.gsub(THCUNN_generic_h, 'TH_API void THNN_%(([%a%d_]+)%)', 'void THNN_TYPE%1')
 
 local replacements =
@@ -73,15 +65,6 @@ if cutorch.hasHalf then
   table.insert(replacements_generic, half_replacement)
 end
 
-for i=1,#replacements do
-   local r = replacements[i]
-   local s = preprocessed
-   for k,v in pairs(r) do
-      s = string.gsub(s, k, v)
-   end
-   ffi.cdef(s)
-end
-
 for i=1,#replacements_generic do
     local r = replacements_generic[i]
     local s = preprocessed_generic
@@ -89,14 +72,6 @@ for i=1,#replacements_generic do
         s = string.gsub(s, k, v)
     end
     ffi.cdef(s)
-end
-
-local function extract_function_names(s)
-   local t = {}
-   for n in string.gmatch(s, 'TH_API void THNN_Cuda([%a%d_]+)') do
-      t[#t+1] = n
-   end
-   return t
 end
 
 local function extract_function_names_generic(s)
@@ -146,15 +121,9 @@ end
 local real_args = extract_function_names_and_real_args(THCUNN_generic_h)
 
 -- build function table
-local function_names = extract_function_names(THCUNN_h)
 local function_names_generic = extract_function_names_generic(THCUNN_generic_h)
 
--- combine function names for CudaTensor
-for k,v in pairs(real_args) do
-  function_names[#function_names+1] = k
-end
-
-THNN.kernels['torch.CudaTensor'] = THNN.bind(THCUNN.C, function_names, 'Cuda', THCUNN.getState)
+THNN.kernels['torch.CudaTensor'] = THNN.bind(THCUNN.C, function_names_generic, 'Cuda', THCUNN.getState)
 torch.getmetatable('torch.CudaTensor').THNN = THNN.kernels['torch.CudaTensor']
 
 THNN.kernels['torch.CudaDoubleTensor'] = THNN.bind(THCUNN.C, function_names_generic, 'CudaDouble', THCUNN.getState)
