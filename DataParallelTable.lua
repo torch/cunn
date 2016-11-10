@@ -188,17 +188,13 @@ function DataParallelTable:updateOutput(input)
    local prevGpuid = cutorch.getDevice()
 
    -- distribute the input to GPUs
-   self:_distribute(self.inputGpu, input)
+   self.maxUsedGpu = self:_distribute(self.inputGpu, input)
 
    -- update output for each module
    local inputGpu = self.inputGpu
    self.outputGpu = self.impl:exec(function(m, i)
-      if _hasData(inputGpu[i]) then
-         return m:updateOutput(inputGpu[i])
-      else
-         return inputGpu[i]
-      end
-   end)
+      return m:updateOutput(inputGpu[i])
+   end, self.maxUsedGpu)
 
    -- concatenate the outputs to the base GPU
    self.output = self:_concat(self.output, self.outputGpu)
@@ -231,12 +227,8 @@ function DataParallelTable:__backward(method, input, gradOutput, scale)
       self:_distribute(self.gradOutputGpu, gradOutput)
 
       self.gradInputGpu = self.impl:exec(function(m, i)
-         if not _hasData(inputGpu[i]) then
-            return inputGpu[i]
-         else
-            return m[method](m, inputGpu[i], gradOutputGpu[i], scale)
-         end
-      end)
+         return m[method](m, inputGpu[i], gradOutputGpu[i], scale)
+      end, self.maxUsedGpu)
 
       if self.gradInput then
          -- concatenate the gradInput to the base GPU
@@ -246,12 +238,8 @@ function DataParallelTable:__backward(method, input, gradOutput, scale)
 
    if method == 'accGradParameters' then
       self.impl:exec(function(m, i)
-         if not _hasData(inputGpu[i]) then
-            return inputGpu[i]
-         else
-            return m:accGradParameters(inputGpu[i], gradOutputGpu[i], scale)
-         end
-      end)
+         return m:accGradParameters(inputGpu[i], gradOutputGpu[i], scale)
+      end, self.maxUsedGpu)
    end
 
    if method == 'backward' or method == 'accGradParameters' then
@@ -534,6 +522,7 @@ function DataParallelTable:_distribute(dst, src)
    for i = 1, #self.gpuAssignments do
       cutorch.setDevice(self.gpuAssignments[i])
       dst[i] = self:_distributeTensorRecursive(dst[i], src, i, #self.gpuAssignments)
+      if not _hasData(dst[i]) then return i-1 end
    end
 end
 
@@ -647,11 +636,12 @@ function BasicImpl:setup()
 end
 
 -- Applies a function to each replica, combining the results into a table
-function BasicImpl:exec(closure)
+function BasicImpl:exec(closure, maxGpuIdx)
    local prevGpuid = cutorch.getDevice()
    self:setup()
    local res = {}
    for i, gpu in ipairs(self.dpt.gpuAssignments) do
+      if maxGpuIdx and i > maxGpuIdx then break end
       cutorch.setDevice(gpu)
       res[i] = closure(self.modules[i], i)
    end
@@ -711,10 +701,11 @@ function ThreadsImpl:setup()
    end
 end
 
-function ThreadsImpl:exec(closure)
+function ThreadsImpl:exec(closure, maxGpuIdx)
    self:setup()
    local res = {}
    for i=1,#self.dpt.gpuAssignments do
+      if maxGpuIdx and i > maxGpuIdx then break end
       self.__threads:addjob(i,
          function()
             return closure(_G.module, i)
