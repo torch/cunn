@@ -26,8 +26,10 @@ local function checkHalf()
 end
 
 -- workarounds for non-existant functions
+if cutorch.hasHalf then
 function torch.CudaHalfTensor:mean()
    return self:cuda():mean()
+end
 end
 
 function torch.CudaDoubleTensor:mean()

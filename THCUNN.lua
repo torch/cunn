@@ -129,6 +129,7 @@ torch.getmetatable('torch.CudaTensor').THNN = THNN.kernels['torch.CudaTensor']
 THNN.kernels['torch.CudaDoubleTensor'] = THNN.bind(THCUNN.C, function_names_generic, 'CudaDouble', THCUNN.getState)
 torch.getmetatable('torch.CudaDoubleTensor').THNN = THNN.kernels['torch.CudaDoubleTensor']
 
+if cutorch.hasHalf then
 -- in order to call 'half' functions from lua, convert real arguments from
 -- to half since there is no other defined conversion
 local transform_reals_to_half = function(func_name, real_args, ...)
@@ -152,5 +153,6 @@ end
 end
 THNN.kernels['torch.CudaHalfTensor'] = raw_half_functions
 torch.getmetatable('torch.CudaHalfTensor').THNN = THNN.kernels['torch.CudaHalfTensor']
+end
 
 return THCUNN
