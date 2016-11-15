@@ -4785,9 +4785,10 @@ function cunntest.PReLU_forward()
     local nOutputPlane = 8
     local w = math.random(1,100)
     local h = math.random(1,100)
-    local input = torch.randn(nOutputPlane,h,w)
 
     for k, typename in ipairs(typenames) do
+      local input = torch.randn(nOutputPlane,h,w):type(typename)
+
       local ctype = t2cpu[typename]
       local input = input:type(ctype)
       local sconv = nn.PReLU(nOutputPlane):type(ctype)
@@ -5036,9 +5037,9 @@ function cunntest.VolumetricDilatedConvolution()
    local dilationW = math.random(1,10)
    local dilationH = math.random(1,10)
    local dilationT = math.random(1,10)
-   local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
-   local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
-   local ink = (outk - 1) * sk - 2 * padT + dilationT * (kk-1) + 1
+   local ini = math.max((outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1, ki)
+   local inj = math.max((outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1, kj)
+   local ink = math.max((outk - 1) * sk - 2 * padT + dilationT * (kk-1) + 1, kk)
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(from,ink,inj,ini):type(typename)
