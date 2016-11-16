@@ -67,18 +67,41 @@ local function precision_backward_conv_weightbias(precision_b, tensor_type, maxa
    end
 end
 
+local function makeNonContiguous(tensor)
+   size = tensor:size()
+   local osize = {}
+   for i = 1, #size do osize[i] = size[i] end
+   -- randomly inflate a few dimensions in osize
+   for i = 1, 3 do
+      local dim = torch.random(1,#osize)
+      local add = torch.random(4, 15)
+      osize[dim] = osize[dim] + add
+   end
+   local input = torch[tensor:type():match('torch.(%a+)')]()
+   input:resize(torch.LongStorage(osize))
+   -- now extract the input of correct size from 'input'
+   for i = 1, #size do
+      if input:size(i) ~= size[i] then
+         local bounds = torch.random(1, input:size(i) - size[i] + 1)
+         input = input:narrow(i, bounds, size[i])
+      end
+   end
+   input:copy(tensor)
+   return input
+end
+
 local function pointwise_forward(proto_module, name, max_error)
    local size = math.random(1,100)
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      local input = makeNonContiguous(input:type(ctype))
       if name == 'Sqrt' then input:abs() end
       local sconv = proto_module:type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = proto_module:clone():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -96,15 +119,15 @@ local function pointwise_backward(proto_module, name, max_error)
       local gradOutput = torch.randn(size):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       if name == 'Sqrt' then input:abs() end
       local sconv = proto_module:type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = proto_module:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
@@ -124,8 +147,8 @@ local function pointwise_backward_inplace(proto_module, name)
       local ctype = t2cpu[typename]
       input = input:type(ctype)
       if name == 'Sqrt' then input:abs() end
-      local gradOutput = torch.randn(size)
-      gradOutput = gradOutput:type(ctype)
+      local gradOutput = makeNonContiguous(torch.randn(size))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = proto_module:type(ctype)
       local groundgrad = sconv:backward(input, gradOutput)
       mytester:assertTensorEq(groundgrad:double(),
@@ -133,11 +156,11 @@ local function pointwise_backward_inplace(proto_module, name)
                               0.000001,
                               string.format("inplace not respected for %s", ctype))
 
-      input = torch.randn(size)
-      input = input:type(typename)
+      input = makeNonContiguous(torch.randn(size))
+      input = makeNonContiguous(input:type(typename))
       if name == 'Sqrt' then input:abs() end
-      gradOutput = torch.randn(size)
-      gradOutput = gradOutput:type(typename)
+      gradOutput = makeNonContiguous(torch.randn(size))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local sconv = proto_module:clone():type(typename)
       local groundgrad = sconv:backward(input, gradOutput)
       mytester:assertTensorEq(groundgrad:double(),
@@ -308,10 +331,10 @@ function cunntest.Sqrt_zero()
    for k, typename in ipairs(typenames) do
       -- Test zero inputs; we will avoid a div-by-zero by setting to zero
       local module_gpu = nn.Sqrt():type(typename)
-      local input_gpu = torch.CudaTensor(size, size):zero():type(typename)
+      local input_gpu = makeNonContiguous(torch.CudaTensor(size, size):zero():type(typename))
       module_gpu:forward(input_gpu)
 
-      local gradOutput_gpu = torch.CudaTensor(size, size):fill(1):type(typename)
+      local gradOutput_gpu = makeNonContiguous(torch.CudaTensor(size, size):fill(1):type(typename))
       local gradInput_gpu = module_gpu:backward(input_gpu, gradOutput_gpu)
 
       mytester:assertTensorEq(gradInput_gpu:double(),
@@ -321,10 +344,10 @@ function cunntest.Sqrt_zero()
       -- Verify CPU and GPU zero behavior equivalency
       local ctype = t2cpu[typename]
       local module_cpu = nn.Sqrt():type(ctype)
-      local input_cpu = input_gpu:type(ctype)
+      local input_cpu = makeNonContiguous(input_gpu:type(ctype))
       module_cpu:forward(input_cpu)
 
-      local gradOutput_cpu = gradOutput_gpu:type(ctype)
+      local gradOutput_cpu = makeNonContiguous(gradOutput_gpu:type(ctype))
       local gradInput_cpu = module_cpu:backward(input_cpu, gradOutput_cpu)
 
       mytester:assertTensorEq(gradInput_gpu:double(),
@@ -398,14 +421,14 @@ function cunntest.SpatialSoftMax()
    local h = torch.random(1, 50)
    local w = torch.random(1, 50)
 
-   local input = torch.randn(bs, dim, h, w)
+   local input = makeNonContiguous(torch.randn(bs, dim, h, w))
    local sconv = nn.SpatialSoftMax()
    local groundtruth = sconv:forward(input)
-   local gradOutput = groundtruth:clone():fill(0.5)
+   local gradOutput = makeNonContiguous(groundtruth:clone():fill(0.5))
    local gradInput = sconv:backward(input, gradOutput)
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
+   input = makeNonContiguous(input:cuda())
+   gradOutput = makeNonContiguous(gradOutput:cuda())
    local gconv = nn.SpatialSoftMax():cuda()
    local rescuda = gconv:forward(input)
    local gradcuda = gconv:backward(input, gradOutput)
@@ -424,11 +447,11 @@ function cunntest.LogSoftMax_forward_batch()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(bs, size):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.LogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.LogSoftMax():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -446,14 +469,14 @@ function cunntest.LogSoftMax_backward_batch()
       local input = torch.randn(bs, size):type(typename)
       local gradOutput = torch.randn(bs, size):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.LogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
@@ -473,11 +496,11 @@ function cunntest.SpatialLogSoftMax_forward()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input):type(ctype)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialLogSoftMax():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -498,13 +521,13 @@ function cunntest.SpatialLogSoftMax_backward()
       local gradOutput = torch.randn(size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
       input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
@@ -529,7 +552,7 @@ function cunntest.SpatialLogSoftMax_forward_batch()
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialLogSoftMax():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -550,14 +573,14 @@ function cunntest.SpatialLogSoftMax_backward_batch()
       local input = torch.randn(bs, size, inj, ini):type(typename)
       local gradOutput = torch.randn(bs, size, inj, ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialLogSoftMax():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
@@ -579,7 +602,7 @@ function cunntest.Euclidean_forward_batch()
    local title = string.format('Euclidean forward %d %d -> %d %d', bs, nin, bs, nout)
    times[title] = tm
 
-   local input = torch.randn(bs, nin)
+   local input = makeNonContiguous(torch.randn(bs, nin))
    local sconv = nn.Euclidean(nin, nout)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -588,7 +611,7 @@ function cunntest.Euclidean_forward_batch()
    end
    tm.cpu = a:time().real
 
-   input = input:cuda()
+   input = makeNonContiguous(input:cuda())
    local gconv = sconv:clone():cuda()
    local rescuda = gconv:forward(input)
    a:reset()
@@ -611,8 +634,8 @@ function cunntest.Euclidean_backward_batch()
    local title = string.format('Euclidean backward %d %d <- %d %d', bs, nin, bs, nout)
    times[title] = tm
 
-   local input = torch.randn(bs, nin)
-   local gradOutput = torch.randn(bs, nout)
+   local input = makeNonContiguous(torch.randn(bs, nin))
+   local gradOutput = makeNonContiguous(torch.randn(bs, nout))
    local sconv = nn.Euclidean(nin, nout)
    sconv:forward(input)
    sconv:zeroGradParameters()
@@ -625,8 +648,8 @@ function cunntest.Euclidean_backward_batch()
    local groundweight = sconv.gradWeight
    tm.cpu = a:time().real
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
+   input = makeNonContiguous(input:cuda())
+   gradOutput = makeNonContiguous(gradOutput:cuda())
    local gconv = sconv:clone():cuda()
    gconv:forward(input)
    gconv:zeroGradParameters()
@@ -657,7 +680,7 @@ function cunntest.WeightedEuclidean_forward_batch()
    local title = string.format('WeightedEuclidean forward %d %d -> %d %d', bs, nin, bs, nout)
    times[title] = tm
 
-   local input = torch.randn(bs, nin)
+   local input = makeNonContiguous(torch.randn(bs, nin))
    local sconv = nn.WeightedEuclidean(nin, nout)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -666,7 +689,7 @@ function cunntest.WeightedEuclidean_forward_batch()
    end
    tm.cpu = a:time().real
 
-   input = input:cuda()
+   input = makeNonContiguous(input:cuda())
    local gconv = sconv:clone():cuda()
    local rescuda = gconv:forward(input)
    a:reset()
@@ -689,8 +712,8 @@ function cunntest.WeightedEuclidean_backward_batch()
    local title = string.format('WeightedEuclidean backward %d %d <- %d %d', bs, nin, bs, nout)
    times[title] = tm
 
-   local input = torch.randn(bs, nin)
-   local gradOutput = torch.randn(bs, nout)
+   local input = makeNonContiguous(torch.randn(bs, nin))
+   local gradOutput = makeNonContiguous(torch.randn(bs, nout))
    local sconv = nn.WeightedEuclidean(nin, nout)
    sconv:forward(input)
    sconv:zeroGradParameters()
@@ -704,8 +727,8 @@ function cunntest.WeightedEuclidean_backward_batch()
    local grounddiagCov = sconv.gradDiagCov
    tm.cpu = a:time().real
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
+   input = makeNonContiguous(input:cuda())
+   gradOutput = makeNonContiguous(gradOutput:cuda())
    local gconv = sconv:clone():cuda()
    gconv:forward(input)
    gconv:zeroGradParameters()
@@ -791,7 +814,7 @@ function cunntest.SparseLinear_backward()
                 nonsparse[i]:scatter(1, input[i]:select(2,1):long(), input[i]:select(2,2))
             end
 
-            local gradOutput = torch.randn(inb, inj):type(typename):type(ctype)
+            local gradOutput = makeNonContiguous(torch.randn(inb, inj):type(typename):type(ctype))
             sslin:forward(nonsparse)
             local groundgrad = sslin:backward(nonsparse, gradOutput)
             sslin:zeroGradParameters()
@@ -799,7 +822,7 @@ function cunntest.SparseLinear_backward()
             local groundbias = sslin.gradBias
 
             for i,v in ipairs(input) do input[i] = input[i]:type(typename) end
-            gradOutput = gradOutput:type(typename)
+            gradOutput = makeNonContiguous(gradOutput:type(typename))
             gslin:forward(input)
             local rescuda = gslin:backward(input, gradOutput)
             gslin:zeroGradParameters()
@@ -836,11 +859,11 @@ local function BatchNormalization_forward(moduleName, inputSize)
       local input = torch.randn(table.unpack(inputSize)):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sbnorm = nn[moduleName](planes):type(ctype)
       local groundtruth = sbnorm:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gbnorm = nn[moduleName](planes):type(typename)
       gbnorm.weight = sbnorm.weight:type(typename)
       gbnorm.bias = sbnorm.bias:type(typename)
@@ -865,7 +888,7 @@ local function BatchNormalization_forward_inference(moduleName, inputSize)
       local input = torch.randn(table.unpack(inputSize)):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sbnorm = nn[moduleName](planes):type(ctype)
       sbnorm.running_mean:normal(1, 2)
       sbnorm.running_var:uniform(1e-3, 2)
@@ -875,7 +898,7 @@ local function BatchNormalization_forward_inference(moduleName, inputSize)
       sbnorm:evaluate()
       local groundtruth = sbnorm:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gbnorm = nn[moduleName](planes):type(typename)
       gbnorm:evaluate()
       gbnorm.weight = sbnorm.weight:type(typename)
@@ -900,8 +923,8 @@ local function BatchNormalization_backward(moduleName, mode, inputSize, backward
       local gradOutput = torch.randn(table.unpack(inputSize)):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sbnorm = nn[moduleName](planes):type(ctype)
       if mode == 'training' then
         sbnorm:training()
@@ -914,8 +937,8 @@ local function BatchNormalization_backward(moduleName, mode, inputSize, backward
       local groundweight = sbnorm.gradWeight
       local groundbias = sbnorm.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gbnorm = nn[moduleName](planes):type(typename)
       if mode == 'training' then
         gbnorm:training()
@@ -1010,14 +1033,14 @@ function cunntest.SpatialConvolutionMM_forward_single()
          local input = torch.randn(from,inj,ini):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
          local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
          if noBias then
             sconv:noBias()
          end
          local groundtruth = sconv:forward(input)
 
-         input = input:type(typename)
+         input = makeNonContiguous(input:type(typename))
          local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1059,14 +1082,14 @@ function cunntest.SpatialConvolutionMM_forward_batch()
          local input = torch.randn(bs,from,inj,ini):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
          local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
          if noBias then
             sconv:noBias()
          end
          local groundtruth = sconv:forward(input)
 
-         input = input:type(typename)
+         input = makeNonContiguous(input:type(typename))
          local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1108,8 +1131,8 @@ function cunntest.SpatialConvolutionMM_backward_single()
          local gradOutput = torch.randn(to,outj,outi):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
-         gradOutput = gradOutput:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
+         gradOutput = makeNonContiguous(gradOutput:type(ctype))
          local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
          if noBias then
             sconv:noBias()
@@ -1120,8 +1143,8 @@ function cunntest.SpatialConvolutionMM_backward_single()
          local groundweight = sconv.gradWeight
          local groundbias = sconv.gradBias
 
-         input = input:type(typename)
-         gradOutput = gradOutput:type(typename)
+         input = makeNonContiguous(input:type(typename))
+         gradOutput = makeNonContiguous(gradOutput:type(typename))
          local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1180,8 +1203,8 @@ function cunntest.SpatialConvolutionMM_backward_batch()
          local gradOutput = torch.randn(bs,to,outj,outi)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
-         gradOutput = gradOutput:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
+         gradOutput = makeNonContiguous(gradOutput:type(ctype))
          local sconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(ctype)
          if noBias then
             sconv:noBias()
@@ -1192,8 +1215,8 @@ function cunntest.SpatialConvolutionMM_backward_batch()
          local groundweight = sconv.gradWeight
          local groundbias = sconv.gradBias
 
-         input = input:type(typename)
-         gradOutput = gradOutput:type(typename)
+         input = makeNonContiguous(input:type(typename))
+         gradOutput = makeNonContiguous(gradOutput:type(typename))
          local gconv = nn.SpatialConvolutionMM(from,to,ki,kj,si,sj,padW,padH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1246,11 +1269,11 @@ function cunntest.SpatialConvolutionLocal_forward_single()
       local input = torch.randn(from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1281,11 +1304,11 @@ function cunntest.SpatialConvolutionLocal_forward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1316,8 +1339,8 @@ function cunntest.SpatialConvolutionLocal_backward_single()
       local gradOutput = torch.randn(to,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -1325,8 +1348,8 @@ function cunntest.SpatialConvolutionLocal_backward_single()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1371,8 +1394,8 @@ function cunntest.SpatialConvolutionLocal_backward_batch()
       local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -1380,8 +1403,8 @@ function cunntest.SpatialConvolutionLocal_backward_batch()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialConvolutionLocal(from,to,ini,inj,ki,kj,si,sj,padW,padH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1428,14 +1451,14 @@ function cunntest.SpatialFullConvolution_forward_single()
          local input = torch.randn(from,inj,ini):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
          local sconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(ctype)
          if noBias then
             sconv:noBias()
          end
          local groundtruth = sconv:forward(input)
 
-         input = input:type(typename)
+         input = makeNonContiguous(input:type(typename))
          local gconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1479,14 +1502,14 @@ function cunntest.SpatialFullConvolution_forward_batch()
          local input = torch.randn(bs,from,inj,ini):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
          local sconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(ctype)
          if noBias then
             sconv:noBias()
          end
          local groundtruth = sconv:forward(input)
 
-         input = input:type(typename)
+         input = makeNonContiguous(input:type(typename))
          local gconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1529,20 +1552,20 @@ function cunntest.SpatialFullConvolution_backward_single()
          local input = torch.randn(from,inj,ini):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
          local sconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(ctype)
          if noBias then
             sconv:noBias()
          end
          local output = sconv:forward(input)
-         local gradOutput = output:clone():normal()
+         local gradOutput = makeNonContiguous(output:clone():normal())
          sconv:zeroGradParameters()
          local groundgrad = sconv:backward(input, gradOutput)
          local groundweight = sconv.gradWeight
          local groundbias = sconv.gradBias
 
-         input = input:type(typename)
-         gradOutput = gradOutput:type(typename)
+         input = (input:type(typename))
+         gradOutput = makeNonContiguous(gradOutput:type(typename))
          local gconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1602,20 +1625,20 @@ function cunntest.SpatialFullConvolution_backward_batch()
          local input = torch.randn(bs,from,inj,ini):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
          local sconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(ctype)
          if noBias then
             sconv:noBias()
          end
          local output = sconv:forward(input)
-         local gradOutput = output:clone():normal()
+         local gradOutput = makeNonContiguous(output:clone():normal())
          sconv:zeroGradParameters()
          local groundgrad = sconv:backward(input, gradOutput)
          local groundweight = sconv.gradWeight
          local groundbias = sconv.gradBias
 
-         input = input:type(typename)
-         gradOutput = gradOutput:type(typename)
+         input = makeNonContiguous(input:type(typename))
+         gradOutput = makeNonContiguous(gradOutput:type(typename))
          local gconv = nn.SpatialFullConvolution(from,to,ki,kj,si,sj,padW,padH,adjW,adjH):type(typename)
          if noBias then
             gconv:noBias()
@@ -1670,11 +1693,11 @@ function cunntest.SpatialDilatedConvolution_forward_single()
       local input = torch.randn(from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1707,11 +1730,11 @@ function cunntest.SpatialDilatedConvolution_forward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1743,17 +1766,17 @@ function cunntest.SpatialDilatedConvolution_backward_single()
       local input = torch.randn(from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(ctype)
       local output = sconv:forward(input)
-      local gradOutput = output:clone():normal()
+      local gradOutput = makeNonContiguous(output:clone():normal())
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1799,17 +1822,17 @@ function cunntest.SpatialDilatedConvolution_backward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(ctype)
       local output = sconv:forward(input)
-      local gradOutput = output:clone():normal()
+      local gradOutput = makeNonContiguous(output:clone():normal())
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialDilatedConvolution(from,to,ki,kj,si,sj,padW,padH,dilationW,dilationH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1850,11 +1873,11 @@ function cunntest.SpatialSubSampling_forward()
       local input = torch.randn(from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1883,11 +1906,11 @@ function cunntest.Sampling_forward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1922,8 +1945,8 @@ function cunntest.SpatialSubSampling_backward()
       local gradOutput = torch.randn(to,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -1931,8 +1954,8 @@ function cunntest.SpatialSubSampling_backward()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -1975,8 +1998,8 @@ function cunntest.SpatialSubSampling_backward_batch()
       local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -1984,8 +2007,8 @@ function cunntest.SpatialSubSampling_backward_batch()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialSubSampling(from,ki,kj,si,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -2031,12 +2054,12 @@ function cunntest.SpatialMaxPooling_forward()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       local rescuda = gconv:forward(input)
@@ -2069,12 +2092,12 @@ function cunntest.SpatialMaxPooling_forward_batch()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       local rescuda = gconv:forward(input)
@@ -2109,11 +2132,11 @@ function cunntest.SpatialMaxUnpooling_forward_batch()
       local sunpool = nn.SpatialMaxUnpooling(pooler):type(ctype)
 
       local original = torch.randn(bs,from,outj,outi):type(typename)
-      original = original:type(ctype)
+      original = makeNonContiguous(original:type(ctype))
       local input = pooler:forward(original)
       local groundtruth = sunpool:forward(input)
 
-      original = original:type(typename)
+      original = makeNonContiguous(original:type(typename))
       pooler = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then pooler:ceil() end
       local gunpool = nn.SpatialMaxUnpooling(pooler):type(typename)
@@ -2146,8 +2169,8 @@ function cunntest.SpatialMaxPooling_backward()
       local input = torch.randn(from,inj,ini):type(typename)
       local gradOutput = torch.randn(to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
 
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
@@ -2155,8 +2178,8 @@ function cunntest.SpatialMaxPooling_backward()
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       gconv:forward(input)
@@ -2190,16 +2213,16 @@ function cunntest.SpatialMaxPooling_backward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
-      local gradOutput = gradOutput:type(ctype)
+      local input = makeNonContiguous(input:type(ctype))
+      local gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialMaxPooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       gconv:forward(input)
@@ -2237,10 +2260,10 @@ function cunntest.SpatialMaxUnpooling_backward_batch()
       local sunpool = nn.SpatialMaxUnpooling(pooler):type(ctype)
 
       local original = torch.randn(bs,from,outj,outi):type(typename)
-      original = original:type(ctype)
+      original = makeNonContiguous(original:type(ctype))
       local input = pooler:forward(original)
       local gradOutput = torch.randn(original:size()):type(typename)
-      gradOutput = gradOutput:type(ctype)
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       sunpool:forward(input)
       sunpool:zeroGradParameters()
       local groundgrad = sunpool:backward(input, gradOutput)
@@ -2249,11 +2272,11 @@ function cunntest.SpatialMaxUnpooling_backward_batch()
       if ceil_mode then pooler:ceil() end
       local gunpool = nn.SpatialMaxUnpooling(pooler):type(typename)
 
-      original = original:type(typename)
+      original = makeNonContiguous(original:type(typename))
       input = pooler:forward(original)
       gunpool:forward(input)
 
-      gradOutput = gradOutput:type(typename)
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       gunpool:zeroGradParameters()
       local rescuda = gunpool:backward(input, gradOutput)
 
@@ -2284,12 +2307,12 @@ function cunntest.SpatialDilatedMaxPooling_forward()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(typename)
       if ceil_mode then gconv:ceil() end
       local rescuda = gconv:forward(input)
@@ -2324,12 +2347,12 @@ function cunntest.SpatialDilatedMaxPooling_forward_batch()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(typename)
       if ceil_mode then gconv:ceil() end
       local rescuda = gconv:forward(input)
@@ -2361,16 +2384,16 @@ function cunntest.SpatialDilatedMaxPooling_backward()
       local input = torch.randn(from,inj,ini):type(typename)
       local gradOutput = torch.randn(to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(typename)
       if ceil_mode then gconv:ceil() end
       gconv:forward(input)
@@ -2406,16 +2429,16 @@ function cunntest.SpatialDilatedMaxPooling_backward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialDilatedMaxPooling(ki,kj,si,sj,padi,padj,dilationi,dilationj):type(typename)
       if ceil_mode then gconv:ceil() end
       gconv:forward(input)
@@ -2456,7 +2479,7 @@ function cunntest.SpatialFractionalMaxPooling_forward()
         end
 
         local ctype = t2cpu[typename]
-        input = input:type(ctype)
+        input = makeNonContiguous(input:type(ctype))
         local module = nil
         if useRatio then
             module =
@@ -2470,7 +2493,7 @@ function cunntest.SpatialFractionalMaxPooling_forward()
 
         local groundtruth = module:forward(input)
 
-        input = input:type(typename)
+        input = makeNonContiguous(input:type(typename))
 
         local gmodule = nil
         if useRatio then
@@ -2524,8 +2547,8 @@ function cunntest.SpatialFractionalMaxPooling_backward()
         end
 
         local ctype = t2cpu[typename]
-        input = input:type(ctype)
-        gradOutput = gradOutput:type(ctype)
+        input = makeNonContiguous(input:type(ctype))
+        gradOutput = makeNonContiguous(gradOutput:type(ctype))
         local module =
             nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
             :fixPoolingRegions():type(ctype)
@@ -2538,8 +2561,8 @@ function cunntest.SpatialFractionalMaxPooling_backward()
         module:zeroGradParameters()
         local groundgrad = module:backward(input, gradOutput)
 
-        input = input:type(typename)
-        gradOutput = gradOutput:type(typename)
+        input = makeNonContiguous(input:type(typename))
+        gradOutput = makeNonContiguous(gradOutput:type(typename))
 
         local gmodule =
             nn.SpatialFractionalMaxPooling(poolSizeW, poolSizeH, outW, outH)
@@ -2566,7 +2589,7 @@ function cunntest.SpatialAveragePooling_includepad()
       local net_include_pad = net:clone()
       net_include_pad:setCountIncludePad()
 
-      local input = torch.FloatTensor(1, 1, 1, 1):type(typename)
+      local input = makeNonContiguous(torch.FloatTensor(1, 1, 1, 1):type(typename))
       input[1][1][1][1] = 3
       local out_noinclude = net_no_include_pad:forward(input)
       local out_include = net_include_pad:forward(input)
@@ -2599,13 +2622,13 @@ function cunntest.SpatialAveragePooling_forward()
       local input = torch.randn(from,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       if count_exclude_pad then sconv:setCountExcludePad() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       if count_exclude_pad then gconv:setCountExcludePad() end
@@ -2638,13 +2661,13 @@ function cunntest.SpatialAveragePooling_forward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
 
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       if count_exclude_pad then sconv:setCountExcludePad() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       if count_exclude_pad then gconv:setCountExcludePad() end
@@ -2677,8 +2700,8 @@ function cunntest.SpatialAveragePooling_backward()
       local gradOutput = torch.randn(to,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       if count_exclude_pad then sconv:setCountExcludePad() end
@@ -2686,8 +2709,8 @@ function cunntest.SpatialAveragePooling_backward()
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       if count_exclude_pad then gconv:setCountExcludePad() end
@@ -2724,8 +2747,8 @@ function cunntest.SpatialAveragePooling_backward_batch()
       local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(ctype)
       if ceil_mode then sconv:ceil() end
       if count_exclude_pad then sconv:setCountExcludePad() end
@@ -2733,8 +2756,8 @@ function cunntest.SpatialAveragePooling_backward_batch()
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialAveragePooling(ki,kj,si,sj,padi,padj):type(typename)
       if ceil_mode then gconv:ceil() end
       if count_exclude_pad then gconv:setCountExcludePad() end
@@ -2760,11 +2783,11 @@ function cunntest.SpatialAdaptiveMaxPooling_forward()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
       local groundtruth = sconv:forward(input):type(ctype)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
       local rescuda = gconv:forward(input)
 
@@ -2788,11 +2811,11 @@ function cunntest.SpatialAdaptiveMaxPooling_forward_noncontig()
    for k, typename in ipairs(typenames) do
       local input0 = torch.randn(from,ini,inj):type(typename)
       local ctype = t2cpu[typename]
-      local input = input0:type(ctype):transpose(2,3)
+      local input = makeNonContiguous(input0:type(ctype):transpose(2,3))
       local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input0:type(typename):transpose(2,3)
+      input = makeNonContiguous(input0:type(typename):transpose(2,3))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
       local rescuda = gconv:forward(input)
 
@@ -2817,11 +2840,11 @@ function cunntest.SpatialAdaptiveMaxPooling_forward_batch()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
       local rescuda = gconv:forward(input)
 
@@ -2843,15 +2866,15 @@ function cunntest.SpatialAdaptiveMaxPooling_backward()
       local input = torch.randn(from,inj,ini):type(typename)
       local gradOutput = torch.randn(to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -2876,15 +2899,15 @@ function cunntest.SpatialAdaptiveMaxPooling_backward_noncontig()
       local input0 = torch.randn(from,ini,inj):type(typename)
       local gradOutput = torch.randn(to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      local input = input0:type(ctype):transpose(2,3)
-      gradOutput = gradOutput:type(ctype)
+      local input = makeNonContiguous(input0:type(ctype):transpose(2,3))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input0:type(typename):transpose(2,3)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input0:type(typename):transpose(2,3))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -2910,15 +2933,15 @@ function cunntest.SpatialAdaptiveMaxPooling_backward_batch()
       local input = torch.randn(bs,from,inj,ini):type(typename)
       local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -2949,7 +2972,7 @@ function cunntest.SpatialLPPooling_forward()
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
-   local input = torch.randn(from,inj,ini)
+   local input = makeNonContiguous(torch.randn(from,inj,ini))
    local sconv = nn.SpatialLPPooling(from,pnorm,ki,kj,si,sj)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -2958,7 +2981,7 @@ function cunntest.SpatialLPPooling_forward()
    end
    tm.cpu = a:time().real
 
-   input = input:cuda()
+   input = makeNonContiguous(input:cuda())
    local gconv = nn.SpatialLPPooling(from,pnorm,ki,kj,si,sj):cuda()
    local rescuda = gconv:forward(input)
    a:reset()
@@ -2990,8 +3013,8 @@ function cunntest.SpatialLPPooling_backward()
                                from, inj, ini, kj, ki, to, outj, outi)
    times[title] = tm
 
-   local input = torch.randn(from,inj,ini)
-   local gradOutput = torch.randn(to,outj,outi)
+   local input = makeNonContiguous(torch.randn(from,inj,ini))
+   local gradOutput = makeNonContiguous(torch.randn(to,outj,outi))
    local sconv = nn.SpatialLPPooling(from,pnorm,ki,kj,si,sj)
    sconv:forward(input)
    sconv:zeroGradParameters()
@@ -3003,8 +3026,8 @@ function cunntest.SpatialLPPooling_backward()
    end
    tm.cpu = a:time().real
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
+   input = makeNonContiguous(input:cuda())
+   gradOutput = makeNonContiguous(gradOutput:cuda())
    local gconv = sconv:clone():cuda()
    gconv:forward(input)
    gconv:zeroGradParameters()
@@ -3067,13 +3090,13 @@ function cunntest.BCECriterion_forward()
      local target = torch.Tensor(size):uniform():gt(0.5):type(torch.type(input))
 
      local ctype = t2cpu[typename]
-     input = input:type(ctype)
-     target = target:type(ctype)
+     input = makeNonContiguous(input:type(ctype))
+     target = makeNonContiguous(target:type(ctype))
      local crit = nn.BCECriterion():type(ctype)
      local rescpu = crit:forward(input, target)
 
-     input = input:type(typename)
-     target = target:type(typename)
+     input = makeNonContiguous(input:type(typename))
+     target = makeNonContiguous(target:type(typename))
      local g_crit = nn.BCECriterion():type(typename)
      local rescuda = g_crit:forward(input, target)
      local errorVal = rescuda - rescpu
@@ -3081,8 +3104,8 @@ function cunntest.BCECriterion_forward()
         string.format('error on state (forward) with %s', typename))
 
      -- test vs lua implementation
-     input = input:type(ctype)
-     target = target:type(ctype)
+     input = makeNonContiguous(input:type(ctype))
+     target = makeNonContiguous(target:type(ctype))
      buffer = input.new()
      local restruth = BCECriterion_forward_truth(buffer, input, target, nil, true)
      errorVal = rescpu - restruth
@@ -3102,15 +3125,15 @@ function cunntest.BCECriterionWeights_forward()
      local weights = torch.Tensor(size):uniform():type(typename)
 
      local ctype = t2cpu[typename]
-     input = input:type(ctype)
-     target = target:type(ctype)
-     weights = weights:type(ctype)
+     input = makeNonContiguous(input:type(ctype))
+     target = makeNonContiguous(target:type(ctype))
+     weights = makeNonContiguous(weights:type(ctype))
      local crit = nn.BCECriterion(weights):type(ctype)
      local rescpu = crit:forward(input, target)
 
-     input = input:type(typename)
-     target = target:type(typename)
-     weights = weights:type(typename)
+     input = makeNonContiguous(input:type(typename))
+     target = makeNonContiguous(target:type(typename))
+     weights = makeNonContiguous(weights:type(typename))
      local g_crit = nn.BCECriterion(weights):type(typename)
      local rescuda = g_crit:forward(input, target)
 
@@ -3138,16 +3161,16 @@ function cunntest.MarginCriterion_forward()
 
   for k, typename in ipairs(typenames) do
     local input = ((torch.rand(size)-0.5) * 2):type(typename) -- data spread from -1 to 1
-    local target = ((torch.round(torch.rand(size))*2)-1):type(typename) -- generate random labels -1, 1
+    local target = ((torch.round(torch.rand(size))*2)-1):type(typename)-- generate random labels -1, 1
 
     local ctype = t2cpu[typename]
-    input = input:type(ctype)
-    target = input:type(ctype)
+    input = makeNonContiguous(input:type(ctype))
+    target = makeNonContiguous(input:type(ctype))
     local crit = nn.MarginCriterion():type(ctype)
     local groundtruth= crit:forward(input, target)
 
-    input = input:type(typename)
-    target = target:type(typename)
+    input = makeNonContiguous(input:type(typename))
+    target = makeNonContiguous(target:type(typename))
     local g_crit = nn.MarginCriterion():type(typename)
     local rescuda = g_crit:forward(input, target)
     local errorVal = rescuda - groundtruth
@@ -3160,19 +3183,19 @@ function cunntest.MultiLabelMarginCriterion_forward()
   local size = math.random(1,100)
 
   for k, typename in ipairs(typenames) do
-     local input = ((torch.rand(size)-0.5) * 2):type(typename) -- data spread from -1 to 1
-     local target = torch.round(torch.rand(size)*(size-1)):add(1) -- generate random labels > 0
+     local input = ((torch.rand(size)-0.5) * 2):type(typename)-- data spread from -1 to 1
+     local target = makeNonContiguous(torch.round(torch.rand(size)*(size-1)):add(1)) -- generate random labels > 0
      local zero = math.random(0,size) -- turn some labels into 0 targets
      if zero > 0 then
         target:sub(size-zero+1,size):zero()
      end
 
      local ctype = t2cpu[typename]
-     input = input:type(ctype)
+     input = makeNonContiguous(input:type(ctype))
      local crit = nn.MultiLabelMarginCriterion():type(ctype)
      local groundtruth= crit:forward(input, target)
-     input = input:type(typename)
-     target = target:type(typename)
+     input = makeNonContiguous(input:type(typename))
+     target = makeNonContiguous(target:type(typename))
      local g_crit = nn.MultiLabelMarginCriterion():type(typename)
      local rescuda = g_crit:forward(input, target)
      local errorVal = rescuda - groundtruth
@@ -3193,13 +3216,13 @@ function cunntest.MultiLabelMarginCriterion_backward()
       end
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local crit = nn.MultiLabelMarginCriterion():type(ctype)
       local pred = crit:forward(input, target)
       local groundgrad = crit:backward(input, target)
 
-      input = input:type(typename)
-      target = target:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      target = makeNonContiguous(target:type(typename))
       local g_crit = nn.MultiLabelMarginCriterion():type(typename)
       g_crit:forward(input, target)
       local rescuda = g_crit:backward(input, target)
@@ -3224,11 +3247,11 @@ function cunntest.SpatialCrossMapLRN_forward_batch()
       local input = torch.rand(bs, nbfeatures, inputSize, inputSize):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(typename)
       local rescuda = gconv:forward(input)
 
@@ -3252,15 +3275,15 @@ function cunntest.SpatialCrossMapLRN_backward_batch()
       local gradOutput = torch.rand(input:size()):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local gconv = nn.SpatialCrossMapLRN(size, alpha, beta, k):type(ctype)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -3281,14 +3304,14 @@ function cunntest.MarginCriterion_backward()
       local target = ((torch.round(torch.rand(size))*2)-1):type(typename) -- generate random labels -1, 1
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      target = target:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      target = makeNonContiguous(target:type(ctype))
       local crit = nn.MarginCriterion():type(ctype)
       crit:forward(input, target)
       local groundgrad = crit:backward(input, target)
 
-      input = input:type(typename)
-      target = target:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      target = makeNonContiguous(target:type(typename))
       local g_crit = nn.MarginCriterion():type(typename)
       g_crit:forward(input, target)
       local rescuda = g_crit:backward(input, target)
@@ -3308,14 +3331,14 @@ function cunntest.BCECriterion_backward()
       local target = torch.Tensor(size):uniform():gt(0.5):type(torch.type(input))
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      target = target:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      target = makeNonContiguous(target:type(ctype))
       local crit = nn.BCECriterion():type(ctype)
       crit:forward(input, target)
       local groundgrad = crit:backward(input, target)
 
-      input = input:type(typename)
-      target = target:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      target = makeNonContiguous(target:type(typename))
       local g_crit = nn.BCECriterion():type(typename)
       g_crit:forward(input, target)
       local rescuda = g_crit:backward(input, target)
@@ -3336,16 +3359,16 @@ function cunntest.BCECriterionWeights_backward()
      local weights = torch.Tensor(size):uniform():type(typename)
 
      local ctype = t2cpu[typename]
-     input = input:type(ctype)
-     target = target:type(ctype)
-     weights = weights:type(ctype)
+     input = makeNonContiguous(input:type(ctype))
+     target = makeNonContiguous(target:type(ctype))
+     weights = makeNonContiguous(weights:type(ctype))
      local crit = nn.BCECriterion(weights):type(ctype)
      crit:forward(input, target)
      local groundgrad = crit:backward(input, target)
 
-     input = input:type(typename)
-     target = target:type(typename)
-     weights = weights:type(typename)
+     input = makeNonContiguous(input:type(typename))
+     target = makeNonContiguous(target:type(typename))
+     weights = makeNonContiguous(weights:type(typename))
      local g_crit = nn.BCECriterion(weights):type(typename)
      g_crit:forward(input, target)
      local rescuda = g_crit:backward(input, target)
@@ -3365,15 +3388,15 @@ function cunntest.mse()
          local target = torch.randn(size):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
-         target = target:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
+         target = makeNonContiguous(target:type(ctype))
          local mod = nn.MSECriterion(sizeAverage == 1):type(ctype)
 
          local fout = mod:forward(input,target)
          local fgin = mod:backward(input,target):clone()
 
-         local cinput = input:type(typename)
-         local ctarget = target:type(typename)
+         local cinput = makeNonContiguous(input:type(typename))
+         local ctarget = makeNonContiguous(target:type(typename))
          local cmod = nn.MSECriterion(sizeAverage == 1):type(typename)
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
@@ -3399,15 +3422,15 @@ function cunntest.SmoothL1()
          local target = torch.randn(size):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
-         target = target:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
+         target = makeNonContiguous(target:type(ctype))
          local mod = nn.SmoothL1Criterion(sizeAverage == 1):type(ctype)
 
          local fout = mod:forward(input,target)
          local fgin = mod:backward(input,target):clone()
 
-         local cinput = input:type(typename)
-         local ctarget = target:type(typename)
+         local cinput = makeNonContiguous(input:type(typename))
+         local ctarget = makeNonContiguous(target:type(typename))
          local cmod = nn.SmoothL1Criterion(sizeAverage == 1):type(typename)
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
@@ -3431,15 +3454,15 @@ function cunntest.SoftMarginCriterion()
          local target = torch.randn(size):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
-         target = target:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
+         target = makeNonContiguous(target:type(ctype))
          local mod = nn.SoftMarginCriterion(sizeAverage == 1):type(ctype)
 
          local fout = mod:forward(input,target)
          local fgin = mod:backward(input,target):clone()
 
-         local cinput = input:type(typename)
-         local ctarget = target:type(typename)
+         local cinput = makeNonContiguous(input:type(typename))
+         local ctarget = makeNonContiguous(target:type(typename))
          local cmod = nn.SoftMarginCriterion(sizeAverage == 1):type(typename)
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
@@ -3462,15 +3485,15 @@ function cunntest.distkldiv()
          local target = torch.randn(size):type(typename)
 
          local ctype = t2cpu[typename]
-         input = input:type(ctype)
-         target = target:type(ctype)
+         input = makeNonContiguous(input:type(ctype))
+         target = makeNonContiguous(target:type(ctype))
          local mod = nn.DistKLDivCriterion(sizeAverage == 1):type(ctype)
 
          local fout = mod:forward(input,target)
          local fgin = mod:backward(input,target):clone()
 
-         local cinput = input:type(typename)
-         local ctarget = target:type(typename)
+         local cinput = makeNonContiguous(input:type(typename))
+         local ctarget = makeNonContiguous(target:type(typename))
          local cmod = nn.DistKLDivCriterion(sizeAverage == 1):type(typename)
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
@@ -3496,11 +3519,11 @@ function cunntest.TemporalConvolution_forward()
       local input = torch.randn(ini,from):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -3525,11 +3548,11 @@ function cunntest.TemporalConvolution_forward_batch()
       local input = torch.randn(bs,ini,from):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -3554,8 +3577,8 @@ function cunntest.TemporalConvolution_backward()
       local gradOutput = torch.randn(outi,to):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -3563,8 +3586,8 @@ function cunntest.TemporalConvolution_backward()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -3603,8 +3626,8 @@ function cunntest.TemporalConvolution_backward_batch()
       local gradOutput = torch.randn(bs,outi,to):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.TemporalConvolution(from,to,ki,si):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -3612,8 +3635,8 @@ function cunntest.TemporalConvolution_backward_batch()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.TemporalConvolution(from,to,ki,si):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -3640,7 +3663,7 @@ end
 
 function cunntest.Dropout()
    local p = 0.2 --prob of droping out a neuron
-   local input = torch.CudaTensor(1000):fill((1-p))
+   local input = makeNonContiguous(torch.CudaTensor(1000):fill((1-p)))
    local module = nn.Dropout(p)
    module:cuda()
    -- version 2
@@ -3649,7 +3672,7 @@ function cunntest.Dropout()
    local gradInput = module:backward(input, input)
    mytester:assert(math.abs(gradInput:mean() - (1-p)) < 0.05, 'dropout gradInput')
    -- version 1 (old nnx version)
-   local input = input:fill(1)
+   local input = makeNonContiguous(input:fill(1))
    local module = nn.Dropout(p,true)
    module:cuda()
    local output = module:forward(input)
@@ -3665,7 +3688,7 @@ function cunntest.Dropout_forward()
    local title = string.format('Dropout forward %d -> %d', size, size)
    times[title] = tm
 
-   local input = torch.randn(size)
+   local input = makeNonContiguous(torch.randn(size))
    local sconv = nn.Dropout()
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -3674,7 +3697,7 @@ function cunntest.Dropout_forward()
    end
    tm.cpu = a:time().real
 
-   input = input:cuda()
+   input = makeNonContiguous(input:cuda())
    local gconv = nn.Dropout():cuda()
    local rescuda = gconv:forward(input)
    a:reset()
@@ -3692,11 +3715,11 @@ function cunntest.SoftPlus_forward()
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SoftPlus():type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.SoftPlus():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -3713,14 +3736,14 @@ function cunntest.SoftPlus_backward()
       local input = torch.randn(size):type(typename)
       local gradOutput = torch.randn(size):type(typename)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SoftPlus():type(ctype)
       sconv:forward(input)
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       local rescuda = gconv:backward(input, gradOutput)
@@ -3741,11 +3764,11 @@ function cunntest.SpatialUpSamplingNearest_forward()
       local input = torch.randn(f, h, w):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialUpSamplingNearest(scale):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = sconv:clone():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -3766,11 +3789,11 @@ function cunntest.SpatialUpSamplingNearest_forward_batch()
       local input = torch.randn(nbatch, f, h, w):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialUpSamplingNearest(scale):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = sconv:clone():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -3791,15 +3814,15 @@ function cunntest.SpatialUpSamplingNearest_backward()
       local gradOutput = torch.randn(f, h*scale, w*scale):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialUpSamplingNearest(scale):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -3824,15 +3847,15 @@ function cunntest.SpatialUpSamplingNearest_backward_batch()
       local gradOutput = torch.randn(nbatch, f, h*scale, w*scale):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialUpSamplingNearest(scale):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -3855,11 +3878,11 @@ function cunntest.SpatialUpSamplingBilinear_forward()
       local input = torch.randn(f, h, w):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialUpSamplingBilinear(scale):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = sconv:clone():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -3880,11 +3903,11 @@ function cunntest.SpatialUpSamplingBilinear_forward_batch()
       local input = torch.randn(nbatch, f, h, w):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.SpatialUpSamplingBilinear(scale):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = sconv:clone():type(typename)
       local rescuda = gconv:forward(input)
 
@@ -3905,15 +3928,15 @@ function cunntest.SpatialUpSamplingBilinear_backward()
       local gradOutput = torch.randn(f, h*scale, w*scale):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialUpSamplingBilinear(scale):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -3938,15 +3961,15 @@ function cunntest.SpatialUpSamplingBilinear_backward_batch()
       local gradOutput = torch.randn(nbatch, f, h*scale, w*scale):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.SpatialUpSamplingBilinear(scale):type(ctype)
       local output = sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = sconv:clone():type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
@@ -3966,13 +3989,13 @@ function cunntest.l1cost()
      local input = torch.randn(size):type(typename)
 
      local ctype = t2cpu[typename]
-     input = input:type(ctype)
+     input = makeNonContiguous(input:type(ctype))
      local mod = nn.L1Cost():type(ctype)
 
      local fout = mod:forward(input)
      local fgin = mod:backward(input):clone()
 
-     local cinput = input:type(typename)
+     local cinput = makeNonContiguous(input:type(typename))
      local cmod = nn.L1Cost():type(typename)
      local cout = cmod:forward(cinput)
      local cgin = cmod:backward(cinput)
@@ -3997,14 +4020,14 @@ function cunntest.ClassNLLCriterionSingleTarget()
       local target = 1
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local mod = nn.ClassNLLCriterion():type(ctype)
 
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
 
-      local cinput = input:type(typename)
-      local ctarget = torch.CudaTensor(1):fill(target)
+      local cinput = makeNonContiguous(input:type(typename))
+      local ctarget = makeNonContiguous(torch.CudaTensor(1):fill(target))
       local cmod = nn.ClassNLLCriterion():type(typename)
       local cout = cmod:forward(cinput,ctarget)
       local cgin = cmod:backward(cinput,ctarget)
@@ -4027,16 +4050,16 @@ function cunntest.ClassNLLCriterionSingleTargetWeights()
       local weights = torch.rand(size):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      weights = weights:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      weights = makeNonContiguous(weights:type(ctype))
       local mod = nn.ClassNLLCriterion(weights):type(ctype)
 
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
 
-      local cinput = input:type(typename)
-      local cweights = weights:type(typename)
-      local ctarget = torch.CudaTensor(1):fill(target)
+      local cinput = makeNonContiguous(input:type(typename))
+      local cweights = makeNonContiguous(weights:type(typename))
+      local ctarget = makeNonContiguous(torch.CudaTensor(1):fill(target))
       local cmod = nn.ClassNLLCriterion(cweights):type(typename)
       local cout = cmod:forward(cinput,ctarget)
       local cgin = cmod:backward(cinput,ctarget)
@@ -4055,17 +4078,17 @@ function cunntest.ClassNLLCriterionMultipleTarget()
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size, size):type(typename)
-      local target = torch.randperm(size)
+      local target = makeNonContiguous(torch.randperm(size))
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local mod = nn.ClassNLLCriterion():type(ctype)
 
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
 
-      local cinput = input:type(typename)
-      local ctarget = target:cuda()
+      local cinput = makeNonContiguous(input:type(typename))
+      local ctarget = makeNonContiguous(target:cuda())
 
       local cmod = nn.ClassNLLCriterion():type(typename)
       local cout = cmod:forward(cinput,ctarget)
@@ -4089,16 +4112,16 @@ function cunntest.SpatialClassNLLCriterion()
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(batchSize, classes, h, w):type(typename)
-      local target = torch.Tensor(batchSize, h, w)
+      local target = makeNonContiguous(torch.Tensor(batchSize, h, w))
       target:apply(function() return math.random(1, classes) end)
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local mod = nn.SpatialClassNLLCriterion():type(ctype)
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
 
-      local cinput = input:type(typename)
-      local ctarget = target:type(typename)
+      local cinput = makeNonContiguous(input:type(typename))
+      local ctarget = makeNonContiguous(target:type(typename))
 
       local cmod = nn.SpatialClassNLLCriterion():type(typename)
       local cout = cmod:forward(cinput,ctarget)
@@ -4120,20 +4143,20 @@ function cunntest.ClassNLLCriterionMultipleTargetWeights()
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size, size):type(typename)
-      local target = torch.randperm(size)
+      local target = makeNonContiguous(torch.randperm(size))
       local weights = torch.rand(size):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      weights = weights:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      weights = makeNonContiguous(weights:type(ctype))
       local mod = nn.ClassNLLCriterion(weights):type(ctype)
 
       local fout = mod:forward(input, target)
       local fgin = mod:backward(input, target):clone()
 
-      local cinput = input:type(typename)
-      local ctarget = target:cuda()
-      local cweights = weights:type(typename)
+      local cinput = makeNonContiguous(input:type(typename))
+      local ctarget = makeNonContiguous(target:cuda())
+      local cweights = makeNonContiguous(weights:type(typename))
 
       local cmod = nn.ClassNLLCriterion(cweights):type(typename)
       local cout = cmod:forward(cinput,ctarget)
@@ -4157,15 +4180,15 @@ function cunntest.TemporalMaxPooling()
         local input = torch.rand(16, 18, 3):type(typename)
 
         local ctype = t2cpu[typename]
-        input = input:type(ctype)
+        input = makeNonContiguous(input:type(ctype))
         local mod = nn.TemporalMaxPooling(setting[1], setting[2]):type(ctype)
 
         local fout = mod:forward(input)
-        local fgout = torch.rand(fout:size()):type(typename):type(ctype)
+        local fgout = makeNonContiguous(torch.rand(fout:size()):type(typename):type(ctype))
         local fgin = mod:backward(input, fgout):clone()
 
-        local cinput = input:type(typename)
-        local cgout = fgout:type(typename)
+        local cinput = makeNonContiguous(input:type(typename))
+        local cgout = makeNonContiguous(fgout:type(typename))
         local cmod = nn.TemporalMaxPooling(setting[1], setting[2]):type(typename)
         local cout = cmod:forward(cinput)
         local cgin = cmod:backward(cinput, cgout)
@@ -4201,11 +4224,11 @@ function cunntest.VolumetricConvolution_forward_single()
       local input = torch.randn(from,ini,inj,ink):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -4240,11 +4263,11 @@ function cunntest.VolumetricConvolution_forward_batch()
       local input = torch.randn(bs,from,ini,inj, ink):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sj,sk):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sj,sk):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -4279,8 +4302,8 @@ function cunntest.VolumetricConvolution_backward_single()
       local gradOutput = torch.randn(to, outi, outj, outk):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -4288,8 +4311,8 @@ function cunntest.VolumetricConvolution_backward_single()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -4336,8 +4359,8 @@ function cunntest.VolumetricConvolution_backward_batch()
       local gradOutput = torch.randn(bs, to, outi, outj, outk):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):type(ctype)
       sconv:forward(input)
       sconv:zeroGradParameters()
@@ -4345,8 +4368,8 @@ function cunntest.VolumetricConvolution_backward_batch()
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.VolumetricConvolution(from,to,ki,kk,kj,si,sk,sj):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -4393,11 +4416,11 @@ function cunntest.VolumetricMaxPooling_forward()
       local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):type(ctype)
       local output = layer:forward(input)
 
-      local inputCUDA = input:type(typename)
+      local inputCUDA = makeNonContiguous(input:type(typename))
       local layerCUDA = layer:clone():type(typename)
       local outputCUDA = layerCUDA:forward(inputCUDA)
 
@@ -4429,17 +4452,17 @@ function cunntest.VolumetricMaxPooling_backward()
       local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local layer = nn.VolumetricMaxPooling(kT, kW, kH, dT, dW, dH, padT, padW, padH):type(ctype)
       local output = layer:forward(input)
-      local gradOutput = output:clone():uniform(-1, 1)
+      local gradOutput = makeNonContiguous(output:clone():uniform(-1, 1))
 
       local gradInput = layer:backward(input, gradOutput)
 
-      local inputCUDA = input:type(typename)
+      local inputCUDA = makeNonContiguous(input:type(typename))
       local layerCUDA = layer:clone():type(typename)
       local outputCUDA = layerCUDA:forward(inputCUDA)
-      local gradOutputCUDA = gradOutput:type(typename)
+      local gradOutputCUDA = makeNonContiguous(gradOutput:type(typename))
       local gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
 
       local error = gradInputCUDA:double() - gradInput:double()
@@ -4476,12 +4499,12 @@ function cunntest.VolumetricDilatedMaxPooling_forward_batch()
       local input = torch.randn(bs,from,int,inj,ini):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(typename)
       if ceil_mode then gconv:ceil() end
       local rescuda = gconv:forward(input)
@@ -4521,16 +4544,16 @@ function cunntest.VolumetricDilatedMaxPooling_backward_batch()
       local gradOutput = torch.randn(bs,to,outt,outj,outi):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local sconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(ctype)
       if ceil_mode then sconv:ceil() end
       sconv:forward(input)
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.VolumetricDilatedMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj,dilationt,dilationi,dilationj):type(typename)
       if ceil_mode then gconv:ceil() end
       gconv:forward(input)
@@ -4568,15 +4591,15 @@ function cunntest.VolumetricMaxUnpooling_forward_batch()
       local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(ctype)
       local sunpool = nn.VolumetricMaxUnpooling(pooler):type(ctype)
 
-      local original = torch.randn(bs,from,it,ij,ii):type(typename):type(ctype)
-      local input = pooler:forward(original)
+      local original = makeNonContiguous(torch.randn(bs,from,it,ij,ii):type(typename):type(ctype))
+      local input = makeNonContiguous(pooler:forward(original))
       local groundtruth = sunpool:forward(input)
 
-      original = original:type(typename)
+      original = makeNonContiguous(original:type(typename))
       pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(typename)
       local gunpool = nn.VolumetricMaxUnpooling(pooler):type(typename)
 
-      input = pooler:forward(original)
+      input = makeNonContiguous(pooler:forward(original))
       local rescuda = gunpool:forward(input)
 
       local error = rescuda:double() - groundtruth:double()
@@ -4609,9 +4632,9 @@ function cunntest.VolumetricMaxUnpooling_backward_batch()
       local pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(ctype)
       local sunpool = nn.VolumetricMaxUnpooling(pooler):type(ctype)
 
-      local original = torch.randn(bs,from,it,ij,ii):type(typename):type(ctype)
-      local input = pooler:forward(original)
-      local gradOutput = torch.randn(original:size()):type(typename):type(ctype)
+      local original = makeNonContiguous(torch.randn(bs,from,it,ij,ii):type(typename):type(ctype))
+      local input = makeNonContiguous(pooler:forward(original))
+      local gradOutput = makeNonContiguous(torch.randn(original:size()):type(typename):type(ctype))
       sunpool:forward(input)
       sunpool:zeroGradParameters()
       local groundgrad = sunpool:backward(input, gradOutput)
@@ -4619,11 +4642,11 @@ function cunntest.VolumetricMaxUnpooling_backward_batch()
       pooler = nn.VolumetricMaxPooling(kt,ki,kj,st,si,sj,padt,padi,padj):type(typename)
       local gunpool = nn.VolumetricMaxUnpooling(pooler):type(typename)
 
-      original = original:type(typename)
-      input = pooler:forward(original)
+      original = makeNonContiguous(original:type(typename))
+      input = makeNonContiguous(pooler:forward(original))
       gunpool:forward(input)
 
-      gradOutput = gradOutput:type(typename)
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       gunpool:zeroGradParameters()
       local rescuda = gunpool:backward(input, gradOutput)
 
@@ -4653,11 +4676,11 @@ function cunntest.VolumetricAveragePooling_forward()
       local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local layer = nn.VolumetricAveragePooling(kT, kW, kH, dT, dW, dH):type(ctype)
       local output = layer:forward(input)
 
-      local inputCUDA = input:type(typename)
+      local inputCUDA = makeNonContiguous(input:type(typename))
       local layerCUDA = layer:clone():type(typename)
       local outputCUDA = layerCUDA:forward(inputCUDA)
 
@@ -4686,15 +4709,15 @@ function cunntest.VolumetricAveragePooling_backward()
       local input = torch.Tensor(iF, iT, iH, iW):float():uniform(-1, 1):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local layer = nn.VolumetricAveragePooling(kT, kW, kH, dT, dW, dH):type(ctype)
       local output = layer:forward(input)
-      local gradOutput = output:clone():uniform(-1, 1)
+      local gradOutput = makeNonContiguous(output:clone():uniform(-1, 1))
 
       local gradInput = layer:backward(input, gradOutput)
 
-      local inputCUDA = input:type(typename)  local layerCUDA = layer:clone():type(typename)
-      local outputCUDA = layerCUDA:forward(inputCUDA)   local gradOutputCUDA = gradOutput:type(typename)
+      local inputCUDA = makeNonContiguous(input:type(typename))  local layerCUDA = layer:clone():type(typename)
+      local outputCUDA = layerCUDA:forward(inputCUDA)   local gradOutputCUDA = makeNonContiguous(gradOutput:type(typename))
       local gradInputCUDA = layerCUDA:backward(inputCUDA, gradOutputCUDA)
 
       local error = gradInputCUDA:double() - gradInput:double()
@@ -4713,7 +4736,7 @@ function cunntest.CMul_forward_batch()
    local title = string.format('CMul forward %d %d %d %d', bs, nini, ninj, nink)
    times[title] = tm
 
-   local input = torch.randn(bs, nini, ninj, nink)
+   local input = makeNonContiguous(torch.randn(bs, nini, ninj, nink))
    local sconv = nn.CMul(nini, ninj, nink)
    local groundtruth = sconv:forward(input)
    local a = torch.Timer()
@@ -4722,7 +4745,7 @@ function cunntest.CMul_forward_batch()
    end
    tm.cpu = a:time().real
 
-   input = input:cuda()
+   input = makeNonContiguous(input:cuda())
    local gconv = sconv:clone():cuda()
    local rescuda = gconv:forward(input)
    a:reset()
@@ -4746,8 +4769,8 @@ function cunntest.CMul_backward_batch()
    local title = string.format('CMul backward %d %d %d %d', bs, nini, ninj, nink)
    times[title] = tm
 
-   local input = torch.randn(bs, nini, ninj, nink)
-   local gradOutput = torch.randn(bs, nini, ninj, nink)
+   local input = makeNonContiguous(torch.randn(bs, nini, ninj, nink))
+   local gradOutput = makeNonContiguous(torch.randn(bs, nini, ninj, nink))
    local sconv = nn.CMul(nini, ninj, nink)
    sconv:forward(input)
    sconv:zeroGradParameters()
@@ -4760,8 +4783,8 @@ function cunntest.CMul_backward_batch()
    local groundweight = sconv.gradWeight
    tm.cpu = a:time().real
 
-   input = input:cuda()
-   gradOutput = gradOutput:cuda()
+   input = makeNonContiguous(input:cuda())
+   gradOutput = makeNonContiguous(gradOutput:cuda())
    local gconv = sconv:clone():cuda()
    gconv:forward(input)
    gconv:zeroGradParameters()
@@ -4787,15 +4810,16 @@ function cunntest.PReLU_forward()
     local nOutputPlane = 8
     local w = math.random(1,100)
     local h = math.random(1,100)
-    local input = torch.randn(nOutputPlane,h,w)
 
     for k, typename in ipairs(typenames) do
+      local input = torch.randn(nOutputPlane,h,w):type(typename)
+
       local ctype = t2cpu[typename]
-      local input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.PReLU(nOutputPlane):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gconv = sconv:type(typename)
       local rescuda = gconv:forward(input)
 
@@ -4814,8 +4838,8 @@ function cunntest.PReLU_backward()
         local input = torch.randn(nOutputPlane, h, w):type(typename)
         local gradOutput = torch.randn(#input):type(typename)
         local ctype = t2cpu[typename]
-        input = input:type(ctype)
-        gradOutput = gradOutput:type(ctype)
+        input = makeNonContiguous(input:type(ctype))
+        gradOutput = makeNonContiguous(gradOutput:type(ctype))
         local sconv = nn.PReLU(nOutputPlane):type(ctype)
         local gconv = sconv:clone():type(typename)
 
@@ -4823,8 +4847,8 @@ function cunntest.PReLU_backward()
         sconv:zeroGradParameters()
         local groundgrad = sconv:backward(input, gradOutput)
 
-        input = input:type(typename)
-        gradOutput = gradOutput:type(typename)
+        input = makeNonContiguous(input:type(typename))
+        gradOutput = makeNonContiguous(gradOutput:type(typename))
         gconv:forward(input)
         gconv:zeroGradParameters()
         local rescuda = gconv:backward(input, gradOutput)
@@ -4850,14 +4874,14 @@ function cunntest.RReLU_forward()
           for _,inplace in ipairs({false,true}) do
               local input = torch.randn(nOutputPlane, h, w):type(typename) - 0.5
               local ctype = t2cpu[typename]
-              input = input:type(ctype)
+              input = makeNonContiguous(input:type(ctype))
               local sconv = nn.RReLU(1/8, 1/3, inplace):type(ctype)
               if not train then
                   sconv:evaluate()
               end
               local groundtruth = sconv:forward(input:clone())
 
-              input = input:type(typename)
+              input = makeNonContiguous(input:type(typename))
               local gconv = sconv:type(typename)
               local rescuda = gconv:forward(input:clone())
 
@@ -4882,8 +4906,8 @@ function cunntest.RReLU_backward()
                 local ctype = t2cpu[typename]
                 local input = torch.randn(nOutputPlane, h, w):type(typename)
                 local gradOutput = torch.randn(#input):type(typename) - 0.5
-                input = input:type(ctype)
-                gradOutput = gradOutput:type(ctype)
+                input = makeNonContiguous(input:type(ctype))
+                gradOutput = makeNonContiguous(gradOutput:type(ctype))
                 local sconv = nn.RReLU(1/8, 1/3, inplace):type(ctype)
                 if not train then
                   sconv:evaluate()
@@ -4893,8 +4917,8 @@ function cunntest.RReLU_backward()
                 local groundgrad = sconv:backward(input, gradOutput:clone())
 
                 local gconv = sconv:clone():type(typename)
-                input = input:type(typename)
-                gradOutput = gradOutput:type(typename)
+                input = makeNonContiguous(input:type(typename))
+                gradOutput = makeNonContiguous(gradOutput:type(typename))
                 gconv:forward(input:clone())
                 local rescuda = gconv:backward(input, gradOutput:clone())
 
@@ -4904,7 +4928,7 @@ function cunntest.RReLU_backward()
                     string.format('error on state', typename))
                 end
 
-                input = -torch.rand(1000):type(typename)
+                input = makeNonContiguous(-torch.rand(1000):type(typename))
                 gconv:forward(input) -- fill internal noise tensor
                 local g = gconv:backward(input, torch.ones(1000):type(typename))
                 local err = math.abs(g[input:le(0)]:mean()-(gconv.lower+gconv.upper)/2)
@@ -4945,14 +4969,14 @@ function cunntest.VolumetricFullConvolution_pair_test()
       local outD = (inD - 1) * dT - 2 * pT + kT
       local outH = (inH - 1) * dH - 2 * pH + kH
       local outW = (inW - 1) * dW - 2 * pW + kW
-      local input = torch.Tensor(bs, inChan, inD, inH, inW):fill(1):type(typename):type(ctype)
-      local gradOut = torch.randn(bs, outChan, outD, outH, outW):type(typename):type(ctype)
+      local input = makeNonContiguous(torch.Tensor(bs, inChan, inD, inH, inW):fill(1):type(typename):type(ctype))
+      local gradOut = makeNonContiguous(torch.randn(bs, outChan, outD, outH, outW):type(typename):type(ctype))
 
       local outcpu = module:forward(input)
       local gradcpu = module:backward(input, gradOut)
       module:type(typename)
-      local outgpu = module:forward(input:type(typename))
-      local gradgpu = module:backward(input:type(typename), gradOut:type(typename))
+      local outgpu = module:forward(makeNonContiguous(input:type(typename)))
+      local gradgpu = module:backward(makeNonContiguous(input:type(typename)), makeNonContiguous(gradOut:type(typename)))
 
       local error = outgpu:type(typename) - outcpu:type(typename)
       mytester:assertlt(error:abs():max(),
@@ -4974,7 +4998,7 @@ function cunntest.VolumetricFullConvolution()
         module.bias:fill(0.1);
         module:type(typename);
 
-        local input = torch.Tensor(1, 3, 2, 2, 2):zero();
+        local input = makeNonContiguous(torch.Tensor(1, 3, 2, 2, 2):zero());
         for c = 1,3 do
             input[1][c][1][1][1] = 1
         end
@@ -4994,8 +5018,8 @@ function cunntest.VolumetricFullConvolution()
         end
 
         module:zeroGradParameters()
-        local gradOut = torch.Tensor(1, 1, 6, 6, 6):fill(0.1);
-        local gradIn = module:backward(input:type(typename), gradOut:type(typename))
+        local gradOut = makeNonContiguous(torch.Tensor(1, 1, 6, 6, 6):fill(0.1));
+        local gradIn = module:backward(makeNonContiguous(input:type(typename)), makeNonContiguous(gradOut:type(typename)))
         for t = 1,2 do
             for h = 1,2 do
                 for w = 1,2 do
@@ -5038,25 +5062,26 @@ function cunntest.VolumetricDilatedConvolution()
    local dilationW = math.random(1,10)
    local dilationH = math.random(1,10)
    local dilationT = math.random(1,10)
-   local ini = (outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1
-   local inj = (outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1
-   local ink = (outk - 1) * sk - 2 * padT + dilationT * (kk-1) + 1
+   local ini = math.max((outi - 1) * si - 2 * padW + dilationW * (ki-1) + 1, ki)
+   local inj = math.max((outj - 1) * sj - 2 * padH + dilationH * (kj-1) + 1, kj)
+   local ink = math.max((outk - 1) * sk - 2 * padT + dilationT * (kk-1) + 1, kk)
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(from,ink,inj,ini):type(typename)
+      input = makeNonContiguous(input)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local sconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH):type(ctype)
       local output = sconv:forward(input)
-      local gradOutput = output:clone():normal()
+      local gradOutput = makeNonContiguous(output:clone():normal())
       sconv:zeroGradParameters()
       local groundgrad = sconv:backward(input, gradOutput)
       local groundweight = sconv.gradWeight
       local groundbias = sconv.gradBias
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.VolumetricDilatedConvolution(from,to,kk,ki,kj,sk,si,sj,padT,padW,padH,dilationT,dilationW,dilationH):type(typename)
       gconv.weight = sconv.weight:type(typename)
       gconv.bias = sconv.bias:type(typename)
@@ -5090,13 +5115,13 @@ function cunntest.LookupTable_forward()
    local nInput = 1000
 
    for k, typename in ipairs(typenames) do
-      local input = torch.LongTensor(nInput):random(nVocab)
+      local input = makeNonContiguous(torch.LongTensor(nInput):random(nVocab))
 
       local ctype = t2cpu[typename]
       local sconv = nn.LookupTable(nVocab, nDim):type(ctype)
       local groundtruth = sconv:forward(input)
 
-      input = input:cuda()
+      input = makeNonContiguous(input:cuda())
       local gconv = sconv:type(typename)
       local rescuda = gconv:forward(input)
 
@@ -5127,11 +5152,11 @@ function cunntest.LookupTable_backward()
           local ctype = t2cpu[typename]
           local input, gradOutput
           if s.batch then
-              input = torch.LongTensor(s.nInput, 5):random(s.nVocab)
-              gradOutput = torch.randn(s.nInput, 5, s.nDim):type(typename):type(ctype)
+              input = makeNonContiguous(torch.LongTensor(s.nInput, 5):random(s.nVocab))
+              gradOutput = makeNonContiguous(torch.randn(s.nInput, 5, s.nDim):type(typename):type(ctype))
           else
-              input = torch.LongTensor(s.nInput):random(s.nVocab)
-              gradOutput = torch.randn(s.nInput, s.nDim):type(typename):type(ctype)
+              input = makeNonContiguous(torch.LongTensor(s.nInput):random(s.nVocab))
+              gradOutput = makeNonContiguous(torch.randn(s.nInput, s.nDim):type(typename):type(ctype))
           end
 
           local sconv = nn.LookupTable(s.nVocab, s.nDim, s.paddingValue):type(ctype)
@@ -5144,8 +5169,8 @@ function cunntest.LookupTable_backward()
           sconv:forward(input)
           sconv:backward(input, gradOutput)
 
-          input = input:cuda()
-          gradOutput = gradOutput:type(typename)
+          input = makeNonContiguous(input:cuda())
+          gradOutput = makeNonContiguous(gradOutput:type(typename))
           gconv:forward(input)
           gconv:backward(input, gradOutput)
 
@@ -5167,18 +5192,18 @@ function cunntest.LookupTable_backward()
    local nInput = 1000
 
    for k, typename in ipairs(typenames) do
-      local input = torch.LongTensor(nInput):random(nVocab)
+      local input = makeNonContiguous(torch.LongTensor(nInput):random(nVocab))
 
       local ctype = t2cpu[typename]
-      local gradOutput = torch.randn(nInput, nDim):type(ctype)
+      local gradOutput = makeNonContiguous(torch.randn(nInput, nDim):type(ctype))
       local sconv = nn.LookupTable(nVocab, nDim):type(ctype)
       local gconv = sconv:clone():type(typename)
 
       sconv:forward(input)
       sconv:backward(input, gradOutput)
 
-      input = input:cuda()
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:cuda())
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       gconv:forward(input)
       gconv:backward(input, gradOutput)
 
@@ -5217,11 +5242,11 @@ function cunntest.SpatialReflectionPadding_forward()
       local input = torch.rand(batch, plane, sizeY, sizeX):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local module = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(ctype)
       local groundtruth = module:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gmodule = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(typename)
       local rescuda = gmodule:forward(input)
 
@@ -5249,15 +5274,15 @@ function cunntest.SpatialReflectionPadding_backward()
        ):type(typename)
 
        local ctype = t2cpu[typename]
-       input = input:type(ctype)
-       gradOutput = gradOutput:type(ctype)
+       input = makeNonContiguous(input:type(ctype))
+       gradOutput = makeNonContiguous(gradOutput:type(ctype))
        local module = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(ctype)
        module:forward(input)
        module:zeroGradParameters()
        local groundgrad = module:backward(input, gradOutput)
 
-       input = input:type(typename)
-       gradOutput = gradOutput:type(typename)
+       input = makeNonContiguous(input:type(typename))
+       gradOutput = makeNonContiguous(gradOutput:type(typename))
        local gmodule = nn.SpatialReflectionPadding(padL, padR, padT, padB):type(typename)
        gmodule:forward(input)
        gmodule:zeroGradParameters()
@@ -5284,11 +5309,11 @@ function cunntest.SpatialReplicationPadding_forward()
       local input = torch.rand(batch, plane, sizeY, sizeX):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local module = nn.SpatialReplicationPadding(padL, padR, padT, padB):type(ctype)
       local groundtruth = module:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gmodule = nn.SpatialReplicationPadding(padL, padR, padT, padB):type(typename)
       local rescuda = gmodule:forward(input)
 
@@ -5316,15 +5341,15 @@ function cunntest.SpatialReplicationPadding_backward()
        ):type(typename)
 
        local ctype = t2cpu[typename]
-       input = input:type(ctype)
-       gradOutput = gradOutput:type(ctype)
+       input = makeNonContiguous(input:type(ctype))
+       gradOutput = makeNonContiguous(gradOutput:type(ctype))
        local module = nn.SpatialReplicationPadding(padL, padR, padT, padB):type(ctype)
        module:forward(input)
        module:zeroGradParameters()
        local groundgrad = module:backward(input, gradOutput)
 
-       input = input:type(typename)
-       gradOutput = gradOutput:type(typename)
+       input = makeNonContiguous(input:type(typename))
+       gradOutput = makeNonContiguous(gradOutput:type(typename))
        local gmodule = nn.SpatialReplicationPadding(padL, padR, padT, padB):type(typename)
        gmodule:forward(input)
        gmodule:zeroGradParameters()
@@ -5354,12 +5379,12 @@ function cunntest.VolumetricReplicationPadding_forward()
       local input = torch.rand(batch, plane, sizeZ, sizeY, sizeX):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
       local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
                                                      pfront, pback):type(ctype)
       local groundtruth = module:forward(input)
 
-      input = input:type(typename)
+      input = makeNonContiguous(input:type(typename))
       local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
                                                       pfront, pback):type(typename)
       local rescuda = gmodule:forward(input)
@@ -5392,16 +5417,16 @@ function cunntest.VolumetricReplicationPadding_backward()
       ):type(typename)
 
       local ctype = t2cpu[typename]
-      input = input:type(ctype)
-      gradOutput = gradOutput:type(ctype)
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
       local module = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
                                                      pfront, pback):type(ctype)
       module:forward(input)
       module:zeroGradParameters()
       local groundgrad = module:backward(input, gradOutput)
 
-      input = input:type(typename)
-      gradOutput = gradOutput:type(typename)
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gmodule = nn.VolumetricReplicationPadding(pleft, pright, ptop, pbottom,
                                                       pfront, pback):type(typename)
       gmodule:forward(input)
