@@ -4487,9 +4487,9 @@ function cunntest.VolumetricDilatedMaxPooling_forward_batch()
    local dilationt = math.random(1,10)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
-   local int = (outt-1)*st+(dilationt*(kt-1)+1)-2*padt
-   local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
-   local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
+   local int = math.max((outt-1)*st+(dilationt*(kt-1)+1)-2*padt, kt)
+   local ini = math.max((outi-1)*si+(dilationi*(ki-1)+1)-2*padi, ki)
+   local inj = math.max((outj-1)*sj+(dilationj*(kj-1)+1)-2*padj, kj)
    local ceil_mode = math.random(0,1) == 1
 
    for k, typename in ipairs(typenames) do
@@ -4531,9 +4531,9 @@ function cunntest.VolumetricDilatedMaxPooling_backward_batch()
    local dilationt = math.random(1,10)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
-   local int = (outt-1)*st+(dilationt*(kt-1)+1)-2*padt
-   local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
-   local inj = (outj-1)*sj+(dilationj*(kj-1)+1)-2*padj
+   local int = math.max((outt-1)*st+(dilationt*(kt-1)+1)-2*padt, kt)
+   local ini = math.max((outi-1)*si+(dilationi*(ki-1)+1)-2*padi, ki)
+   local inj = math.max((outj-1)*sj+(dilationj*(kj-1)+1)-2*padj, kj)
    local ceil_mode = math.random(0,1) == 1
 
    for k, typename in ipairs(typenames) do
