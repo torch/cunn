@@ -531,7 +531,7 @@ function DataParallelTable:_getMaxGpu(src)
    end
    assert(torch.isTensor(src), 'input must be a tensor or table of tensors')
    if src:dim() < self.dimension then
-     return 1
+     return #self.gpuAssignments
    end
    return src:size(self.dimension)
 end
