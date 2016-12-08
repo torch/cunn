@@ -5439,6 +5439,25 @@ function cunntest.VolumetricReplicationPadding_backward()
    end
 end
 
+function cunntest.ModuleConversionFunctions()
+   local module = nn.Tanh() -- arbitrary module
+   input = torch.randn(10)
+
+   module:cuda()
+   mytester:assert(module:type() == 'torch.CudaTensor')
+   module:forward(input:type('torch.CudaTensor'))
+
+   module:cudaDouble()
+   mytester:assert(module:type() == 'torch.CudaDoubleTensor')
+   module:forward(input:type('torch.CudaDoubleTensor'))
+
+   if cutorch.hasHalf then
+      module:cudaHalf()
+      mytester:assert(module:type() == 'torch.CudaHalfTensor')
+      module:forward(input:type('torch.CudaHalfTensor'))
+   end
+end
+
 function cunntest.GPU()
    local ndevice = cutorch.getDeviceCount()
    if ndevice < 2 then
