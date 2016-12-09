@@ -155,4 +155,14 @@ THNN.kernels['torch.CudaHalfTensor'] = raw_half_functions
 torch.getmetatable('torch.CudaHalfTensor').THNN = THNN.kernels['torch.CudaHalfTensor']
 end
 
+local function Module__converter(type)
+    return function(self)
+            return self:type(type)
+    end
+end
+
+rawset(torch.getmetatable('nn.Module'), 'cudaDouble', Module__converter('torch.CudaDoubleTensor'))
+if cutorch.hasHalf then
+    rawset(torch.getmetatable('nn.Module'), 'cudaHalf', Module__converter('torch.CudaHalfTensor'))
+end
 return THCUNN
