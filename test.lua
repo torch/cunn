@@ -5441,7 +5441,7 @@ end
 
 function cunntest.ModuleConversionFunctions()
    local module = nn.Tanh() -- arbitrary module
-   input = torch.randn(10)
+   local input = torch.randn(10)
 
    module:cuda()
    mytester:assert(module:type() == 'torch.CudaTensor')
