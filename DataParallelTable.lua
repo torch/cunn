@@ -463,12 +463,14 @@ function DataParallelTable:apply(callback)
 end
 
 local function sliceRange(nElem, idx, splits)
-   local eltsPerMod = nElem / splits
-   local rangeStart = math.ceil((idx - 1) * eltsPerMod) + 1
-   if idx == splits then
-      return rangeStart, nElem - rangeStart + 1
+   local eltsPerMod = math.floor(nElem / splits)
+   local numExtra = nElem - eltsPerMod * splits
+   if idx <= numExtra then
+     rangeStart = (idx - 1) * (eltsPerMod + 1) + 1
+     return rangeStart, eltsPerMod + 1
    else
-      return rangeStart, math.ceil(idx * eltsPerMod) - rangeStart + 1
+     rangeStart = numExtra * (eltsPerMod + 1) + (idx - 1 - numExtra) * eltsPerMod + 1
+     return rangeStart, eltsPerMod
    end
 end
 
