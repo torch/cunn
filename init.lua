@@ -1,3 +1,5 @@
+cunn = nil
+
 require "cutorch"
 require "nn"
 require "cunn.THCUNN"
