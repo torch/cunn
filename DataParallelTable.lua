@@ -47,6 +47,7 @@ function DataParallelTable:__init(dimension, flattenParams, usenccl)
       error "must specify a dimension!"
    end
 
+   self.typeStr = 'torch.CudaTensor'
    self.dimension = dimension
    self.modules = {}
    self.gpuAssignments = {}  -- Which gpuid each module sits on
@@ -101,6 +102,7 @@ end
 
 -- this flattens parameters, so that syncParameters and accGradParameters can be much more efficient
 function DataParallelTable:flattenParameters()
+   local typeStr = self.typeStr
    self.flattenedParams = self.impl:exec(function(module)
       local p, dp = module:parameters()
       local flattened = true
@@ -112,9 +114,9 @@ function DataParallelTable:flattenParameters()
          end
       end
       if flattened then
-         local pp = torch.CudaTensor(p[1]:storage(), p[1]:storageOffset(),
+         local pp = torch[typeStr:match('torch.(%a+)')](p[1]:storage(), p[1]:storageOffset(),
                     p[#p]:storageOffset()+p[#p]:numel()-p[1]:storageOffset())
-         local dpp = torch.CudaTensor(dp[1]:storage(), dp[1]:storageOffset(),
+         local dpp = torch[typeStr:match('torch.(%a+)')](dp[1]:storage(), dp[1]:storageOffset(),
                      dp[#dp]:storageOffset()+dp[#dp]:numel()
                       - dp[1]:storageOffset())
          return {pp, dpp}
@@ -340,10 +342,12 @@ function DataParallelTable:reset(stdv)
 end
 
 function DataParallelTable:type(typeStr)
-   assert(typeStr == 'torch.CudaTensor', 'DataParallelTable supports only torch.CudaTensor type')
+   assert(typeStr == 'torch.CudaHalfTensor' or typeStr == 'torch.CudaTensor' or typeStr == 'torch.CudaDoubleTensor',
+          'DataParallelTable supports only torch.CudaHalfTensor or torch.CudaDoubleTensor or torch.CudaTensor types')
    for i, m in ipairs(self.modules) do
       m:type(typeStr)
    end
+   self.typeStr = typeStr
    return self
 end
 
@@ -503,7 +507,7 @@ function DataParallelTable:_reduce(gradParams)
    local dstGpuid = self.gpuAssignments[1]
    cutorch.setDevice(dstGpuid)
 
-   self.buffer = self.buffer or torch.CudaTensor()
+   self.buffer = self.buffer or torch[self.typeStr:match('torch.(%a+)')]()
    for moduleIdx = 2, #gradParams do
       for paramIdx = 1, #gradParams[moduleIdx] do
          local dst = gradParams[1][paramIdx]
@@ -545,10 +549,18 @@ function DataParallelTable:_distributeTensorRecursive(dst, src, idx, n)
    end
 
    assert(torch.isTensor(src), 'input must be a tensor or table of tensors')
-   assert(src:type() == 'torch.CudaTensor' or src:type() == 'torch.FloatTensor',
-      'input must be a CUDA or Float tensor')
+   if self.typeStr == 'torch.CudaHalfTensor' then
+      assert(false,
+             'Half Tensors not supported yet by DataParallelTable')
+   elseif self.typeStr == 'torch.CudaDoubleTensor' then
+      assert(src:type() == self.typeStr or src:type() == 'torch.DoubleTensor',
+             'input must be a CudaDouble or Double tensor')
+   else
+      assert(src:type() == 'torch.CudaTensor' or src:type() == 'torch.FloatTensor',
+             'input must be a CUDA or Float tensor')
+   end
 
-   dst = torch.type(dst) == 'torch.CudaTensor' and dst or torch.CudaTensor()
+   dst = torch.type(dst) == self.typeStr and dst or torch[self.typeStr:match('torch.(%a+)')]()
 
    local srcsize = src:dim() > 0 and src:size(self.dimension) or 0
    local index, size = sliceRange(srcsize, idx, n)
@@ -590,7 +602,7 @@ function DataParallelTable:_concatTensorRecursive(dst, src)
    assert(torch.isTensor(src[1]), 'input must be a tensor or table of tensors')
 
    cutorch.setDevice(self.gpuAssignments[1])
-   dst = torch.type(dst) == 'torch.CudaTensor' and dst or torch.CudaTensor()
+   dst = torch.type(dst) == self.typeStr and dst or torch[self.typeStr:match('torch.(%a+)')]()
 
    local cumsum = sumSizes(src, self.dimension)
 
