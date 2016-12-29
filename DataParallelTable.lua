@@ -550,8 +550,8 @@ function DataParallelTable:_distributeTensorRecursive(dst, src, idx, n)
 
    assert(torch.isTensor(src), 'input must be a tensor or table of tensors')
    if self.typeStr == 'torch.CudaHalfTensor' then
-      assert(false,
-             'Half Tensors not supported yet by DataParallelTable')
+      assert(src:type() == self.typeStr or src:type() == 'torch.HalfTensor',
+             'input must be a CudaHalf or Half tensor')
    elseif self.typeStr == 'torch.CudaDoubleTensor' then
       assert(src:type() == self.typeStr or src:type() == 'torch.DoubleTensor',
              'input must be a CudaDouble or Double tensor')

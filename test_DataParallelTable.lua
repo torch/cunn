@@ -25,7 +25,7 @@ local t2cpu = {
 local function checkHalf()
    if cutorch.hasHalf then
        table.insert(typenames, 'torch.CudaHalfTensor')
-       t2cpu['torch.CudaHalfTensor'] = 'torch.FloatTensor'
+       t2cpu['torch.CudaHalfTensor'] = 'torch.HalfTensor'
    end
 end
 
