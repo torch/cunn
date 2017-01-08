@@ -2,7 +2,7 @@
 
 **This branch of 'cunn' package adds support for 'SpatialDepthWiseConvolution', which is similar to TensorFlow's '[depthwise_conv2d](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/g3doc/api_docs/python/functions_and_classes/shard4/tf.nn.depthwise_conv2d.md)'.**
 
-This package provides a CUDA implementation this nn package: [nn](https://github.com/stooloveu/nn/blob/master/)
+This package provides a CUDA implementation this nn package: [nn](https://github.com/stooloveu/nn)
 
 ## Installing from source
 ```bash
