@@ -3661,6 +3661,171 @@ function cunntest.TemporalConvolution_backward_batch()
    end
 end
 
+function cunntest.TemporalRowConvolutionMM_forward_single()
+  local from = math.random(1,64) -- nFeature
+  local to = from
+  local ki = math.random(3,15) -- kW
+  local si = math.random(1,2) -- dW
+  local outi = math.random(1,256) -- nOutputFrame
+  local ini = (outi-1)*si+ki -- nInputFrame
+
+  for k, typename in ipairs(typenames) do
+    if typename ~= "torch.CudaHalfTensor" then
+
+      local input = torch.randn(ini,from):type(typename)
+
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      local mod = nn.TemporalRowConvolutionMM(from,ki,si):type(ctype)
+      local groundtruth = mod:forward(input)
+
+      input = makeNonContiguous(input:type(typename))
+      local cmod = nn.TemporalRowConvolutionMM(from,ki,si):type(typename)
+      cmod.weight = mod.weight:type(typename)
+      cmod.bias = mod.bias:type(typename)
+      local rescuda = cmod:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
+    end
+  end
+end
+
+function cunntest.TemporalRowConvolutionMM_forward_batch()
+  local bs = math.random(4,16)
+  local from = math.random(1,64)
+  local to = from
+  local ki = math.random(3,15)
+  local si = math.random(1,2)
+  local outi = math.random(1,256)
+  local ini = (outi-1)*si+ki
+
+  for k, typename in ipairs(typenames) do
+    if typename ~= "torch.CudaHalfTensor" then
+      local input = torch.randn(bs,ini,from):type(typename)
+
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      local mod = nn.TemporalRowConvolutionMM(from,ki,si):type(ctype)
+      local groundtruth = mod:forward(input)
+
+      input = makeNonContiguous(input:type(typename))
+      local cmod = nn.TemporalRowConvolutionMM(from,ki,si):type(typename)
+      cmod.weight = mod.weight:type(typename)
+      cmod.bias = mod.bias:type(typename)
+      local rescuda = cmod:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+        string.format('error on state (forward) with %s', typename))
+    end
+  end
+end
+
+function cunntest.TemporalRowConvolutionMM_backward_single()
+  local from = math.random(1,64) -- nFeature
+  local to = from
+  local ki = math.random(3,15) -- kW
+  local si = math.random(1,2) -- dW
+  local outi = math.random(1,256) -- nOutputFrame
+  local ini = (outi-1)*si+ki -- nInputFrame
+
+  for k, typename in ipairs(typenames) do
+    if typename ~= "torch.CudaHalfTensor" then
+
+      local input = torch.randn(ini,from):type(typename)
+      local gradOutput = torch.randn(outi,to):type(typename)
+
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local mod = nn.TemporalRowConvolutionMM(from,ki,si):type(ctype)
+      mod:forward(input)
+      mod:zeroGradParameters()
+      local groundgrad = mod:backward(input, gradOutput)
+      local groundweight = mod.gradWeight
+      local groundbias = mod.gradBias
+
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local cmod = nn.TemporalRowConvolutionMM(from,ki,si):type(typename)
+      cmod.weight = mod.weight:type(typename)
+      cmod.bias = mod.bias:type(typename)
+      cmod:forward(input)
+      cmod:zeroGradParameters()
+      local rescuda = cmod:backward(input, gradOutput)
+      local weightcuda = cmod.gradWeight
+      local biascuda = cmod.gradBias
+
+      local error = rescuda:double() - groundgrad:double()
+      local werror = weightcuda:double() - groundweight:double()
+      local berror = biascuda:double() - groundbias:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) with %s', typename))
+      mytester:assertlt(werror:abs():max(),
+        precision_backward_conv_weightbias(precision_backward, typename, weightcuda:abs():max()),
+        string.format('error on weight (backward) with %s', typename))
+      mytester:assertlt(berror:abs():max(),
+        precision_backward_conv_weightbias(precision_backward, typename, biascuda:abs():max()),
+        string.format('error on bias (backward) with %s', typename))
+    end
+  end
+end
+--
+function cunntest.TemporalRowConvolutionMM_backward_batch()
+  local bs = math.random(4,16)
+  local from = math.random(1,64) -- nFeature
+  local to = from
+  local ki = math.random(3,15) -- kW
+  local si = math.random(1,2) -- dW
+  local outi = math.random(1,256) -- nOutputFrame
+  local ini = (outi-1)*si+ki -- nInputFrame
+
+  for k, typename in ipairs(typenames) do
+    if typename ~= "torch.CudaHalfTensor" then
+
+      local input = torch.randn(bs,ini,from):type(typename)
+      local gradOutput = torch.randn(bs,outi,to):type(typename)
+
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local mod = nn.TemporalRowConvolutionMM(from,ki,si):type(ctype)
+      mod:forward(input)
+      mod:zeroGradParameters()
+      local groundgrad = mod:backward(input, gradOutput)
+      local groundweight = mod.gradWeight
+      local groundbias = mod.gradBias
+
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local cmod = nn.TemporalRowConvolutionMM(from,ki,si):type(typename)
+      cmod.weight = mod.weight:type(typename)
+      cmod.bias = mod.bias:type(typename)
+      cmod:forward(input)
+      cmod:zeroGradParameters()
+      local rescuda = cmod:backward(input, gradOutput)
+      local weightcuda = cmod.gradWeight
+      local biascuda = cmod.gradBias
+
+      local error = rescuda:double() - groundgrad:double()
+      local werror = weightcuda:double() - groundweight:double()
+      local berror = biascuda:double() - groundbias:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+        string.format('error on state (backward) [batch] with %s', typename))
+      mytester:assertlt(werror:abs():max(),
+        precision_backward_conv_weightbias(precision_backward, typename, weightcuda:abs():max()),
+        string.format('error on weight (backward) [batch] with %s', typename))
+      mytester:assertlt(berror:abs():max(),
+        precision_backward_conv_weightbias(precision_backward, typename, biascuda:abs():max()),
+        string.format('error on bias (backward) [batch] with %s', typename))
+    end
+  end
+end
+
 function cunntest.Dropout()
    local p = 0.2 --prob of droping out a neuron
    local input = makeNonContiguous(torch.CudaTensor(1000):fill((1-p)))
