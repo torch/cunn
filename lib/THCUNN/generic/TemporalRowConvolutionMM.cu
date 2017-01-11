@@ -39,11 +39,11 @@ static inline void THNN_(TemporalRowConvolutionMM_shapeCheck)(
             inputFrameSize, nInputFrame, inputFrameSize, nOutputFrame);
   }
 
-  THCUNN_check_dim_size(state, input, ndim, dimc, inputFrameSize);
+  THCUNN_check_dim_size(state, input, ndim, dimF, inputFrameSize);
 
   if (gradOutput != NULL) {
-    THCUNN_check_dim_size(state, gradOutput, ndim, dimc, inputFrameSize);
-    THCUNN_check_dim_size(state, gradOutput, ndim, dimw, nOutputFrame);
+    THCUNN_check_dim_size(state, gradOutput, ndim, dimF, inputFrameSize);
+    THCUNN_check_dim_size(state, gradOutput, ndim, dimS, nOutputFrame);
   }
 }
 
