@@ -309,7 +309,7 @@ void THNN_(TemporalRowConvolutionMM_updateGradInput)(
 
   THCTensor_(transpose)(state, weight, weight, 1, 2);
 
-  THCTensor_(transpose)(state, gradInput, dimS, dimF);
+  THCTensor_(transpose)(state, gradInput, gradInput, dimS, dimF);
 
   THCTensor_(free)(state, input);
   THCTensor_(free)(state, tinput);
