@@ -412,6 +412,8 @@ void THNN_(TemporalRowConvolutionMM_accGradParameters)(
                         gradWeight, scale, gradOutput3d, columns);
     // gradWeight:    inputFrameSize x 1 x kW
 
+    THCTensor_(transpose)(state, columns, columns, 1, 2);
+
     THCTensor_(free)(state, gradOutput3d);
 
     if (gradBias != NULL) {
