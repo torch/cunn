@@ -365,17 +365,17 @@ function cunntest.Square_transposed()
 end
 
 function cunntest.SoftShrink_forward()
-  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
+  local r = math.random()
   pointwise_forward(nn.SoftShrink(r), 'SoftShrink', precision_forward)
 end
 
 function cunntest.SoftShrink_backward()
-  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
+  local r = math.random()
   pointwise_backward(nn.SoftShrink(r), 'SoftShrink', precision_backward)
 end
 
 function cunntest.SoftShrink_transposed()
-  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
+  local r = math.random()
   pointwise_transposed(nn.SoftShrink(r), 'SoftShrink', precision_backward)
 end
 
@@ -3401,9 +3401,6 @@ function cunntest.mse()
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
 
-         if (typename == 'torch.CudaHalfTensor') then
-            fout = THC.THC_half2float(THC.THC_float2half(fout))
-         end
          mytester:assertlt(math.abs(fout-cout), precision_forward_type(0.02, typename),
             string.format('error  on output with %s', typename))
          local gerr = cgin:double() - fgin:double()
@@ -3435,9 +3432,6 @@ function cunntest.SmoothL1()
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
 
-         if (typename == 'torch.CudaHalfTensor') then
-            fout = THC.THC_half2float(THC.THC_float2half(fout))
-         end
          mytester:assertlt(math.abs(fout-cout), 0.01, string.format('error  on output with %s', typename))
          local gerr = cgin:double() - fgin:double()
          mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
@@ -4000,9 +3994,6 @@ function cunntest.l1cost()
      local cout = cmod:forward(cinput)
      local cgin = cmod:backward(cinput)
 
-     if (typename == 'torch.CudaHalfTensor') then
-        fout = THC.THC_half2float(THC.THC_float2half(fout))
-     end
      mytester:assertlt(math.abs(fout-cout), precision_forward_type(precision_forward, typename),
         string.format('error  on output with %s', typename))
      local gerr = cgin:double() - fgin:double()
