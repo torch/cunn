@@ -6,6 +6,9 @@ local THCUNN = {}
 -- load libTHCUNN
 THCUNN.C = ffi.load(package.searchpath('libTHCUNN', package.cpath))
 
+-- load THC
+local THC = ffi.os == 'Windows' and ffi.load('THC') or ffi.C
+
 local THCState_ptr = ffi.typeof('THCState*')
 
 function THCUNN.getState()
@@ -140,7 +143,7 @@ local transform_reals_to_half = function(func_name, real_args, ...)
     end
     for k,v in ipairs(real_args[func_name]) do
         -- first argument (THCState) is added implicitly by bind
-        t[v-1] = ffi.C.THC_float2half(t[v-1])
+        t[v-1] = THC.THC_float2half(t[v-1])
     end
     return t
 end

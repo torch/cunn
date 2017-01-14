@@ -5,6 +5,9 @@ local precision_backward = 1e-2
 local nloop = 1
 local times = {}
 
+-- load THC
+local THC = ffi.os == 'Windows' and ffi.load('THC') or ffi.C
+
 --e.g.: th -lcunn -e "nn.testcuda{'Sigmoid_forward'}"
 
 local typenames = {
@@ -362,17 +365,17 @@ function cunntest.Square_transposed()
 end
 
 function cunntest.SoftShrink_forward()
-  local r = ffi.C.THC_half2float(ffi.C.THC_float2half(math.random()))
+  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
   pointwise_forward(nn.SoftShrink(r), 'SoftShrink', precision_forward)
 end
 
 function cunntest.SoftShrink_backward()
-  local r = ffi.C.THC_half2float(ffi.C.THC_float2half(math.random()))
+  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
   pointwise_backward(nn.SoftShrink(r), 'SoftShrink', precision_backward)
 end
 
 function cunntest.SoftShrink_transposed()
-  local r = ffi.C.THC_half2float(ffi.C.THC_float2half(math.random()))
+  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
   pointwise_transposed(nn.SoftShrink(r), 'SoftShrink', precision_backward)
 end
 
@@ -3399,7 +3402,7 @@ function cunntest.mse()
          local cgin = cmod:backward(cinput,ctarget)
 
          if (typename == 'torch.CudaHalfTensor') then
-            fout = ffi.C.THC_half2float(ffi.C.THC_float2half(fout))
+            fout = THC.THC_half2float(THC.THC_float2half(fout))
          end
          mytester:assertlt(math.abs(fout-cout), precision_forward_type(0.02, typename),
             string.format('error  on output with %s', typename))
@@ -3433,7 +3436,7 @@ function cunntest.SmoothL1()
          local cgin = cmod:backward(cinput,ctarget)
 
          if (typename == 'torch.CudaHalfTensor') then
-            fout = ffi.C.THC_half2float(ffi.C.THC_float2half(fout))
+            fout = THC.THC_half2float(THC.THC_float2half(fout))
          end
          mytester:assertlt(math.abs(fout-cout), 0.01, string.format('error  on output with %s', typename))
          local gerr = cgin:double() - fgin:double()
@@ -3998,7 +4001,7 @@ function cunntest.l1cost()
      local cgin = cmod:backward(cinput)
 
      if (typename == 'torch.CudaHalfTensor') then
-        fout = ffi.C.THC_half2float(ffi.C.THC_float2half(fout))
+        fout = THC.THC_half2float(THC.THC_float2half(fout))
      end
      mytester:assertlt(math.abs(fout-cout), precision_forward_type(precision_forward, typename),
         string.format('error  on output with %s', typename))
