@@ -84,6 +84,7 @@ end
 
 local function pointwise_forward(proto_module, name, max_error)
    local size = math.random(1,100)
+   if name == 'GatedLinearUnit' then size = size*2 end
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size):type(typename)
@@ -105,10 +106,12 @@ end
 
 local function pointwise_backward(proto_module, name, max_error)
    local size = math.random(1,100)
+   if name == 'GatedLinearUnit' then size = size*2 end
 
    for k, typename in ipairs(typenames) do
       local input = torch.randn(size):type(typename)
       local gradOutput = torch.randn(size):type(typename)
+      if name == 'GatedLinearUnit' then gradOutput = torch.randn(size/2) end
 
       local ctype = t2cpu[typename]
       input = makeNonContiguous(input:type(ctype))
@@ -265,6 +268,14 @@ end
 
 function cunntest.LogSigmoid_transposed()
    pointwise_transposed(nn.LogSigmoid(), 'LogSigmoid', 1e-6)
+end
+
+function cunntest.GatedLinearUnit_forward()
+   pointwise_forward(nn.GatedLinearUnit(), 'GatedLinearUnit', precision_forward)
+end
+
+function cunntest.GatedLinearUnit_backward()
+   pointwise_backward(nn.GatedLinearUnit(), 'GatedLinearUnit', precision_backward)
 end
 
 function cunntest.Threshold_forward()
