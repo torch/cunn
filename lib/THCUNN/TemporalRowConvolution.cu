@@ -5,6 +5,6 @@
 #include "THCHalf.h"
 #include "THCHalfAutoNumerics.cuh"
 
-#include "generic/TemporalRowConvolutionMM.cu"
+#include "generic/TemporalRowConvolution.cu"
 
 #include "THCGenerateFloatTypes.h"

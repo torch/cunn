@@ -1,8 +1,8 @@
 #ifndef THC_GENERIC_FILE
-#define THC_GENERIC_FILE "generic/TemporalRowConvolutionMM.cu"
+#define THC_GENERIC_FILE "generic/TemporalRowConvolution.cu"
 #else
 
-static inline void THNN_(TemporalRowConvolutionMM_shapeCheck)(
+static inline void THNN_(TemporalRowConvolution_shapeCheck)(
     THCState *state, THCTensor *input, THCTensor *gradOutput, THCTensor *weight,
     THCTensor *bias, int kW, int dW, int padW) {
 
@@ -47,28 +47,10 @@ static inline void THNN_(TemporalRowConvolutionMM_shapeCheck)(
   }
 }
 
-static int THNN_(view_weight_rowconv)(THCState *state, THCTensor **_weight) {
-  THCTensor *weight = *_weight;
-  THArgCheck(weight->nDimension == 2 || weight->nDimension == 3, 2,
-             "2D or 3D weight tensor expected, but got: %d",
-             weight->nDimension);
-
-  if (weight->nDimension == 2) {
-    long s1 = weight->size[0];
-    long s3 = weight->size[1];
-
-    *_weight = THCTensor_(newWithStorage3d)(
-        state, weight->storage, weight->storageOffset, s1, -1, 1, -1, s3, -1);
-
-    return 1;
-  }
-  return 0;
-}
-
-void THNN_(TemporalRowConvolutionMM_updateOutput)(
+void THNN_(TemporalRowConvolution_updateOutput)(
     THCState *state, THCTensor *input, THCTensor *output, THCTensor *weight,
     THCTensor *bias, THCTensor *finput, THCTensor *fgradInput, int kW, int dW,
-    int padW) {
+    int padW, bool featFirst) {
 
   // aliases
   THCTensor *columns = finput;
@@ -80,27 +62,21 @@ void THNN_(TemporalRowConvolutionMM_updateOutput)(
     THCUNN_assertSameGPU(state, 2, weight, bias);
   }
 
-  THNN_(TemporalRowConvolutionMM_shapeCheck)
+  THNN_(TemporalRowConvolution_shapeCheck)
   (state, input, NULL, weight, bias, kW, dW, padW);
 
   // reshape weight if necessary
-  int freeWeight = THNN_(view_weight_rowconv)(state, &weight);
-
   int ndim = input->nDimension;
-  int dimS = 0;
-  int dimF = 1;
 
-  if (ndim == 3) {
-    ++dimS;
-    ++dimF;
+  THCTensor *tinput;
+
+  if (!featFirst) {
+    THCTensor *tinput =
+        THCTensor_(newTranspose)(state, input, ndim - 1, ndim - 2);
+    input = THCTensor_(newContiguous)(state, tinput);
+  } else {
+    input = THCTensor_(newContiguous)(state, input);
   }
-
-  THCTensor *tinput = THCTensor_(newTranspose)(state, input, dimS, dimF);
-  // swap dimS and dimF due to transpose
-  int temp = dimS;
-  dimS = dimF;
-  dimF = temp;
-  input = THCTensor_(newContiguous)(state, tinput);
 
   int batch = 1;
   if (ndim == 2) {
@@ -190,26 +166,24 @@ void THNN_(TemporalRowConvolutionMM_updateOutput)(
   THCTensor_(free)(state, input_n);
   THCTensor_(free)(state, output_n);
 
-  if (freeWeight) {
-    THCTensor_(free)(state, weight);
-  }
-
   // Resize output
   if (batch == 0) {
     THCTensor_(resize2d)(state, output, inputFrameSize, nOutputFrame);
     THCTensor_(resize2d)(state, input, inputFrameSize, nInputFrame);
   }
 
-  THCTensor_(transpose)(state, output, output, dimS, dimF);
+  if (!featFirst) {
+    THCTensor_(transpose)(state, output, output, ndim - 1, ndim - 2);
+    THCTensor_(free)(state, tinput);
+  }
 
-  THCTensor_(free)(state, tinput);
   THCTensor_(free)(state, input);
 }
 
-void THNN_(TemporalRowConvolutionMM_updateGradInput)(
+void THNN_(TemporalRowConvolution_updateGradInput)(
     THCState *state, THCTensor *input, THCTensor *gradOutput,
     THCTensor *gradInput, THCTensor *weight, THCTensor *finput,
-    THCTensor *fgradInput, int kW, int dW, int padW) {
+    THCTensor *fgradInput, int kW, int dW, int padW, bool featFirst) {
 
   // aliases
   THCTensor *gradColumns = finput;
@@ -217,29 +191,24 @@ void THNN_(TemporalRowConvolutionMM_updateGradInput)(
   THCUNN_assertSameGPU(state, 5, input, gradOutput, weight, gradColumns,
                        gradInput);
 
-  THNN_(TemporalRowConvolutionMM_shapeCheck)
+  THNN_(TemporalRowConvolution_shapeCheck)
   (state, input, gradOutput, weight, NULL, kW, dW, padW);
 
-  int freeWeight = THNN_(view_weight_rowconv)(state, &weight);
-
   int ndim = input->nDimension;
-  int dimS = 0;
-  int dimF = 1;
 
-  if (ndim == 3) {
-    ++dimS;
-    ++dimF;
+  THCTensor *tinput, *tgradOutput;
+
+  if (!featFirst) {
+    tinput = THCTensor_(newTranspose)(state, input, ndim - 1, ndim - 2);
+    tgradOutput =
+        THCTensor_(newTranspose)(state, gradOutput, ndim - 1, ndim - 2);
+    input = THCTensor_(newContiguous)(state, tinput);
+    gradOutput = THCTensor_(newContiguous)(state, tgradOutput);
+
+  } else {
+    input = THCTensor_(newContiguous)(state, input);
+    gradOutput = THCTensor_(newContiguous)(state, gradOutput);
   }
-
-  THCTensor *tinput = THCTensor_(newTranspose)(state, input, dimS, dimF);
-  THCTensor *tgradOutput =
-      THCTensor_(newTranspose)(state, gradOutput, dimS, dimF);
-  // swap dimS and dimF due to transpose
-  int temp = dimS;
-  dimS = dimF;
-  dimF = temp;
-  input = THCTensor_(newContiguous)(state, tinput);
-  gradOutput = THCTensor_(newContiguous)(state, tgradOutput);
 
   int batch = 1;
   if (ndim == 2) {
@@ -309,21 +278,21 @@ void THNN_(TemporalRowConvolutionMM_updateGradInput)(
 
   THCTensor_(transpose)(state, weight, weight, 1, 2);
 
-  THCTensor_(transpose)(state, gradInput, gradInput, dimS, dimF);
+  if (!featFirst) {
+    THCTensor_(transpose)(state, gradInput, gradInput, dimS, dimF);
+    THCTensor_(free)(state, tinput);
+    THCTensor_(free)(state, tgradOutput);
+  }
 
   THCTensor_(free)(state, input);
-  THCTensor_(free)(state, tinput);
   THCTensor_(free)(state, gradOutput);
-  THCTensor_(free)(state, tgradOutput);
-  if (freeWeight) {
-    THCTensor_(free)(state, weight);
-  }
 }
 
-void THNN_(TemporalRowConvolutionMM_accGradParameters)(
+void THNN_(TemporalRowConvolution_accGradParameters)(
     THCState *state, THCTensor *input, THCTensor *gradOutput,
     THCTensor *gradWeight, THCTensor *gradBias, THCTensor *finput,
-    THCTensor *fgradInput, int kW, int dW, int padW, real scale) {
+    THCTensor *fgradInput, int kW, int dW, int padW, bool featFirst,
+    real scale) {
 
   // Aliases
   THCTensor *columns = finput;
@@ -334,29 +303,23 @@ void THNN_(TemporalRowConvolutionMM_accGradParameters)(
     THCUNN_assertSameGPU(state, 2, gradWeight, gradBias);
   }
 
-  THNN_(TemporalRowConvolutionMM_shapeCheck)
+  THNN_(TemporalRowConvolution_shapeCheck)
   (state, input, gradOutput, gradWeight, gradBias, kW, dW, padW);
 
-  int freeWeight = THNN_(view_weight_rowconv)(state, &gradWeight);
-
   int ndim = input->nDimension;
-  int dimS = 0;
-  int dimF = 1;
 
-  if (ndim == 3) {
-    ++dimS;
-    ++dimF;
+  THCTensor *tinput, *tgradOutput;
+
+  if (!featFirst) {
+    tinput = THCTensor_(newTranspose)(state, input, ndim - 1, ndim - 2);
+    tgradOutput =
+        THCTensor_(newTranspose)(state, gradOutput, ndim - 1, ndim - 2);
+    input = THCTensor_(newContiguous)(state, tinput);
+    gradOutput = THCTensor_(newContiguous)(state, tgradOutput);
+  } else {
+    input = THCTensor_(newContiguous)(state, input);
+    gradOutput = THCTensor_(newContiguous)(state, gradOutput);
   }
-
-  THCTensor *tinput = THCTensor_(newTranspose)(state, input, dimS, dimF);
-  THCTensor *tgradOutput =
-      THCTensor_(newTranspose)(state, gradOutput, dimS, dimF);
-  // swap dimS and dimF due to transpose
-  int temp = dimS;
-  dimS = dimF;
-  dimF = temp;
-  input = THCTensor_(newContiguous)(state, tinput);
-  gradOutput = THCTensor_(newContiguous)(state, tgradOutput);
 
   int batch = 1;
   if (ndim == 2) {
@@ -449,13 +412,13 @@ void THNN_(TemporalRowConvolutionMM_accGradParameters)(
     THCTensor_(resize2d)(state, input, inputFrameSize, nInputFrame);
   }
 
-  THCTensor_(free)(state, input);
-  THCTensor_(free)(state, tinput);
-  THCTensor_(free)(state, gradOutput);
-  THCTensor_(free)(state, tgradOutput);
-  if (freeWeight) {
-    THCTensor_(free)(state, gradWeight);
+  if (!featFirst) {
+    THCTensor_(free)(state, tinput);
+    THCTensor_(free)(state, tgradOutput);
   }
+
+  THCTensor_(free)(state, input);
+  THCTensor_(free)(state, gradOutput);
 }
 
 #endif

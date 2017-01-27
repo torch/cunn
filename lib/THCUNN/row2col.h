@@ -11,14 +11,10 @@ row2col_kernel(const int n, const Dtype *data_row, const int width,
                const int ksize_w, const int pad_w, const int stride_w,
                const int dilation_w, const int width_col, Dtype *data_col) {
   CUDA_KERNEL_LOOP(index, n) {
-    // printf("Hello from block %d, thread %d with index %d\n", blockIdx.x,
-    //  threadIdx.x, index);
     int w_out = index % width_col;
     index /= width_col;
-    // int h_out = 0;
     int channel_in = index;
     int channel_out = channel_in * ksize_w;
-    // int h_in = 0;
     int w_in = w_out * stride_w - pad_w;
     data_col += (channel_out)*width_col + w_out;
     data_row += (channel_in)*width + w_in;
