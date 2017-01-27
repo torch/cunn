@@ -3661,6 +3661,7 @@ function cunntest.TemporalConvolution_backward_batch()
    end
 end
 
+
 function cunntest.TemporalRowConvolution_forward_single()
   local from = math.random(1,64) -- nFeature
   local to = from
