@@ -933,7 +933,7 @@ TH_API void THNN_(TemporalMaxPooling_updateGradInput)(
                   THCIndexTensor *indices,
                   int kW, int dW);
 
-TH_API void THNN_(TemporalRowConvolutionMM_updateOutput)(
+TH_API void THNN_(TemporalRowConvolution_updateOutput)(
                   THCState *state,
                   THCTensor *input,
                   THCTensor *output,
@@ -943,9 +943,10 @@ TH_API void THNN_(TemporalRowConvolutionMM_updateOutput)(
                   THCTensor *fgradInput,
                   int kW,
                   int dW,
-                  int padW);
+                  int padW,
+                  bool featFirst);
 
-TH_API void THNN_(TemporalRowConvolutionMM_updateGradInput)(
+TH_API void THNN_(TemporalRowConvolution_updateGradInput)(
                   THCState *state,
                   THCTensor *input,
                   THCTensor *gradOutput,
@@ -955,9 +956,10 @@ TH_API void THNN_(TemporalRowConvolutionMM_updateGradInput)(
                   THCTensor *fgradInput,
                   int kW,
                   int dW,
-                  int padW);
+                  int padW,
+                  bool featFirst);
 
-TH_API void THNN_(TemporalRowConvolutionMM_accGradParameters)(
+TH_API void THNN_(TemporalRowConvolution_accGradParameters)(
                   THCState *state,
                   THCTensor *input,
                   THCTensor *gradOutput,
@@ -968,6 +970,7 @@ TH_API void THNN_(TemporalRowConvolutionMM_accGradParameters)(
                   int kW,
                   int dW,
                   int padW,
+                  bool featFirst,
                   real scale);
 
 TH_API void THNN_(Threshold_updateOutput)(

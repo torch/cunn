@@ -3729,25 +3729,37 @@ function cunntest.TemporalRowConvolution_forward_batch()
     featFirst = featFirst or false
     for k, typename in ipairs(typenames) do
       if typename ~= "torch.CudaHalfTensor" then
+
         local input
         if featFirst then
           input = torch.randn(bs, from, ini):type(typename)
         else
           input = torch.randn(bs, ini, from):type(typename)
         end
+
         local ctype = t2cpu[typename]
         input = makeNonContiguous(input:type(ctype))
-        local mod = nn.TemporalRowConvolution(from,ki,si):type(typename)
-        if featFirst then mod.featFirst = true end
-        if noBias then mod:noBias() end
+        local mod = nn.TemporalRowConvolution(from,ki,si):type(ctype)
+        if featFirst then
+          mod.featFirst = true
+        end
+        if noBias then
+          mod:noBias()
+        end
         local groundtruth = mod:forward(input)
 
         input = makeNonContiguous(input:type(typename))
         local cmod = nn.TemporalRowConvolution(from,ki,si):type(typename)
-        if featFirst then cmod.featFirst = true end
-        if noBias then cmod:noBias() end
+        if featFirst then
+          cmod.featFirst = true
+        end
+        if noBias then
+          cmod:noBias()
+        end
         cmod.weight = mod.weight:type(typename)
-        if mod.bias then cmod.bias = mod.bias:type(typename) end
+        if mod.bias then
+          cmod.bias = mod.bias:type(typename)
+        end
         local rescuda = cmod:forward(input)
 
         local error = rescuda:double() - groundtruth:double()
@@ -3821,7 +3833,7 @@ function cunntest.TemporalRowConvolution_backward_single()
         if cmod.bias then
           local berror = cmod.gradBias:double() - groundbias:double()
           mytester:assertlt(berror:abs():max(),
-            precision_backward_conv_weightbias(precision_backward, typename, gconv.gradBias:abs():max()),
+            precision_backward_conv_weightbias(precision_backward, typename, cmod.gradBias:abs():max()),
             string.format('error on bias (backward) with %s', typename))
         end
       end
@@ -3859,8 +3871,12 @@ function cunntest.TemporalRowConvolution_backward_batch()
         input = makeNonContiguous(input:type(ctype))
         gradOutput = makeNonContiguous(gradOutput:type(ctype))
         local mod = nn.TemporalRowConvolution(from,ki,si):type(ctype)
-        if featFirst then mod.featFirst = true end
-        if noBias then mod:noBias() end
+        if featFirst then
+          mod.featFirst = true
+        end
+        if noBias then
+          mod:noBias()
+        end
         mod:forward(input)
         mod:zeroGradParameters()
         local groundgrad = mod:backward(input, gradOutput)
@@ -3870,8 +3886,12 @@ function cunntest.TemporalRowConvolution_backward_batch()
         input = makeNonContiguous(input:type(typename))
         gradOutput = makeNonContiguous(gradOutput:type(typename))
         local cmod = nn.TemporalRowConvolution(from,ki,si):type(typename)
-        if featFirst then cmod.featFirst = true end
-        if noBias then cmod:noBias() end
+        if featFirst then
+          cmod.featFirst = true
+        end
+        if noBias then
+          cmod:noBias()
+        end
         cmod.weight = mod.weight:type(typename)
         if cmod.bias then
           cmod.bias = mod.bias:type(typename)
@@ -3893,7 +3913,7 @@ function cunntest.TemporalRowConvolution_backward_batch()
         if cmod.bias then
           local berror = cmod.gradBias:double() - groundbias:double()
           mytester:assertlt(berror:abs():max(),
-            precision_backward_conv_weightbias(precision_backward, typename, biascuda:abs():max()),
+            precision_backward_conv_weightbias(precision_backward, typename, cmod.gradBias:abs():max()),
             string.format('error on bias (backward) [batch] with %s', typename))
         end
       end
