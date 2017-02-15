@@ -136,7 +136,7 @@ if cutorch.hasHalf then
 -- in order to call 'half' functions from lua, convert real arguments from
 -- to half since there is no other defined conversion
 local transform_reals_to_half = function(func_name, real_args, ...)
-    t = {}
+    local t = {}
     -- this select logic is necessary to deal with nil arguments
     for i = 1, select('#', ...) do
         t[i] = select(i, ...)
