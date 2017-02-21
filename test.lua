@@ -2965,6 +2965,182 @@ function cunntest.SpatialAdaptiveMaxPooling_backward_batch()
    end
 end
 
+function cunntest.SpatialAdaptiveAveragePooling_forward()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input):type(ctype)
+
+      input = makeNonContiguous(input:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_forward_noncontig()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input0 = torch.randn(from,ini,inj):type(typename)
+      local ctype = t2cpu[typename]
+      local input = makeNonContiguous(input0:type(ctype):transpose(2,3))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = makeNonContiguous(input0:type(typename):transpose(2,3))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_forward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,48)
+   local to = from
+   local outi = math.random(2,48)
+   local outj = math.random(2,48)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = makeNonContiguous(input:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_backward()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      sconv:forward(input)
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      gconv:forward(input)
+      gconv:zeroGradParameters()
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_backward_noncontig()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input0 = torch.randn(from,ini,inj):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      local input = makeNonContiguous(input0:type(ctype):transpose(2,3))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      sconv:forward(input)
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+
+      input = makeNonContiguous(input0:type(typename):transpose(2,3))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      gconv:forward(input)
+      gconv:zeroGradParameters()
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_backward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      sconv:forward(input)
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      gconv:forward(input)
+      gconv:zeroGradParameters()
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+   end
+end
+
 function cunntest.SpatialLPPooling_forward()
    local from = math.random(1,64)
    local to = from
