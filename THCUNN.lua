@@ -45,22 +45,15 @@ local replacements_generic =
     ['THCTensor'] = 'THCudaTensor',
     ['THCIndexTensor'] = 'THCudaLongTensor',
     ['TYPE'] = 'Cuda',
-    ['real'] = 'float',
+    ['accreal'] = 'float',
   },
   {
     ['THCTensor'] = 'THCudaDoubleTensor',
     ['THCIndexTensor'] = 'THCudaLongTensor',
     ['TYPE'] = 'CudaDouble',
-    ['real'] = 'double',
+    ['accreal'] = 'double',
    }
 }
-
--- gsub(s, 'real', 'float') changes accreal to accfloat.
--- typedef accfloat ahead of time.
-ffi.cdef("typedef float accfloat;")
--- gsub(s, 'real', 'double') changes accreal to accfloat.
--- typedef accdouble ahead of time
-ffi.cdef("typedef double accdouble;")
 
 if cutorch.hasHalf then
   ffi.cdef("half THC_float2half(float a);")
@@ -70,12 +63,9 @@ if cutorch.hasHalf then
     ['THCTensor'] = 'THCudaHalfTensor',
     ['THCIndexTensor'] = 'THCudaLongTensor',
     ['TYPE'] = 'CudaHalf',
-    ['real'] = 'half',
+    ['accreal'] = 'float',
   }
   table.insert(replacements_generic, half_replacement)
-  -- gsub(s, 'real', 'double') changes accreal to accfloat.
-  -- typedef acchalf ahead of time
-  ffi.cdef("typedef float acchalf;")
 end
 
 for i=1,#replacements_generic do
