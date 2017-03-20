@@ -129,7 +129,8 @@ local function pointwise_backward(proto_module, name, max_error)
 
       local error = rescuda:double() - groundgrad:double()
 
-      mytester:assertlt(error:abs():max(), precision_backward_type(max_error, typename),
+      mytester:assertlt(error:abs():max(),
+        precision_backward_type(max_error, typename, rescuda:abs():max()),
         string.format('error on state (backward) with %s', typename))
     end
 end
@@ -376,17 +377,17 @@ function cunntest.Square_transposed()
 end
 
 function cunntest.SoftShrink_forward()
-  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
+  local r = math.random()
   pointwise_forward(nn.SoftShrink(r), 'SoftShrink', precision_forward)
 end
 
 function cunntest.SoftShrink_backward()
-  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
+  local r = math.random()
   pointwise_backward(nn.SoftShrink(r), 'SoftShrink', precision_backward)
 end
 
 function cunntest.SoftShrink_transposed()
-  local r = THC.THC_half2float(THC.THC_float2half(math.random()))
+  local r = math.random()
   pointwise_transposed(nn.SoftShrink(r), 'SoftShrink', precision_backward)
 end
 
@@ -2056,8 +2057,8 @@ function cunntest.SpatialMaxPooling_forward()
    local sj = math.random(1,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2094,8 +2095,8 @@ function cunntest.SpatialMaxPooling_forward_batch()
    local sj = math.random(2,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2129,8 +2130,8 @@ function cunntest.SpatialMaxUnpooling_forward_batch()
    local sj = kj
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ceil_mode = math.random(0,1) == 1
    local fun = ceil_mode and torch.ceil or torch.floor
    local ini = fun((outi + padi*2 - ki)/si) +1
@@ -2170,8 +2171,8 @@ function cunntest.SpatialMaxPooling_backward()
    local sj = math.random(1,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = true--math.random(0,1) == 1
@@ -2214,8 +2215,8 @@ function cunntest.SpatialMaxPooling_backward_batch()
    local sj = math.random(2,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2257,8 +2258,8 @@ function cunntest.SpatialMaxUnpooling_backward_batch()
    local sj = kj
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ceil_mode = math.random(0,1) == 1
    local fun = ceil_mode and torch.ceil or torch.floor
    local ini = fun((outi + padi*2 - ki)/si) +1
@@ -2307,8 +2308,8 @@ function cunntest.SpatialDilatedMaxPooling_forward()
    local sj = math.random(1,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
    local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
@@ -2347,8 +2348,8 @@ function cunntest.SpatialDilatedMaxPooling_forward_batch()
    local sj = math.random(2,4)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
    local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
@@ -2383,8 +2384,8 @@ function cunntest.SpatialDilatedMaxPooling_backward()
    local sj = math.random(1,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
    local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
@@ -2428,8 +2429,8 @@ function cunntest.SpatialDilatedMaxPooling_backward_batch()
    local sj = math.random(2,4)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
    local ini = (outi-1)*si+(dilationi*(ki-1)+1)-2*padi
@@ -2622,8 +2623,8 @@ function cunntest.SpatialAveragePooling_forward()
    local sj = math.random(1,kj)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2661,8 +2662,8 @@ function cunntest.SpatialAveragePooling_forward_batch()
    local sj = math.random(1,kj)
    local outi = math.random(32,256)
    local outj = math.random(32,256)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2699,8 +2700,8 @@ function cunntest.SpatialAveragePooling_backward()
    local sj = math.random(1,kj)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2746,8 +2747,8 @@ function cunntest.SpatialAveragePooling_backward_batch()
    local sj = math.random(1,kj)
    local outi = math.random(32,64)
    local outj = math.random(32,64)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local ini = (outi-1)*si+ki - padi*2
    local inj = (outj-1)*sj+kj - padj*2
    local ceil_mode = math.random(0,1) == 1
@@ -2954,6 +2955,182 @@ function cunntest.SpatialAdaptiveMaxPooling_backward_batch()
       input = makeNonContiguous(input:type(typename))
       gradOutput = makeNonContiguous(gradOutput:type(typename))
       local gconv = nn.SpatialAdaptiveMaxPooling(outi,outj):type(typename)
+      gconv:forward(input)
+      gconv:zeroGradParameters()
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_forward()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input):type(ctype)
+
+      input = makeNonContiguous(input:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_forward_noncontig()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input0 = torch.randn(from,ini,inj):type(typename)
+      local ctype = t2cpu[typename]
+      local input = makeNonContiguous(input0:type(ctype):transpose(2,3))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = makeNonContiguous(input0:type(typename):transpose(2,3))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_forward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,48)
+   local to = from
+   local outi = math.random(2,48)
+   local outj = math.random(2,48)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      local groundtruth = sconv:forward(input)
+
+      input = makeNonContiguous(input:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      local rescuda = gconv:forward(input)
+
+      local error = rescuda:double() - groundtruth:double()
+      mytester:assertlt(error:abs():max(), precision_forward_type(precision_forward, typename),
+          string.format('error on state (forward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_backward()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(from,inj,ini):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      sconv:forward(input)
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      gconv:forward(input)
+      gconv:zeroGradParameters()
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_backward_noncontig()
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input0 = torch.randn(from,ini,inj):type(typename)
+      local gradOutput = torch.randn(to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      local input = makeNonContiguous(input0:type(ctype):transpose(2,3))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      sconv:forward(input)
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+
+      input = makeNonContiguous(input0:type(typename):transpose(2,3))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
+      gconv:forward(input)
+      gconv:zeroGradParameters()
+      local rescuda = gconv:backward(input, gradOutput)
+
+      local error = rescuda:double() - groundgrad:double()
+
+      mytester:assertlt(error:abs():max(), precision_backward_type(precision_backward, typename),
+          string.format('error on state (backward) with %s', typename))
+   end
+end
+
+function cunntest.SpatialAdaptiveAveragePooling_backward_batch()
+   local bs = math.random(4,10)
+   local from = math.random(1,64)
+   local to = from
+   local outi = math.random(2,64)
+   local outj = math.random(2,64)
+   local ini = math.random(10,256)
+   local inj = math.random(10,256)
+
+   for k, typename in ipairs(typenames) do
+      local input = torch.randn(bs,from,inj,ini):type(typename)
+      local gradOutput = torch.randn(bs,to,outj,outi):type(typename)
+      local ctype = t2cpu[typename]
+      input = makeNonContiguous(input:type(ctype))
+      gradOutput = makeNonContiguous(gradOutput:type(ctype))
+      local sconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(ctype)
+      sconv:forward(input)
+      sconv:zeroGradParameters()
+      local groundgrad = sconv:backward(input, gradOutput)
+
+      input = makeNonContiguous(input:type(typename))
+      gradOutput = makeNonContiguous(gradOutput:type(typename))
+      local gconv = nn.SpatialAdaptiveAveragePooling(outi,outj):type(typename)
       gconv:forward(input)
       gconv:zeroGradParameters()
       local rescuda = gconv:backward(input, gradOutput)
@@ -3412,14 +3589,13 @@ function cunntest.mse()
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
 
-         if (typename == 'torch.CudaHalfTensor') then
-            fout = THC.THC_half2float(THC.THC_float2half(fout))
-         end
-         mytester:assertlt(math.abs(fout-cout), precision_forward_type(0.02, typename),
-            string.format('error  on output with %s', typename))
+         mytester:assertlt(math.abs(fout-cout),
+            precision_forward_type(0.03, typename, math.abs(fout)),
+            string.format('error on output with %s', typename))
          local gerr = cgin:double() - fgin:double()
-         mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-            string.format('error  on gradInput with %s', typename))
+         mytester:assertlt(gerr:abs():max(),
+            precision_forward_type(precision_forward, typename),
+            string.format('error on gradInput with %s', typename))
       end
    end
 end
@@ -3446,13 +3622,12 @@ function cunntest.SmoothL1()
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
 
-         if (typename == 'torch.CudaHalfTensor') then
-            fout = THC.THC_half2float(THC.THC_float2half(fout))
-         end
-         mytester:assertlt(math.abs(fout-cout), 0.01, string.format('error  on output with %s', typename))
+         mytester:assertlt(math.abs(fout-cout),
+            math.max(precision_forward_type(precision_forward, typename, math.abs(fout)), 0.01),
+            string.format('error on output with %s', typename))
          local gerr = cgin:double() - fgin:double()
          mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-            string.format('error  on gradInput with %s', typename))
+            string.format('error on gradInput with %s', typename))
       end
    end
 end
@@ -3478,10 +3653,10 @@ function cunntest.SoftMarginCriterion()
          local cout = cmod:forward(cinput,ctarget)
          local cgin = cmod:backward(cinput,ctarget)
 
-        mytester:assertlt(math.abs(fout-cout), 0.01, 'error  on output')
+        mytester:assertlt(math.abs(fout-cout), 0.01, 'error on output')
         local gerr = cgin:double() - fgin:double()
         mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-           string.format('error  on gradInput with %s', typename))
+           string.format('error on gradInput with %s', typename))
       end
    end
 end
@@ -3510,10 +3685,10 @@ function cunntest.distkldiv()
          local cgin = cmod:backward(cinput,ctarget)
 
          mytester:assertlt(math.abs(fout-cout), precision_forward_type(precision_forward, typename),
-            string.format('error  on output with %s', typename))
+            string.format('error on output with %s', typename))
          local gerr = cgin:double() - fgin:double()
          mytester:assertlt(gerr:abs():max(), precision_backward_type(precision_backward, typename),
-            string.format('error  on gradInput with %s', typename))
+            string.format('error on gradInput with %s', typename))
       end
    end
 end
@@ -4280,14 +4455,13 @@ function cunntest.l1cost()
      local cout = cmod:forward(cinput)
      local cgin = cmod:backward(cinput)
 
-     if (typename == 'torch.CudaHalfTensor') then
-        fout = THC.THC_half2float(THC.THC_float2half(fout))
-     end
-     mytester:assertlt(math.abs(fout-cout), precision_forward_type(precision_forward, typename),
-        string.format('error  on output with %s', typename))
+     mytester:assertlt(math.abs(fout-cout),
+        precision_forward_type(precision_forward, typename, math.abs(fout)),
+        string.format('error on output with %s', typename))
      local gerr = cgin:double() - fgin:double()
-     mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-        string.format('error  on gradInput with %s', typename))
+     mytester:assertlt(gerr:abs():max(),
+        precision_forward_type(precision_forward, typename),
+        string.format('error on gradInput with %s', typename))
    end
 end
 
@@ -4314,10 +4488,10 @@ function cunntest.ClassNLLCriterionSingleTarget()
 
       mytester:assertlt(
          math.abs(fout-cout), precision_forward_type(precision_forward, typename),
-            string.format('error  on output with %s', typename))
+            string.format('error on output with %s', typename))
       local gerr = cgin:double() - fgin:double()
       mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-         string.format('error  on gradInput with %s', typename))
+         string.format('error on gradInput with %s', typename))
    end
 end
 
@@ -4346,10 +4520,10 @@ function cunntest.ClassNLLCriterionSingleTargetWeights()
 
       mytester:assertlt(
          math.abs(fout-cout), precision_forward_type(precision_forward, typename),
-            string.format('error  on output with %s', typename))
+            string.format('error on output with %s', typename))
       local gerr = cgin:double() - fgin:double()
       mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-         string.format('error  on gradInput with %s', typename))
+         string.format('error on gradInput with %s', typename))
    end
 end
 
@@ -4380,7 +4554,7 @@ function cunntest.ClassNLLCriterionMultipleTarget()
 
       local gerr = cgin:double() - fgin:double()
       mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-        string.format('error  on gradInput with %s', typename))
+        string.format('error on gradInput with %s', typename))
    end
 end
 
@@ -4414,7 +4588,7 @@ function cunntest.SpatialClassNLLCriterion()
 
       local gerr = cgin:double() - fgin:double()
       mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-          string.format('error  on gradInput with %s', typename))
+          string.format('error on gradInput with %s', typename))
     end
 end
 
@@ -4448,7 +4622,7 @@ function cunntest.ClassNLLCriterionMultipleTargetWeights()
 
       local gerr = cgin:double() - fgin:double()
       mytester:assertlt(gerr:abs():max(), precision_forward_type(precision_forward, typename),
-        string.format('error  on gradInput with %s', typename))
+        string.format('error on gradInput with %s', typename))
    end
 end
 
@@ -4684,9 +4858,9 @@ function cunntest.VolumetricMaxPooling_forward()
    local iT = math.random(kT*2, 60)
    local iH = math.random(kH*2, 60)
    local iW = math.random(kW*2, 60)
-   local padT = math.random(0,kT/2-1)
-   local padH = math.random(0,kH/2-1)
-   local padW = math.random(0,kW/2-1)
+   local padT = math.random(0,math.floor(kT/2)-1)
+   local padH = math.random(0,math.floor(kH/2)-1)
+   local padW = math.random(0,math.floor(kW/2)-1)
    local iF = math.random(1, 16) -- features
    local oT = math.floor((iT - kT + 2*padT) / dT + 1)
    local oH = math.floor((iH - kH + 2*padH) / dH + 1)
@@ -4720,9 +4894,9 @@ function cunntest.VolumetricMaxPooling_backward()
    local iT = math.random(kT*2, 60)
    local iH = math.random(kH*2, 60)
    local iW = math.random(kW*2, 60)
-   local padT = math.random(0,kT/2-1)
-   local padH = math.random(0,kH/2-1)
-   local padW = math.random(0,kW/2-1)
+   local padT = math.random(0,math.floor(kT/2)-1)
+   local padH = math.random(0,math.floor(kH/2)-1)
+   local padW = math.random(0,math.floor(kW/2)-1)
    local iF = math.random(1, 16) -- features
    local oT = math.floor((iT - kT + 2*padT) / dT + 1)
    local oH = math.floor((iH - kH + 2*padH) / dH + 1)
@@ -4764,9 +4938,9 @@ function cunntest.VolumetricDilatedMaxPooling_forward_batch()
    local outt = math.random(1,10)
    local outi = math.random(1,33)
    local outj = math.random(1,33)
-   local padt = math.random(0,kt/2-1)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padt = math.random(0,math.floor(kt/2)-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local dilationt = math.random(1,10)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
@@ -4808,9 +4982,9 @@ function cunntest.VolumetricDilatedMaxPooling_backward_batch()
    local outt = math.random(8,16)
    local outi = math.random(8,16)
    local outj = math.random(8,16)
-   local padt = math.random(0,kt/2-1)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padt = math.random(0,math.floor(kt/2)-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local dilationt = math.random(1,10)
    local dilationi = math.random(1,10)
    local dilationj = math.random(1,10)
@@ -4858,9 +5032,9 @@ function cunntest.VolumetricMaxUnpooling_forward_batch()
    local outt = math.random(32,128)
    local outi = math.random(32,128)
    local outj = math.random(32,128)
-   local padt = math.random(0,kt/2-1)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padt = math.random(0,math.floor(kt/2)-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local it = math.max(((outt + padt*2 - kt)/st) +1, kt)
    local ii = math.max(((outi + padi*2 - ki)/si) +1, ki)
    local ij = math.max(((outj + padj*2 - kj)/sj) +1, kj)
@@ -4899,9 +5073,9 @@ function cunntest.VolumetricMaxUnpooling_backward_batch()
    local outt = math.random(32,128)
    local outi = math.random(32,128)
    local outj = math.random(32,128)
-   local padt = math.random(0,kt/2-1)
-   local padi = math.random(0,ki/2-1)
-   local padj = math.random(0,kj/2-1)
+   local padt = math.random(0,math.floor(kt/2)-1)
+   local padi = math.random(0,math.floor(ki/2)-1)
+   local padj = math.random(0,math.floor(kj/2)-1)
    local it = math.max(((outt + padt*2 - kt)/st) +1, kt)
    local ii = math.max(((outi + padi*2 - ki)/si) +1, ki)
    local ij = math.max(((outj + padj*2 - kj)/sj) +1, kj)
@@ -5226,8 +5400,8 @@ function cunntest.VolumetricFullConvolution_pair_test()
     local dT = math.random(1,3)
     local dH = math.random(1,3)
     local dW = dH
-    local pT = (kT-1)/2
-    local pH = (kH-1)/2
+    local pT = math.floor((kT-1)/2)
+    local pH = math.floor((kH-1)/2)
     local pW = pH
 
     local inChan = math.random(1,32)
