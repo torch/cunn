@@ -470,10 +470,10 @@ local function sliceRange(nElem, idx, splits)
    local eltsPerMod = math.floor(nElem / splits)
    local numExtra = nElem - eltsPerMod * splits
    if idx <= numExtra then
-     rangeStart = (idx - 1) * (eltsPerMod + 1) + 1
+     local rangeStart = (idx - 1) * (eltsPerMod + 1) + 1
      return rangeStart, eltsPerMod + 1
    else
-     rangeStart = numExtra * (eltsPerMod + 1) + (idx - 1 - numExtra) * eltsPerMod + 1
+     local rangeStart = numExtra * (eltsPerMod + 1) + (idx - 1 - numExtra) * eltsPerMod + 1
      return rangeStart, eltsPerMod
    end
 end
