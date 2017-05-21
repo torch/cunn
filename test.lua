@@ -4626,6 +4626,29 @@ function cunntest.ClassNLLCriterionMultipleTargetWeights()
    end
 end
 
+function cunntest.ClassNLLCriterion_ignoreIndex()
+   local numLabels = 10
+   local batchsize = 4
+   local ignoreIndex = -1
+   local cri = nn.ClassNLLCriterion(nil, nil, ignoreIndex):cuda()
+   local input = torch.randn(numLabels):cuda()
+   local target = ignoreIndex
+   mytester:assert(cri:forward(input, target) == 0)
+   mytester:assert(cri:backward(input, target):abs():sum() == 0)
+   local input = torch.randn(batchsize, numLabels):cuda()
+   local target = torch.LongTensor(batchsize):random(1,numLabels)
+   target[1] = ignoreIndex
+   target = target:cudaLong()
+   local output = cri:forward(input, target)
+   local gradInput = cri:backward(input, target):clone()
+   mytester:assert(gradInput[1]:abs():sum() == 0)
+   local input, target = input:sub(2,batchsize), target:sub(2,batchsize)
+   local output2 = cri:forward(input, target)
+   mytester:assert(math.abs(output2 - output) < 0.0000001)
+   local gradInput2 = cri:backward(input, target)
+   mytester:assertTensorEq(gradInput2, gradInput:sub(2,batchsize), 0.0000001)
+end
+
 function cunntest.TemporalMaxPooling()
    local settings = {{2, 2}, {3, 3}, {4, 2}, {2, 4}, {3, 5}}
 
