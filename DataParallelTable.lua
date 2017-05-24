@@ -190,6 +190,7 @@ function DataParallelTable:updateOutput(input)
    local prevGpuid = cutorch.getDevice()
 
    -- distribute the input to GPUs
+   self.inputGpu = {}
    self.maxUsedGpu = self:_distribute(self.inputGpu, input)
 
    -- update output for each module
@@ -524,12 +525,31 @@ function DataParallelTable:_reduce(gradParams)
    end
 end
 
+function DataParallelTable:_getMaxGpu(src)
+   if torch.type(src) == 'table' then
+     for i, s in ipairs(src) do
+       local n_gpu = self:_getMaxGpu(s)
+       if min_gpu == nil or n_gpu < min_gpu then
+         min_gpu = n_gpu
+       end
+     end
+     return min_gpu
+   end
+   assert(torch.isTensor(src), 'input must be a tensor or table of tensors')
+   if src:dim() < self.dimension then
+     return #self.gpuAssignments
+   end
+   return src:size(self.dimension)
+end
+
 function DataParallelTable:_distribute(dst, src)
-   for i = 1, #self.gpuAssignments do
+   local maxGpu = math.min(self:_getMaxGpu(src), #self.gpuAssignments)
+   for i = 1, maxGpu do
       cutorch.setDevice(self.gpuAssignments[i])
-      dst[i] = self:_distributeTensorRecursive(dst[i], src, i, #self.gpuAssignments)
+      dst[i] = self:_distributeTensorRecursive(dst[i], src, i, maxGpu)
       if not _hasData(dst[i]) then return i-1 end
    end
+   return maxGpu
 end
 
 -- _distributeTensorRecursive - if the src is a tensor then the function slices
