@@ -5939,16 +5939,16 @@ function cunntest.ModuleConversionFunctions()
 end
 
 function cunntest.IndexLinear()
-   isize = 500E3
-   osize = 250
-   weightDecay = 0.01
-   nnzMin = 1000
-   nnzMax = 1500
-   idxMin = 1
-   idxMax = isize
-   batchSize = 128
-   lr = 0.01
-   ntests = 1
+   local isize = 500E3
+   local osize = 250
+   local weightDecay = 0.01
+   local nnzMin = 1000
+   local nnzMax = 1500
+   local idxMin = 1
+   local idxMax = isize
+   local batchSize = 128
+   local lr = 0.01
+   local ntests = 1
 
    local errNorm = function(a, b)
       return torch.Tensor(1):fill(torch.cdiv((a - b):abs(), a:abs()):max())
@@ -6101,16 +6101,16 @@ function cunntest.IndexLinear()
 end
 
 function cunntest.IndexLinearMaxNorm()
-   isize = 500E3
-   osize = 250
-   weightDecay = 0
-   nnzMin = 1000
-   nnzMax = 1500
-   idxMin = 1
-   idxMax = isize
-   batchSize = 128
-   lr = 0.01
-   ntests = 1
+   local isize = 500E3
+   local osize = 250
+   local weightDecay = 0
+   local nnzMin = 1000
+   local nnzMax = 1500
+   local idxMin = 1
+   local idxMax = isize
+   local batchSize = 128
+   local lr = 0.01
+   local ntests = 1
 
    local errNorm = function(a, b)
       return torch.Tensor(1):fill(torch.cdiv((a - b):abs(), a:abs()):max())
