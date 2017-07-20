@@ -87,7 +87,7 @@ local a = torch.CudaTensor(1000,1000):uniform()
 a:add(1)
 ```
 ... the GPU kernel to add 1 will only be scheduled for launch by `a:add(1)`.  It might not have completed yet, or
-even have reached the GPU, at the time that the `a:add(1)` instructions has completed
+even have reached the GPU, at the time that the `a:add(1)` returns
 * therefore for running wall-clock timings, you should call `cutorch.synchronize()` before each timecheck
 point:
 ```lua
