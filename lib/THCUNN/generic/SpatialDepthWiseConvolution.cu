@@ -111,6 +111,7 @@ static inline void THNN_(SpatialDepthWiseConvolution_shapeCheck)(
   }
 }
 
+template <int dilationH, int dilationW>
 __global__ void updateOutputKernel(
       real *output          , const real *input     , 
       const real *weight    , const int batchSize   ,
@@ -119,8 +120,7 @@ __global__ void updateOutputKernel(
       const int outputHeight, const int outputWidth ,
       const int kH          , const int kW          ,
       const int padH        , const int padW        ,
-      const int strideH     , const int strideW     ,
-      const int dilationH   , const int dilationW) {
+      const int strideH     , const int strideW) {
 
   int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -236,13 +236,13 @@ void THNN_(SpatialDepthWiseConvolution_updateOutput)(
     THCTensor_(zero)(state, output);
   }
 
-  updateOutputKernel
+  updateOutputKernel <1,1>
     <<<GET_BLOCKS(THCTensor_(nElement)(state, output)), 
     CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>>(
       THCTensor_(data)(state, output), THCTensor_(data)(state, input),
       THCTensor_(data)(state, weight), batchSize,
       inputHeight, inputWidth, nInputPlane, nOutputPlane, 
-      outputHeight, outputWidth, kH, kW, padH, padW, dH, dW, 1, 1);
+      outputHeight, outputWidth, kH, kW, padH, padW, dH, dW);
   THCudaCheck(cudaGetLastError());
 
   // transpose back
@@ -272,6 +272,7 @@ void THNN_(SpatialDepthWiseConvolution_updateOutput)(
   THCTensor_(free)(state, input);
 }
 
+template <int dilationH, int dilationW>
 __global__ void updateGradInputKernel(
       real *gradInput       , const real *gradOutput,
       const real *weight    , const int batchSize   ,
@@ -280,8 +281,7 @@ __global__ void updateGradInputKernel(
       const int outputHeight, const int outputWidth ,
       const int kH          , const int kW          ,
       const int padH        , const int padW        ,
-      const int strideH     , const int strideW     ,
-      const int dilationH   , const int dilationW) {
+      const int strideH     , const int strideW) {
 
   int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -335,6 +335,7 @@ __global__ void updateGradInputKernel(
         }
       }
       gradOutput += outputHeight * outputWidth;
+      weight += kH * kW;
     }
 
     gradInput[gradInputIdx] = ScalarConvert<accreal, real>::to(result);
@@ -401,14 +402,18 @@ void THNN_(SpatialDepthWiseConvolution_updateGradInput)(
   // Resize output
   THCTensor_(resize4d)(state, gradInput, batchSize, nInputPlane, inputHeight, inputWidth);
 
-  updateGradInputKernel
+  transposeWithBuffer(state, weight, gradColumns->storage, 0, 1);
+
+  updateGradInputKernel <1,1>
     <<<GET_BLOCKS(THCTensor_(nElement)(state, gradInput)), 
     CUDA_NUM_THREADS, 0, THCState_getCurrentStream(state)>>>(
       THCTensor_(data)(state, gradInput), THCTensor_(data)(state, gradOutput),
       THCTensor_(data)(state, weight), batchSize,
       inputHeight, inputWidth, nInputPlane, nOutputPlane, 
-      outputHeight, outputWidth, kH, kW, padH, padW, dH, dW, 1, 1);
+      outputHeight, outputWidth, kH, kW, padH, padW, dH, dW);
   THCudaCheck(cudaGetLastError());
+
+  transposeWithBuffer(state, weight, gradColumns->storage, 0, 1);
 
   // Resize output
   if (batch == 0) {
