@@ -81,6 +81,5 @@ void THNN_CudaHalfSparseLinear_updateParameters(
 #endif
 
 #include "generic/SparseLinear.cu"
-#include "THCGenerateFloatType.h"
-#include "generic/SparseLinear.cu"
-#include "THCGenerateDoubleType.h"
+#include "THCGenerateFloatTypes.h"
+

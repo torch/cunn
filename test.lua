@@ -11,20 +11,21 @@ local THC = ffi.os == 'Windows' and ffi.load('THC') or ffi.C
 --e.g.: th -lcunn -e "nn.testcuda{'Sigmoid_forward'}"
 
 local typenames = {
-  'torch.CudaTensor',
-  'torch.CudaDoubleTensor',
+  'torch.CudaTensor'
 }
 
 local t2cpu = {
-  ['torch.CudaTensor'] = 'torch.FloatTensor',
-  ['torch.CudaDoubleTensor'] = 'torch.DoubleTensor',
-
+  ['torch.CudaTensor'] = 'torch.FloatTensor'
 }
 
 local function checkHalf()
-   if cutorch.hasHalf then
+   if not cutorch.minMath then
+     if cutorch.hasHalf then
        table.insert(typenames, 'torch.CudaHalfTensor')
-       t2cpu['torch.CudaHalfTensor'] = 'torch.FloatTensor'
+       t2cpu['torch.CudaHalfTensor'] = 'torch.HalfTensor'
+     end
+       table.insert(typenames, 'torch.CudaDoubleTensor')
+       t2cpu['torch.CudaDoubleTensor'] = 'torch.DoubleTensor'
    end
 end
 
