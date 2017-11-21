@@ -19,6 +19,7 @@ void THNN_(LenSoftMax_updateOutput)(
 
   input = THCTensor_(newContiguous)(state, input);
   THCTensor_(resizeAs)(state, output, input);
+  THCTensor_(zero)(state, output);
   long batchSize = input->size[0], dim = input->size[1];
   long blocksY = 1, blocksZ = 1;
 
@@ -55,6 +56,7 @@ void THNN_(LenSoftMax_updateGradInput)(
   gradOutput = THCTensor_(newContiguous)(state, gradOutput);
 
   THCTensor_(resizeAs)(state, gradInput, output);
+  THCTensor_(zero)(state, gradInput);
   long batchSize = gradInput->size[0], dim = gradInput->size[1];
   long blocksY = 1, blocksZ = 1;
 
